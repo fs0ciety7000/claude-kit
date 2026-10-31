@@ -1,0 +1,5 @@
+# Game dev Godot et game design. Noms vérifiés avec « npx skills add <source> -l » (novembre 2026) : le pack compte 78 skills.
+# Autres candidats du pack : godot-3d-essentials godot-multiplayer audio-design dialogue-systems game-ai procedural-gen steam-publish.
+# thedivergentai/gd-agentic-skills (184 skills) ne contient PAS « godot-skill-judge ». Candidats à relire avant installation :
+# godot-gdscript-mastery, godot-testing-patterns, godot-auditor, godot-master.
+gamedev-skills/awesome-gamedev-agent-skills --skill godot-gdscript godot-nodes-scenes godot-signals-groups godot-2d-movement godot-tilemap godot-resources godot-physics godot-animation godot-audio godot-export godot-gdscript-headless-testing godot-ui-control godot-shaders game-feel game-ui-ux level-design camera-systems input-systems physics-tuning save-systems performance-optimization platformer prototype-fast game-jam itch-publish

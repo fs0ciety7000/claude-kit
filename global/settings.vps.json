@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "ask": [
+      "Bash(git push*)",
+      "Bash(git commit*)",
+      "Bash(npm install*)",
+      "Bash(pnpm install*)",
+      "Bash(npm ci)",
+      "Bash(mv *)",
+      "Bash(cp *)"
+    ],
+    "deny": [
+      "Bash(kit secrets run * -- wrangler deploy*)",
+      "Bash(kit secrets run -- wrangler deploy*)"
+    ]
+  }
+}

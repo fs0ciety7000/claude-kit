@@ -1,0 +1,4 @@
+# Web : React, Next.js, interfaces. Noms vérifiés avec « npx skills add <source> -l » (novembre 2026).
+# vercel-labs/agent-skills (MIT) contient aussi deploy-to-vercel, vercel-optimize, vercel-react-native-skills : non retenus.
+https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices web-design-guidelines vercel-composition-patterns vercel-react-view-transitions
+https://github.com/Leonxlnx/taste-skill --skill design-taste-frontend

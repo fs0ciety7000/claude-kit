@@ -1,0 +1,2 @@
+# Tes ajouts : « kit add-skill <source> --skill <nom> » écrit ici par défaut.
+# Versionne ce fichier : sur une autre machine, « kit skills install -g custom » les réinstalle.

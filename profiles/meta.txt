@@ -1,0 +1,4 @@
+# Skills méta : trouver et écrire des skills/agents. Installer en global : kit skills install -g meta
+# Format : <source> --skill <nom> [<nom> ...]   (un nom de skill par mot)
+https://github.com/vercel-labs/skills --skill find-skills
+https://github.com/mattpocock/skills --skill writing-for-agents

@@ -1,0 +1,6 @@
+# Design d'interface et mouvement. Noms vérifiés avec « npx skills add <source> -l » (novembre 2026).
+# emilkowalski/skills contient aussi animate-expo, apple-design, mobile-native, prototype, remove-animations... à relire avant d'ajouter.
+https://github.com/Leonxlnx/taste-skill --skill design-taste-frontend
+https://github.com/emilkowalski/skills --skill emil-design-eng animate review-animations improve-animations find-animation-opportunities animation-performance break-ui pick-ui-library
+https://github.com/iart-ai/web-animation-skills --skill gsap-web 60fps-animation micro-interaction accessible-animation svg-animation lottie-animation glassmorphism page-transition-animation
+https://github.com/vercel-labs/agent-skills --skill web-design-guidelines

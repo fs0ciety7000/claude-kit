@@ -1,0 +1,2 @@
+# Shopify : le dépôt expose « shopify » et « ucp » (vérifié, novembre 2026).
+https://github.com/Shopify/Shopify-AI-Toolkit --skill shopify

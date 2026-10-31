@@ -1,0 +1,3 @@
+# Cloudflare (cloudflare/skills, Apache-2.0, 19 skills, noms vérifiés en novembre 2026). Alternative en plugin : /plugin marketplace add cloudflare/skills
+# Non retenus mais disponibles : cf-cli (CLI officielle cf, bêta), workers-profiling, agents-sdk, turnstile-spin, cloudflare-email-service.
+https://github.com/cloudflare/skills --skill cloudflare wrangler workers-best-practices durable-objects nextjs-on-cloudflare web-perf

@@ -1,0 +1,3 @@
+# Android : Jetpack Compose et Material 3. Nom « compose-pro » relevé sur le README du dépôt ; non confirmé par -l
+# (le clonage de ce dépôt a échoué dans mon environnement de test). Licence non indiquée sur la page : vérifie son LICENSE.
+https://github.com/BreakZero/Compose-Agent-Skill --skill compose-pro

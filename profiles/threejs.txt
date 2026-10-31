@@ -1,0 +1,2 @@
+# Three.js : les 3 seuls skills Three.js vérifiés (dans le pack gamedev, novembre 2026). Complète-les avec tes propres skills (kit new-skill).
+gamedev-skills/awesome-gamedev-agent-skills --skill threejs-scene-setup threejs-materials-lighting threejs-gltf-loading

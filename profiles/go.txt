@@ -1,0 +1,4 @@
+# Go : samber/cc-skills-golang compte 46 skills (noms vérifiés, novembre 2026).
+# golang-how-to est l'orchestrateur : il charge les autres skills selon la tâche, il faut donc qu'ils soient installés.
+# Pour tout installer : kit add-skill https://github.com/samber/cc-skills-golang --skill '*' --profile go
+https://github.com/samber/cc-skills-golang --skill golang-how-to golang-code-style golang-naming golang-error-handling golang-testing golang-concurrency golang-context golang-security golang-safety golang-project-layout golang-database golang-lint golang-troubleshooting golang-performance golang-cli golang-gopls golang-structs-interfaces golang-observability golang-dependency-management golang-documentation
