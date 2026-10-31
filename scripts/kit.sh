@@ -29,6 +29,11 @@ PROJETS
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
 
+API EN LECTURE SEULE (jeton jamais visible dans `ps`)
+  kit api <coolify|cloudflare> <chemin> --jq <filtre>
+        GET authentifié ; filtre jq obligatoire ; affiche le code HTTP et le nombre d'éléments
+        ex. kit api coolify /applications --jq 'map({uuid,name,status})'
+
 INFOS & MAINTENANCE
   kit list                                agents, skills et profils disponibles
   kit mcp setup                           déclare le serveur MCP Coolify (jeton injecté, jamais écrit en clair)
@@ -375,6 +380,7 @@ main() {
   shift || true
   case $sub in
     secrets) exec "$KIT_HOME/scripts/secrets.sh" "$@" ;;
+    api) exec "$KIT_HOME/scripts/api.sh" "$@" ;;
     skills) cmd_skills "$@" ;;
     add-skill) cmd_add_skill "$@" ;;
     add-agent) cmd_add_agent "$@" ;;

@@ -83,6 +83,8 @@
       "Bash(kit secrets list*)",
       "Bash(kit secrets check*)",
       "Bash(kit secrets doctor*)",
+      "Bash(kit api coolify *)",
+      "Bash(kit api cloudflare *)",
       "Bash(kit secrets run -- wrangler *)",
       "Bash(kit secrets run * -- wrangler *)",
       "Bash(kit secrets run -- npx wrangler *)",
