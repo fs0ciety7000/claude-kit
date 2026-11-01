@@ -1,19 +1,56 @@
 ---
-description: Initialise un projet : détecte le type, installe les profils de skills, prépare CLAUDE.md, AGENTS.md et les secrets
-argument-hint: "<description courte du projet>"
+description: Démarre un projet pas à pas : cadrage, stack, design, gabarit, déploiement Coolify + sous-domaine Cloudflare, workflow. Validation à chaque phase.
+argument-hint: "<description courte du projet> [--rapide]"
 ---
 
 Démarre un nouveau projet à partir de cette description : $ARGUMENTS
 
-Procède dans l'ordre :
+Mode : **guidé** par défaut (une phase à la fois, validation de l'utilisateur entre les phases). Si l'argument contient `--rapide`, enchaîne les phases en prenant les choix par défaut et résume les hypothèses à la fin.
 
-1. **Classer le projet.** Lis `~/.claude/skills-registry.md`, choisis le ou les types dans la table de routage. Si rien ne correspond, utilise `find-skills`.
-2. **Questions manquantes** (3 maximum, en une seule fois) : stack exacte, commandes build/test, contraintes de déploiement. Ne demande pas ce qui se déduit de la description.
-3. **Gabarit.** Si `CLAUDE.md` et `AGENTS.md` n'existent pas dans le dossier courant : `kit project init .`
-4. **Skills.** Propose les profils du registre pour ce type et installe-les après accord : `kit skills install <profil>...` (niveau projet). Signale les lignes en échec sans t'acharner.
-5. **Remplir** la section « Projet courant » de `CLAUDE.md` et `AGENTS.md` : nom, type, stack, commandes réelles, structure réelle. Ne modifie pas le reste.
-6. **Secrets.** Liste les variables nécessaires dans `.env.example` (noms et valeurs factices). Puis `kit secrets check` : pour chaque nom manquant, dis à l'utilisateur de lancer `kit secrets add NOM` lui-même. Ne demande jamais une valeur dans le chat.
-7. **Squelette minimal** adapté à la stack (dossiers, config de base, `.gitignore`). Pas de code applicatif au-delà.
-8. **Résumer en 5 lignes** : type retenu, profils et agents recommandés, fichiers créés, secrets à ajouter, prochaine étape.
+Règles de conduite :
+- Avant chaque phase, annonce-la en une ligne. À la fin, demande « valide / modifie ? » en une seule question.
+- Pose les questions d'une phase en une seule fois, 4 maximum. Ne demande pas ce qui se déduit de la description ou de `~/.claude/skills-registry.md`.
+- N'installe, ne crée et ne déploie rien sans accord. Jamais de lecture de `.env*`. Une valeur secrète n'est jamais demandée dans le chat : `kit secrets add NOM` est lancé par l'utilisateur.
+- Si le dossier courant contient déjà du code, lis-le d'abord et n'écrase rien.
 
-Contraintes : n'installe rien sans accord ; ne lis jamais de fichier `.env*` ; les agents sont dans `~/.claude/agents`, utilise-les.
+## Phase 1 — Cadrage
+Objectif, public, fonctionnalités indispensables (3 à 5), ce qui est hors périmètre, contraintes (délai, budget, hébergement). Écris-les dans `docs/brief.md`. Pour une idée floue, charge le skill `brainstorming` (Superpowers) à la place des questions.
+
+## Phase 2 — Type et stack
+1. Classe le projet avec la table de routage de `~/.claude/skills-registry.md` (plusieurs types possibles). Sans correspondance : `find-skills`.
+2. Propose **deux options de stack** (une recommandée, une alternative), chacune avec : composants (front, back, base, auth, stockage), avantages, coût de maintenance, risque principal. Par défaut, privilégie la stack que l'utilisateur utilise déjà (Go, Rust, Next.js, React, PocketBase, Godot, Three.js, Shopify) plutôt qu'une nouveauté.
+3. Après choix, liste les profils de skills et agents recommandés et installe les profils après accord : `kit skills install <profil>...`.
+
+## Phase 3 — Gabarit et instructions
+1. Dossier vide ou sans `CLAUDE.md` : `kit project init .` (ne remplace rien d'existant).
+2. Remplis les sections « Projet courant » de `CLAUDE.md` et `AGENTS.md` (nom, type, stack, commandes réelles, structure réelle) et la section « Spécifique à ce projet » (uniquement ce qui ne se déduit pas du code). Ne modifie pas le reste.
+3. Squelette minimal adapté à la stack (dossiers, config de base, Dockerfile si déploiement Coolify). Pas de code applicatif au-delà.
+
+## Phase 4 — Design (seulement si le projet a une interface, un jeu ou une marque)
+1. Écris `DESIGN.md` : couleurs et rôles, typographie, espacements, rayons, ombres, composants, clair/sombre, principes d'accessibilité. Pars du gabarit `DESIGN.md` du dossier.
+2. Web : charge `web-design-system` (plugin website-design) s'il est installé ; délègue la direction visuelle à l'agent `ui-designer`. Android : `android-ui-reviewer` pour la revue. Marque : agent `brand-identity` et skill `logo-design`. Jeu : agent `game-designer`.
+3. Propose 2 directions visuelles courtes avant d'écrire `DESIGN.md`, et attends le choix.
+
+## Phase 5 — Déploiement (Coolify + sous-domaine Cloudflare)
+Si le projet ne se déploie pas (bibliothèque, outil local, prototype), saute cette phase. Sinon, remplis `DEPLOY.md` en suivant le skill `deploy-coolify-cloudflare`.
+
+Questions (en une fois) :
+1. Où : Coolify (processus, base, PocketBase, conteneur) ou Cloudflare Workers (sans état) ?
+2. Sous-domaine voulu et zone DNS. Pour proposer les zones : `kit api cloudflare /zones --jq 'map({name,id})'`. Pour vérifier qu'un nom est libre : `kit api cloudflare "/zones/<id>/dns_records?name=<fqdn>" --jq 'map({type,name,content,proxied})'`. Si ces lectures échouent (jeton sans accès aux zones), dis-le et demande la zone à l'utilisateur.
+3. Branche déployée, branche de préproduction éventuelle, port d'écoute, route de santé (`/health`).
+4. Données persistantes (volume) et variables : noms seulement, build ou exécution.
+
+Remplis ensuite `DEPLOY.md` : source Git, mode de build, port, santé, variables (noms), volume, domaine (FQDN), enregistrement DNS exact à créer (type, nom, cible, proxifié ou non), mode SSL/TLS Full (strict), sauvegarde, retour arrière.
+
+Limites à rappeler à l'utilisateur :
+- `kit api` est en lecture seule. La création de l'application Coolify et de l'enregistrement DNS Cloudflare se fait dans les interfaces avec les valeurs de `DEPLOY.md`, ou après validation explicite d'une action précise.
+- Aucun déploiement en production sans la validation décrite dans `deploy-coolify-cloudflare`.
+- Ne propose jamais le mode SSL « Flexible ».
+
+## Phase 6 — Secrets
+Liste dans `.env.example` les noms de variables (valeurs factices). Lance `kit secrets check` : pour chaque nom manquant, indique à l'utilisateur de lancer lui-même `kit secrets add NOM`. Sépare dev et prod (`-e prod`).
+
+## Phase 7 — Workflow et suite
+1. Fais un premier commit propre (petits commits, un sujet par commit).
+2. Propose le plan de travail : si Superpowers est installé, `writing-plans` à partir de `docs/brief.md`, puis exécution et revue par fonctionnalité.
+3. Termine par un résumé de 6 lignes maximum : type, stack, fichiers créés (`CLAUDE.md`, `AGENTS.md`, `DESIGN.md`, `DEPLOY.md`, `docs/brief.md`), profils et agents à utiliser, secrets à ajouter, prochaine étape.

@@ -24,6 +24,9 @@ build:   TODO
 .
 ├── AGENTS.md
 ├── CLAUDE.md
+├── DESIGN.md           # direction visuelle
+├── DEPLOY.md           # Coolify / Cloudflare, domaine, variables (noms)
+├── docs/brief.md       # objectif et périmètre
 ├── .env.example        # noms des variables, valeurs factices
 ├── secrets/            # secrets chiffrés (sops + age), commitables
 └── src/                # TODO

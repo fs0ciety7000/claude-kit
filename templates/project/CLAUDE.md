@@ -13,6 +13,12 @@
 
 > Remplis cette section avec `/new-project` ou à la main.
 
+## Documents du projet
+
+- `docs/brief.md` : objectif, périmètre, contraintes.
+- `DESIGN.md` : direction visuelle (couleurs, typographie, composants). À respecter pour toute interface.
+- `DEPLOY.md` : cible Coolify ou Cloudflare, sous-domaine, DNS, variables (noms), retour arrière.
+
 ## Spécifique à ce projet
 
 - `TODO` : conventions propres au projet (ce qui ne se déduit pas du code).

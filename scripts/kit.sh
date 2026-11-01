@@ -24,7 +24,9 @@ SKILLS PAR PROFIL
   kit registry                            régénère la table des profils dans skills-registry.md
 
 PROJETS
-  kit project init [dossier]              copie le gabarit de projet (CLAUDE.md, AGENTS.md, .env.example...)
+  kit project new <dossier>               crée un dossier neuf + gabarit + git init, puis lance claude et /new-project
+  kit project init [dossier]              copie le gabarit dans un dossier existant (n'écrase rien)
+        gabarit : CLAUDE.md, AGENTS.md, DESIGN.md, DEPLOY.md, .env.example, .gitignore, secrets/
 
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
@@ -305,12 +307,29 @@ EOF
 # ---------- projet, listes, maintenance ----------
 
 cmd_project() {
-  [[ ${1:-} == init ]] || die "usage : kit project init [dossier]"
-  local dir=${2:-.}
-  mkdir -p "$dir"
-  cp -rn "$KIT_HOME/templates/project/." "$dir/"
-  ok "gabarit copié dans $dir (rien d'existant n'a été écrasé)"
-  echo "Étapes suivantes : kit secrets init ; remplis .env.example ; kit skills install <profil> ; lance « claude » puis /new-project"
+  local sub=${1:-} dir
+  case $sub in
+    init)
+      dir=${2:-.}
+      mkdir -p "$dir"
+      cp -rn "$KIT_HOME/templates/project/." "$dir/" 2>/dev/null
+      ok "gabarit copié dans $dir (rien d'existant n'a été écrasé)"
+      echo "Étapes suivantes : lance « claude » dans ce dossier puis /new-project \"<description>\""
+      ;;
+    new)
+      dir=${2:-}
+      [[ -n $dir ]] || die "usage : kit project new <dossier>"
+      [[ ! -e $dir ]] || [[ -d $dir && -z "$(ls -A "$dir")" ]] || die "$dir existe déjà et n'est pas vide : utilise « kit project init $dir »"
+      mkdir -p "$dir"
+      cp -rn "$KIT_HOME/templates/project/." "$dir/" 2>/dev/null
+      if command -v git >/dev/null 2>&1 && [[ ! -d $dir/.git ]]; then git -C "$dir" init -q -b main; fi
+      ok "projet créé dans $dir (dépôt git initialisé, aucun commit)"
+      echo "Étapes suivantes :"
+      echo "  cd $dir && claude"
+      echo "  puis : /new-project \"<description du projet>\"   (ajoute --rapide pour enchaîner sans pause)"
+      ;;
+    *) die "usage : kit project new <dossier> | kit project init [dossier]" ;;
+  esac
 }
 
 cmd_list() {
