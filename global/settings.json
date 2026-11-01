@@ -96,7 +96,14 @@
       "Bash(kit api cloudflare POST *)",
       "Bash(kit api cloudflare PUT *)",
       "Bash(kit api cloudflare PATCH *)",
-      "Bash(kit api cloudflare TRIGGER *)"
+      "Bash(kit api cloudflare TRIGGER *)",
+      "Bash(kit api github /*)",
+      "Bash(kit api github \"/*)",
+      "Bash(kit api github GET *)",
+      "Bash(kit api github POST *)",
+      "Bash(kit api github PUT *)",
+      "Bash(kit api github PATCH *)",
+      "Bash(kit repo create *)"
     ],
     "ask": [
       "Bash(git push --force*)",

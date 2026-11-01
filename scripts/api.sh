@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# kit api : appels HTTP authentifiés vers Coolify / Cloudflare.
+# kit api : appels HTTP authentifiés vers Coolify / Cloudflare / GitHub.
 # Le jeton est injecté par `kit secrets run` puis passé à curl par stdin (curl -K -) :
 # il n'apparaît jamais dans les arguments d'un processus (donc pas dans `ps`).
 #
-# Usage : kit api <coolify|cloudflare> [METHODE] <chemin> --jq <filtre> [--json <JSON|@fichier>]
+# Usage : kit api <coolify|cloudflare|github> [METHODE] <chemin> --jq <filtre> [--json <JSON|@fichier>]
 #   METHODE : GET (défaut, lecture) | POST | PUT | PATCH | DELETE | TRIGGER
 #   TRIGGER = GET qui déclenche une action (Coolify : /deploy, /start, /stop, /restart)
 #   --json  : corps de la requête. "__SECRET:NOM__" est remplacé par la valeur du secret NOM
@@ -38,6 +38,13 @@ if [[ ${1:-} == --inner ]]; then
       token=$CLOUDFLARE_API_TOKEN
       path=${path//\{account_id\}/${CLOUDFLARE_ACCOUNT_ID:-}}
       ;;
+    github)
+      : "${GITHUB_TOKEN:?GITHUB_TOKEN manquant (kit secrets add GITHUB_TOKEN -g)}"
+      base="https://api.github.com"
+      token=$GITHUB_TOKEN
+      accept="application/vnd.github+json"
+      extra='header = "X-GitHub-Api-Version: 2022-11-28"'$'\n'
+      ;;
   esac
   # Une valeur avec guillemet, antislash ou saut de ligne casserait la config curl.
   if [[ $token == *[\"\\]* || $token == *$'\n'* ]]; then
@@ -45,6 +52,8 @@ if [[ ${1:-} == --inner ]]; then
     exit 1
   fi
   [[ $method == TRIGGER ]] && http=GET || http=$method
+  accept=${accept:-application/json}
+  extra=${extra:-}
 
   tmpdir=${XDG_RUNTIME_DIR:-/dev/shm}
   [[ -d $tmpdir && -w $tmpdir ]] || tmpdir=${TMPDIR:-/tmp}
@@ -63,8 +72,8 @@ if [[ ${1:-} == --inner ]]; then
   fi
 
   # printf est un builtin : le jeton ne passe dans aucun argv.
-  code=$(printf 'request = "%s"\nheader = "Authorization: Bearer %s"\nheader = "Accept: application/json"\n%surl = "%s%s"\n' \
-    "$http" "$token" "$data_line" "$base" "$path" |
+  code=$(printf 'request = "%s"\nheader = "Authorization: Bearer %s"\nheader = "Accept: %s"\n%s%surl = "%s%s"\n' \
+    "$http" "$token" "$accept" "$extra" "$data_line" "$base" "$path" |
     curl -sS --max-time 60 -K - -o "$out" -w '%{http_code}') || {
     echo "échec réseau" >&2
     exit 1
@@ -91,7 +100,7 @@ fi
 
 # --- mode public ---
 svc=${1:-}
-[[ $svc == coolify || $svc == cloudflare ]] || { usage >&2; exit 1; }
+[[ $svc == coolify || $svc == cloudflare || $svc == github ]] || { usage >&2; exit 1; }
 shift
 method=GET
 case ${1:-} in

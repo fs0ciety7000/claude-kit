@@ -24,6 +24,8 @@ SKILLS PAR PROFIL
   kit registry                            régénère la table des profils dans skills-registry.md
 
 PROJETS
+  kit repo create <nom> [--public] [--dir dossier]
+        crée le dépôt GitHub (privé par défaut), une clé de déploiement propre au dépôt, et configure git ici
   kit project new <dossier>               crée un dossier neuf + gabarit + git init, puis lance claude et /new-project
   kit project init [dossier]              copie le gabarit dans un dossier existant (n'écrase rien)
         gabarit : CLAUDE.md, AGENTS.md, DESIGN.md, DEPLOY.md, .env.example, .gitignore, secrets/
@@ -31,8 +33,8 @@ PROJETS
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
 
-API COOLIFY / CLOUDFLARE (jeton jamais visible dans `ps`)
-  kit api <coolify|cloudflare> [GET|POST|PUT|PATCH|DELETE|TRIGGER] <chemin> --jq <filtre> [--json <JSON|@fichier>]
+API COOLIFY / CLOUDFLARE / GITHUB (jeton jamais visible dans `ps`)
+  kit api <coolify|cloudflare|github> [GET|POST|PUT|PATCH|DELETE|TRIGGER] <chemin> --jq <filtre> [--json <JSON|@fichier>]
         filtre jq obligatoire ; affiche le code HTTP et le nombre d'éléments
         TRIGGER = action déclenchée par un GET (Coolify : /deploy, /start, /stop, /restart)
         "__SECRET:NOM__" dans le corps JSON = valeur du secret chiffré NOM, jamais visible
@@ -335,6 +337,63 @@ cmd_project() {
   esac
 }
 
+cmd_repo() {
+  [[ ${1:-} == create ]] || die "usage : kit repo create <nom> [--public] [--dir dossier]"
+  shift
+  local name=${1:-} private=true dir=.
+  [[ -n $name ]] || die "usage : kit repo create <nom> [--public] [--dir dossier]"
+  shift
+  while (($#)); do
+    case $1 in
+      --public) private=false; shift ;;
+      --dir) dir=${2:-}; shift 2 ;;
+      *) die "option inconnue : $1" ;;
+    esac
+  done
+  [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || die "nom de dépôt invalide (lettres, chiffres, . _ -)"
+  need git
+  need jq
+  need ssh-keygen
+  "$KIT_HOME/scripts/secrets.sh" list -g 2>/dev/null | grep -qxF GITHUB_TOKEN \
+    || die "GITHUB_TOKEN absent des secrets globaux : kit secrets add GITHUB_TOKEN -g"
+  local api="$KIT_HOME/scripts/api.sh" body resp full ssh_url key host
+  host=$(hostname -s 2>/dev/null || echo vps)
+  local login
+  login=$("$api" github /user --jq '.login' 2>/dev/null | tr -d '"') || true
+  [[ $login =~ ^[A-Za-z0-9-]+$ && $login != null ]] || die "GITHUB_TOKEN refusé par GitHub : jeton expiré ou sans accès ? (kit api github /user --jq .login)"
+  if resp=$("$api" github "/repos/$login/$name" --jq '{full_name,ssh_url}' 2>/dev/null); then
+    warn "le dépôt $login/$name existe déjà : réutilisé (aucune création)"
+  else
+    body=$(jq -nc --arg n "$name" --argjson p "$private" '{name:$n,private:$p,auto_init:false}')
+    resp=$("$api" github POST /user/repos --json "$body" --jq '{full_name,ssh_url}') \
+      || die "création refusée : le jeton a-t-il le droit de créer des dépôts ?"
+    ok "dépôt créé : $login/$name ($([[ $private == true ]] && echo privé || echo public))"
+  fi
+  full=$(jq -r .full_name <<<"$resp")
+  ssh_url=$(jq -r .ssh_url <<<"$resp")
+  [[ $full == */* && $ssh_url == git@* ]] || die "réponse GitHub inattendue"
+
+  # Clé de déploiement propre à ce dépôt, avec droit d'écriture : elle ne donne accès qu'à lui.
+  key="$HOME/.ssh/kit_deploy_$name"
+  mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+  [[ -f $key ]] || ssh-keygen -q -t ed25519 -N "" -C "kit-$host-$name" -f "$key"
+  body=$(jq -nc --arg t "kit-$host-$name" --rawfile k "$key.pub" '{title:$t,key:($k|rtrimstr("\n")),read_only:false}')
+  "$api" github POST "/repos/$full/keys" --json "$body" --jq '{id,read_only}' >/dev/null \
+    || die "clé de déploiement refusée : le jeton a-t-il le droit « Administration » sur ce dépôt ?"
+  ok "clé de déploiement ajoutée (écriture) : ${key/#$HOME/~}"
+
+  mkdir -p "$dir"
+  [[ -d $dir/.git ]] || git -C "$dir" init -q -b main
+  if git -C "$dir" remote get-url origin >/dev/null 2>&1; then
+    git -C "$dir" remote set-url origin "$ssh_url"
+  else
+    git -C "$dir" remote add origin "$ssh_url"
+  fi
+  git -C "$dir" config core.sshCommand "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+  ok "remote origin configuré dans $dir"
+  echo "Étapes suivantes : git add -A && git commit -m \"Initial commit\" && git push -u origin main"
+}
+
 cmd_list() {
   local f
   echo "== Agents (kit) =="
@@ -385,6 +444,12 @@ cmd_doctor() {
   for t in git node npm jq sops age claude; do
     if command -v "$t" >/dev/null 2>&1; then ok "$t"; else echo "✗ $t manquant"; bad=1; fi
   done
+  command -v ssh-keygen >/dev/null 2>&1 && ok "ssh-keygen" || echo "! ssh-keygen manquant (openssh-client) : requis par « kit repo create »"
+  if [[ -n "$(git config --global user.name 2>/dev/null)" && -n "$(git config --global user.email 2>/dev/null)" ]]; then
+    ok "identité git configurée"
+  else
+    echo '! identité git absente : git config --global user.name "Ton Nom" && git config --global user.email "toi@exemple.org"'
+  fi
   [[ -L $CLAUDE_HOME/CLAUDE.md ]] && ok "CLAUDE.md global lié" || { echo "✗ CLAUDE.md global non lié : kit sync"; bad=1; }
   if [[ -f $CLAUDE_HOME/settings.json ]] && jq -e '.hooks.PreToolUse | length > 0' "$CLAUDE_HOME/settings.json" >/dev/null 2>&1; then
     ok "hook anti-fuite actif"
@@ -410,6 +475,7 @@ main() {
     new-skill) cmd_new_skill "$@" ;;
     registry) regen_registry ;;
     project) cmd_project "$@" ;;
+    repo) cmd_repo "$@" ;;
     list) cmd_list ;;
     mcp) cmd_mcp "$@" ;;
     sync) cmd_sync ;;

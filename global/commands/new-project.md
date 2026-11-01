@@ -42,10 +42,16 @@ Questions (en une fois) :
 
 Remplis ensuite `DEPLOY.md` : source Git, mode de build, port, santé, variables (noms), volume, domaine (FQDN), enregistrement DNS exact à créer (type, nom, cible, proxifié ou non), mode SSL/TLS Full (strict), sauvegarde, retour arrière.
 
-Exécution (après validation de `DEPLOY.md`) : fais-le toi-même avec `kit api`, sans demander de confirmation à chaque appel, dans cet ordre : vérifier la zone et que le nom est libre, créer l'enregistrement DNS (Cloudflare), créer l'application Coolify, poser le domaine, le port et la santé, ajouter les variables (`__SECRET:NOM__` pour les valeurs secrètes), déclencher le déploiement, vérifier `running:healthy` et l'URL. Annonce chaque étape en une ligne et rapporte les résultats réels (`HTTP <code>`).
+Exécution (après validation de `DEPLOY.md`) : fais-le toi-même, sans demander de confirmation à chaque appel, dans cet ordre :
+1. **Dépôt Git** : s'il n'existe pas, `kit repo create <nom>` dans le dossier du projet (privé par défaut ; configure aussi la clé de déploiement). Fais un premier commit propre puis `git push -u origin main`.
+2. **Source Git de Coolify** : lis ce qui existe (`kit api coolify /github-apps --jq 'map({uuid,name})'` et `kit api coolify /security/keys --jq 'map({uuid,name})'`) et réutilise la GitHub App ou la clé déjà utilisée par les autres applications. Si rien ne convient, dis-le et indique à l'utilisateur ce qu'il doit connecter dans Coolify ; ne crée pas de clé privée toi-même.
+3. Vérifier la zone Cloudflare et que le nom est libre, puis créer l'enregistrement DNS.
+4. Créer l'application Coolify (mode Dockerfile), poser le domaine, le port et la santé, ajouter les variables (`__SECRET:NOM__` pour les valeurs secrètes).
+5. Déclencher le déploiement, vérifier `running:healthy` et l'URL.
+Annonce chaque étape en une ligne. Annonce chaque étape en une ligne et rapporte les résultats réels (`HTTP <code>`).
 
 Limites :
-- Si un secret manque, dis son NOM à l'utilisateur (`kit secrets add NOM`) ; ne demande jamais la valeur.
+- Si un secret manque (par exemple `GITHUB_TOKEN`), dis son NOM à l'utilisateur (`kit secrets add NOM -g`) ; ne demande jamais la valeur.
 - Si un appel échoue (HTTP non 2xx, droits insuffisants du jeton), arrête-toi, rapporte le message exact et propose la correction ; ne boucle pas.
 - `DELETE` est bloqué par les réglages. Ne propose jamais le mode SSL « Flexible ».
 
