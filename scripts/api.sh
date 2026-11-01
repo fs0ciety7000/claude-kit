@@ -75,7 +75,15 @@ if [[ ${1:-} == --inner ]]; then
     [[ $code =~ ^2 ]] || exit 1
     exit 0
   fi
-  jq -r 'if type=="array" then "éléments : \(length)" else empty end' "$out" >&2
+  jq -r 'if type=="array" then "éléments : \(length)"
+         elif type=="object" and ((.result|type)=="array") then "éléments : \(.result|length)"
+         else empty end' "$out" >&2
+  # Messages d'erreur de l'API (Cloudflare : .errors[].message ; Coolify : .message), jamais le corps entier.
+  jq -r 'if type=="object" then
+           ([(.errors // [])[]? | .message? // empty] + [.message? // empty])
+           | map(select(type=="string" and length>0)) | unique
+           | select(length>0) | "message : " + join("; ")
+         else empty end' "$out" >&2 || true
   jq -c "$filter" "$out"
   [[ $code =~ ^2 ]] || exit 1
   exit 0

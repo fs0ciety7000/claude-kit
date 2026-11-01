@@ -36,7 +36,7 @@ Si le projet ne se déploie pas (bibliothèque, outil local, prototype), saute c
 
 Questions (en une fois) :
 1. Où : Coolify (processus, base, PocketBase, conteneur) ou Cloudflare Workers (sans état) ?
-2. Sous-domaine voulu et zone DNS. Pour proposer les zones : `kit api cloudflare /zones --jq 'map({name,id})'`. Pour vérifier qu'un nom est libre : `kit api cloudflare "/zones/<id>/dns_records?name=<fqdn>" --jq 'map({type,name,content,proxied})'`. Si ces lectures échouent (jeton sans accès aux zones), dis-le et demande la zone à l'utilisateur.
+2. Sous-domaine voulu et zone DNS. Pour proposer les zones : `kit api cloudflare /zones --jq '.result | map({name,id})'`. Pour vérifier qu'un nom est libre : `kit api cloudflare "/zones/<id>/dns_records?name=<fqdn>" --jq '.result | map({type,name,content,proxied})'`. Si ces lectures échouent (jeton sans accès aux zones), dis-le et demande la zone à l'utilisateur.
 3. Branche déployée, branche de préproduction éventuelle, port d'écoute, route de santé (`/health`).
 4. Données persistantes (volume) et variables : noms seulement, build ou exécution.
 
