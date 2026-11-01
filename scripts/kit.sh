@@ -31,10 +31,13 @@ PROJETS
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
 
-API EN LECTURE SEULE (jeton jamais visible dans `ps`)
-  kit api <coolify|cloudflare> <chemin> --jq <filtre>
-        GET authentifié ; filtre jq obligatoire ; affiche le code HTTP et le nombre d'éléments
+API COOLIFY / CLOUDFLARE (jeton jamais visible dans `ps`)
+  kit api <coolify|cloudflare> [GET|POST|PUT|PATCH|DELETE|TRIGGER] <chemin> --jq <filtre> [--json <JSON|@fichier>]
+        filtre jq obligatoire ; affiche le code HTTP et le nombre d'éléments
+        TRIGGER = action déclenchée par un GET (Coolify : /deploy, /start, /stop, /restart)
+        "__SECRET:NOM__" dans le corps JSON = valeur du secret chiffré NOM, jamais visible
         ex. kit api coolify /applications --jq 'map({uuid,name,status})'
+        DELETE est bloqué par les réglages (permissions.deny)
 
 INFOS & MAINTENANCE
   kit list                                agents, skills et profils disponibles

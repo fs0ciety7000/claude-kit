@@ -42,10 +42,12 @@ Questions (en une fois) :
 
 Remplis ensuite `DEPLOY.md` : source Git, mode de build, port, santé, variables (noms), volume, domaine (FQDN), enregistrement DNS exact à créer (type, nom, cible, proxifié ou non), mode SSL/TLS Full (strict), sauvegarde, retour arrière.
 
-Limites à rappeler à l'utilisateur :
-- `kit api` est en lecture seule. La création de l'application Coolify et de l'enregistrement DNS Cloudflare se fait dans les interfaces avec les valeurs de `DEPLOY.md`, ou après validation explicite d'une action précise.
-- Aucun déploiement en production sans la validation décrite dans `deploy-coolify-cloudflare`.
-- Ne propose jamais le mode SSL « Flexible ».
+Exécution (après validation de `DEPLOY.md`) : fais-le toi-même avec `kit api`, sans demander de confirmation à chaque appel, dans cet ordre : vérifier la zone et que le nom est libre, créer l'enregistrement DNS (Cloudflare), créer l'application Coolify, poser le domaine, le port et la santé, ajouter les variables (`__SECRET:NOM__` pour les valeurs secrètes), déclencher le déploiement, vérifier `running:healthy` et l'URL. Annonce chaque étape en une ligne et rapporte les résultats réels (`HTTP <code>`).
+
+Limites :
+- Si un secret manque, dis son NOM à l'utilisateur (`kit secrets add NOM`) ; ne demande jamais la valeur.
+- Si un appel échoue (HTTP non 2xx, droits insuffisants du jeton), arrête-toi, rapporte le message exact et propose la correction ; ne boucle pas.
+- `DELETE` est bloqué par les réglages. Ne propose jamais le mode SSL « Flexible ».
 
 ## Phase 6 — Secrets
 Liste dans `.env.example` les noms de variables (valeurs factices). Lance `kit secrets check` : pour chaque nom manquant, indique à l'utilisateur de lancer lui-même `kit secrets add NOM`. Sépare dev et prod (`-e prod`).
