@@ -25,6 +25,10 @@ SKILLS PAR PROFIL
 
 PROJETS
   kit project init [dossier]              copie le gabarit de projet (CLAUDE.md, AGENTS.md, .env.example...)
+  kit project types                       types de projet du registre (profils et agents de chacun)
+  kit project add <type>... [--dir d] [--no-skills]
+        copie dans .claude/ du projet les agents et skills maison du type, installe ses profils de skills
+        ex. kit project add web-frontend deploy
 
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
@@ -304,13 +308,99 @@ EOF
 
 # ---------- projet, listes, maintenance ----------
 
+# Lignes de la table de routage du registre : type;profils;skills;agents
+# (séparateur « ; » : une tabulation ferait disparaître les cellules vides à la lecture).
+registry_rows() {
+  awk -F'|' '
+    /^## Table de routage/ { on = 1; next }
+    /^## / { on = 0 }
+    on && /^\| `/ {
+      for (i = 2; i <= 6; i++) { gsub(/^[ \t]+|[ \t]+$/, "", $i) }
+      gsub(/`/, "", $2)
+      print $2 ";" $4 ";" $5 ";" $6
+    }
+  ' "$KIT_HOME/global/skills-registry.md"
+}
+
+# Mots entre accents graves d'une cellule (`web`, `design` -> web design).
+backticked() { grep -oE '`[a-z0-9][a-z0-9_-]*`' <<<"$1" | tr -d '`' || true; }
+
+project_types() {
+  local type profiles skills agents
+  printf '%-18s %-16s %s\n' TYPE PROFILS AGENTS
+  while IFS=';' read -r type profiles skills agents; do
+    printf '%-18s %-16s %s\n' "$type" "$(backticked "$profiles" | paste -sd, -)" "$agents"
+  done < <(registry_rows)
+}
+
+# kit project add <type>... : pose dans .claude/ du projet les agents et skills maison du type,
+# puis installe ses profils de skills au niveau projet. Tout est copié (pas de liens) pour être commité :
+# le projet garde ses outils même dans une session cloud sans le kit.
+project_add() {
+  local dir=. skills=1 types=() t
+  while (($#)); do
+    case $1 in
+      --dir) dir=${2:?"dossier manquant"}; shift ;;
+      --no-skills) skills=0 ;;
+      -*) die "option inconnue : $1" ;;
+      *) types+=("$1") ;;
+    esac
+    shift
+  done
+  ((${#types[@]})) || die "usage : kit project add <type>... [--dir d] [--no-skills]   (types : kit project types)"
+  local rows profiles=() agents=() kskills=() row p a k
+  rows=$(registry_rows)
+  for t in "${types[@]}"; do
+    row=$(awk -F';' -v t="$t" '$1 == t' <<<"$rows")
+    [[ -n $row ]] || die "Type inconnu : $t (types : $(cut -d';' -f1 <<<"$rows" | paste -sd' ' -))"
+    IFS=';' read -r _ p k a <<<"$row"
+    mapfile -t -O "${#profiles[@]}" profiles < <(backticked "$p")
+    mapfile -t -O "${#kskills[@]}" kskills < <(backticked "$k")
+    mapfile -t -O "${#agents[@]}" agents < <(tr ',' '\n' <<<"$a" | grep -oE '^[[:space:]]*[a-z0-9][a-z0-9-]*[[:space:]]*$' | xargs -n1 2>/dev/null || true)
+  done
+  mkdir -p "$dir/.claude/agents" "$dir/.claude/skills"
+  local placed=()
+  for a in $(printf '%s\n' "${agents[@]}" | sort -u); do
+    [[ -f $KIT_HOME/global/agents/$a.md ]] || continue
+    cp "$KIT_HOME/global/agents/$a.md" "$dir/.claude/agents/$a.md"
+    placed+=("agent:$a")
+  done
+  # Skills maison du kit cités par le type (pocketbase, deploy-coolify-cloudflare, secrets-handling).
+  for k in $(printf '%s\n' "${kskills[@]}" | sort -u); do
+    [[ -d $KIT_HOME/global/skills/$k ]] || continue
+    rm -rf "${dir:?}/.claude/skills/$k"
+    cp -r "$KIT_HOME/global/skills/$k" "$dir/.claude/skills/$k"
+    placed+=("skill:$k")
+  done
+  ((${#placed[@]})) && ok "copiés dans $dir/.claude : ${placed[*]}"
+  local uprof
+  uprof=$(printf '%s\n' "${profiles[@]}" | sort -u | paste -sd' ' -)
+  if [[ -z $uprof ]]; then
+    info "aucun profil de skills pour : ${types[*]}"
+  elif ((skills)); then
+    # shellcheck disable=SC2086
+    (cd "$dir" && cmd_skills install $uprof) || warn "certaines lignes ont échoué (voir ci-dessus)"
+  else
+    echo "Profils à installer ensuite : kit skills install $uprof"
+  fi
+  echo "Commite .claude/ : le projet retrouvera ses agents et skills à chaque session, y compris sur claude.ai/code."
+}
+
 cmd_project() {
-  [[ ${1:-} == init ]] || die "usage : kit project init [dossier]"
-  local dir=${2:-.}
-  mkdir -p "$dir"
-  cp -rn "$KIT_HOME/templates/project/." "$dir/"
-  ok "gabarit copié dans $dir (rien d'existant n'a été écrasé)"
-  echo "Étapes suivantes : kit secrets init ; remplis .env.example ; kit skills install <profil> ; lance « claude » puis /new-project"
+  local sub=${1:-}
+  shift || true
+  case $sub in
+    init)
+      local dir=${1:-.}
+      mkdir -p "$dir"
+      cp -rn "$KIT_HOME/templates/project/." "$dir/"
+      ok "gabarit copié dans $dir (rien d'existant n'a été écrasé)"
+      echo "Étapes suivantes : kit project add <type>... (kit project types) ; remplis .env.example ; ou /new-project dans Claude Code"
+      ;;
+    add) project_add "$@" ;;
+    types) project_types ;;
+    *) die "usage : kit project init [dossier] | add <type>... [--dir d] [--no-skills] | types" ;;
+  esac
 }
 
 cmd_list() {
@@ -359,8 +449,10 @@ cmd_update() {
 }
 
 cmd_doctor() {
-  local bad=0 t
-  for t in git node npm jq sops age claude; do
+  local bad=0 t cloud=0 tools=(git node npm jq sops age claude)
+  [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]] && cloud=1
+  ((cloud)) && tools=(git node npm jq)
+  for t in "${tools[@]}"; do
     if command -v "$t" >/dev/null 2>&1; then ok "$t"; else echo "✗ $t manquant"; bad=1; fi
   done
   [[ -L $CLAUDE_HOME/CLAUDE.md ]] && ok "CLAUDE.md global lié" || { echo "✗ CLAUDE.md global non lié : kit sync"; bad=1; }
@@ -370,6 +462,11 @@ cmd_doctor() {
     echo "✗ hook anti-fuite absent de settings.json : kit sync"; bad=1
   fi
   [[ -x $KIT_CONFIG/hooks/guard-secrets.sh ]] && ok "hook installé" || { echo "✗ hook introuvable : kit sync"; bad=1; }
+  if ((cloud)); then
+    command -v kit >/dev/null 2>&1 && ok "kit dans le PATH" || { echo "✗ kit absent du PATH"; bad=1; }
+    info "profil cloud : pas de sops/age, secrets via les variables de l'environnement cloud"
+    return "$bad"
+  fi
   case ":$PATH:" in *":$HOME/.local/bin:"*) ok "\$HOME/.local/bin dans le PATH" ;; *) echo "✗ ajoute \$HOME/.local/bin à ton PATH"; bad=1 ;; esac
   "$KIT_HOME/scripts/secrets.sh" doctor || bad=1
   return "$bad"

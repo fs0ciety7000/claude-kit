@@ -25,6 +25,7 @@ Pour toute tâche non triviale :
 - Variable manquante : dis son NOM à l'utilisateur (`kit secrets add NOM`), ne demande jamais la valeur dans le chat.
 - Ne commite jamais de secret. `.env.example` ne contient que des noms et des valeurs factices.
 - Prod : tout déploiement, toute suppression, tout changement de secret distant demande une validation explicite.
+- Session cloud (`CLAUDE_CODE_REMOTE=true`) : pas de sops ni de `kit secrets`. Les secrets sont des variables de l'environnement cloud ; même règle, n'en affiche jamais la valeur.
 
 ## Qualité
 
