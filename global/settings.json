@@ -9,7 +9,6 @@
       "WebSearch",
       "WebFetch",
       "Skill",
-
       "Bash(git status*)",
       "Bash(git diff*)",
       "Bash(git log*)",
@@ -27,7 +26,6 @@
       "Bash(gh issue *)",
       "Bash(gh run *)",
       "Bash(gh repo view*)",
-
       "Bash(npm run *)",
       "Bash(npm test*)",
       "Bash(npm ci)",
@@ -52,7 +50,6 @@
       "Bash(go mod *)",
       "Bash(gofmt*)",
       "Bash(godot --headless*)",
-
       "Bash(ls*)",
       "Bash(cat *)",
       "Bash(head *)",
@@ -70,7 +67,6 @@
       "Bash(touch *)",
       "Bash(pwd)",
       "Bash(which *)",
-
       "Bash(kit add-skill*)",
       "Bash(kit add-agent*)",
       "Bash(kit new-agent*)",
@@ -83,12 +79,31 @@
       "Bash(kit secrets list*)",
       "Bash(kit secrets check*)",
       "Bash(kit secrets doctor*)",
-      "Bash(kit api coolify *)",
-      "Bash(kit api cloudflare *)",
+      "Bash(kit api coolify /*)",
+      "Bash(kit api coolify \"/*)",
+      "Bash(kit api coolify GET *)",
+      "Bash(kit api cloudflare /*)",
+      "Bash(kit api cloudflare \"/*)",
+      "Bash(kit api cloudflare GET *)",
       "Bash(kit secrets run -- wrangler *)",
       "Bash(kit secrets run * -- wrangler *)",
       "Bash(kit secrets run -- npx wrangler *)",
-      "Bash(kit secrets run * -- npx wrangler *)"
+      "Bash(kit secrets run * -- npx wrangler *)",
+      "Bash(kit api coolify POST *)",
+      "Bash(kit api coolify PUT *)",
+      "Bash(kit api coolify PATCH *)",
+      "Bash(kit api coolify TRIGGER *)",
+      "Bash(kit api cloudflare POST *)",
+      "Bash(kit api cloudflare PUT *)",
+      "Bash(kit api cloudflare PATCH *)",
+      "Bash(kit api cloudflare TRIGGER *)",
+      "Bash(kit api github /*)",
+      "Bash(kit api github \"/*)",
+      "Bash(kit api github GET *)",
+      "Bash(kit api github POST *)",
+      "Bash(kit api github PUT *)",
+      "Bash(kit api github PATCH *)",
+      "Bash(kit repo create *)"
     ],
     "ask": [
       "Bash(git push --force*)",
@@ -99,7 +114,6 @@
       "Bash(git branch -D *)",
       "Bash(git push * --delete *)",
       "Bash(git push origin :*)",
-
       "Bash(gh repo delete *)",
       "Bash(gh release delete *)",
       "Bash(gh api * -X DELETE*)",
@@ -107,7 +121,6 @@
       "Bash(gh secret *)",
       "Bash(gh auth *)",
       "Bash(gh repo edit * --visibility *)",
-
       "Bash(*wrangler deploy*)",
       "Bash(*wrangler delete*)",
       "Bash(*wrangler secret*)",
@@ -116,11 +129,9 @@
       "Bash(*wrangler r2 *)",
       "Bash(*wrangler d1 *)",
       "Bash(*wrangler kv*)",
-
       "Bash(kit secrets add*)",
       "Bash(kit secrets rm*)",
       "Bash(kit secrets add-recipient*)",
-
       "Bash(rm *)",
       "Bash(docker *)",
       "Bash(npm publish*)",
@@ -142,7 +153,6 @@
       "Read(**/*.pem)",
       "Read(**/id_rsa)",
       "Read(**/id_ed25519)",
-
       "Bash(sudo *)",
       "Bash(printenv*)",
       "Bash(env)",
@@ -161,7 +171,8 @@
       "Bash(curl * | sh*)",
       "Bash(curl * | bash*)",
       "Bash(wget * | sh*)",
-      "Bash(wget * | bash*)"
+      "Bash(wget * | bash*)",
+      "Bash(kit api * DELETE *)"
     ]
   },
   "hooks": {

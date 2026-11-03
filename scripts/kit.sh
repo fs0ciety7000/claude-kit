@@ -24,23 +24,28 @@ SKILLS PAR PROFIL
   kit registry                            régénère la table des profils dans skills-registry.md
 
 PROJETS
-  kit project init [dossier]              copie le gabarit de projet (CLAUDE.md, AGENTS.md, .env.example...)
+  kit project new <dossier> [type...] [--no-skills]
+        crée un dossier neuf + gabarit + git init ; avec des types, y copie aussi leurs agents et skills
+        ex. kit project new ma-boutique nextjs-cloudflare pocketbase
+  kit project init [dossier]              copie le gabarit dans un dossier existant (n'écrase rien)
+        gabarit : CLAUDE.md, AGENTS.md, DESIGN.md, DEPLOY.md, .env.example, .gitignore, secrets/
   kit project types                       types de projet du registre (profils et agents de chacun)
   kit project add <type>... [--dir d] [--no-skills]
         copie dans .claude/ du projet les agents et skills maison du type, installe ses profils de skills
-        ex. kit project add web-frontend deploy
-  kit project new <nom|owner/nom> [type...] [--public] [--dir d] [--no-skills]
-        crée le dépôt GitHub (privé par défaut), copie le gabarit, applique les types, pousse
-        ex. kit project new ma-boutique nextjs-cloudflare pocketbase
-  kit project template [owner/nom]        publie le gabarit comme dépôt modèle GitHub (défaut : project-template)
+  kit project template [nom]              publie le gabarit comme dépôt modèle GitHub (défaut : project-template)
+  kit repo create <nom> [--public] [--dir dossier]
+        crée le dépôt GitHub (privé par défaut), une clé de déploiement propre au dépôt, et configure git ici
 
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
 
-API EN LECTURE SEULE (jeton jamais visible dans `ps`)
-  kit api <coolify|cloudflare> <chemin> --jq <filtre>
-        GET authentifié ; filtre jq obligatoire ; affiche le code HTTP et le nombre d'éléments
+API COOLIFY / CLOUDFLARE / GITHUB (jeton jamais visible dans `ps`)
+  kit api <coolify|cloudflare|github> [GET|POST|PUT|PATCH|DELETE|TRIGGER] <chemin> --jq <filtre> [--json <JSON|@fichier>]
+        filtre jq obligatoire ; affiche le code HTTP et le nombre d'éléments
+        TRIGGER = action déclenchée par un GET (Coolify : /deploy, /start, /stop, /restart)
+        "__SECRET:NOM__" dans le corps JSON = valeur du secret chiffré NOM, jamais visible
         ex. kit api coolify /applications --jq 'map({uuid,name,status})'
+        DELETE est bloqué par les réglages (permissions.deny)
 
 INFOS & MAINTENANCE
   kit list                                agents, skills et profils disponibles
@@ -390,99 +395,131 @@ project_add() {
   echo "Commite .claude/ : le projet retrouvera ses agents et skills à chaque session, y compris sur claude.ai/code."
 }
 
-# kit project new <nom> [type...] : dépôt GitHub créé, gabarit copié, types appliqués, premier push.
-project_new() {
-  local name="" vis=--private dir="" skills=1 types=()
-  while (($#)); do
-    case $1 in
-      --public) vis=--public ;;
-      --private) vis=--private ;;
-      --dir) dir=${2:?"dossier manquant"}; shift ;;
-      --no-skills) skills=0 ;;
-      -*) die "option inconnue : $1" ;;
-      *) if [[ -z $name ]]; then name=$1; else types+=("$1"); fi ;;
-    esac
-    shift
-  done
-  [[ -n $name ]] || die "usage : kit project new <nom|owner/nom> [type...] [--public] [--dir d] [--no-skills]"
-  [[ $name =~ ^([A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]+$ ]] || die "Nom de dépôt invalide : $name"
-  need git
-  need gh "Installe GitHub CLI (Arch : sudo pacman -S github-cli) puis gh auth login."
-  gh auth status >/dev/null 2>&1 || die "gh n'est pas connecté : lance « gh auth login » toi-même."
-  gh repo view "$name" >/dev/null 2>&1 && die "Le dépôt $name existe déjà sur GitHub."
-  dir=${dir:-$PWD/${name##*/}}
-  [[ ! -e $dir || -z "$(ls -A "$dir" 2>/dev/null)" ]] || die "$dir existe et n'est pas vide."
-  # Types vérifiés avant de créer quoi que ce soit.
-  local rows t
-  rows=$(registry_rows)
-  for t in "${types[@]}"; do
-    awk -F';' -v t="$t" '$1 == t { f = 1 } END { exit !f }' <<<"$rows" || die "Type inconnu : $t (kit project types)"
-  done
-
-  mkdir -p "$dir"
-  cp -r "$KIT_HOME/templates/project/." "$dir/"
-  git -C "$dir" init -q -b main
-  if ((${#types[@]})); then
-    local flags=(--dir "$dir")
-    ((skills)) || flags+=(--no-skills)
-    project_add "${types[@]}" "${flags[@]}"
-  fi
-  git -C "$dir" add -A
-  git -C "$dir" commit -q -m "Initialise le projet (claude-kit${types[*]:+ : ${types[*]}})"
-  gh repo create "$name" "$vis" --source "$dir" --remote origin --push
-  ok "dépôt $name créé et poussé ($dir)"
-  echo "Sur claude.ai/code : nouvelle session sur ce dépôt, puis /new-project <description> pour remplir CLAUDE.md, AGENTS.md et le squelette."
-}
-
-# kit project template [owner/nom] : publie templates/project comme dépôt modèle GitHub (« Use this template »).
-# Relançable : met à jour le dépôt existant par un commit normal, sans force push.
+# kit project template [nom] : publie templates/project comme dépôt modèle GitHub (« Use this template »).
+# Passe par kit repo create (GITHUB_TOKEN, clé de déploiement) ; relançable : met à jour par un commit normal.
 project_template() {
-  local name=${1:-project-template} tmp
-  need git
-  need gh "Installe GitHub CLI puis gh auth login."
-  gh auth status >/dev/null 2>&1 || die "gh n'est pas connecté : lance « gh auth login » toi-même."
+  local name=${1:-project-template} tmp full
+  [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || die "nom de dépôt invalide : $name"
   tmp=$(mktemp -d)
-  if gh repo view "$name" >/dev/null 2>&1; then
-    gh repo clone "$name" "$tmp" -- -q
-    cp -r "$KIT_HOME/templates/project/." "$tmp/"
-    git -C "$tmp" add -A
-    if git -C "$tmp" diff --cached --quiet; then
-      ok "$name est déjà à jour"
-    else
-      git -C "$tmp" commit -q -m "Met à jour le gabarit depuis claude-kit"
-      git -C "$tmp" push -q
-      ok "$name mis à jour"
-    fi
-  else
-    cp -r "$KIT_HOME/templates/project/." "$tmp/"
-    git -C "$tmp" init -q -b main
-    git -C "$tmp" add -A
-    git -C "$tmp" commit -q -m "Gabarit de projet claude-kit"
-    gh repo create "$name" --private --source "$tmp" --remote origin --push \
-      --description "Gabarit de projet claude-kit (Use this template, puis /new-project sur claude.ai/code)"
-    ok "$name créé"
+  cmd_repo create "$name" --dir "$tmp" >/dev/null
+  if git -C "$tmp" ls-remote --exit-code origin main >/dev/null 2>&1; then
+    git -C "$tmp" fetch -q origin main
+    git -C "$tmp" checkout -q -B main origin/main
   fi
-  gh repo edit "$name" --template >/dev/null && ok "$name est un dépôt modèle : bouton « Use this template » sur GitHub"
+  cp -r "$KIT_HOME/templates/project/." "$tmp/"
+  git -C "$tmp" add -A
+  if git -C "$tmp" diff --cached --quiet; then
+    ok "$name est déjà à jour"
+  else
+    git -C "$tmp" commit -q -m "Gabarit de projet claude-kit"
+    git -C "$tmp" push -q -u origin main
+    ok "$name publié"
+  fi
+  full=$(git -C "$tmp" remote get-url origin | sed -E 's#^git@github\.com:##; s#\.git$##')
+  "$KIT_HOME/scripts/api.sh" github PATCH "/repos/$full" --json '{"is_template":true}' --jq '.is_template' >/dev/null \
+    && ok "$full est un dépôt modèle : bouton « Use this template » sur GitHub"
   rm -rf "$tmp"
 }
 
 cmd_project() {
-  local sub=${1:-}
-  shift || true
+  local sub=${1:-} dir
   case $sub in
     init)
-      local dir=${1:-.}
+      dir=${2:-.}
       mkdir -p "$dir"
-      cp -rn "$KIT_HOME/templates/project/." "$dir/"
+      cp -rn "$KIT_HOME/templates/project/." "$dir/" 2>/dev/null
       ok "gabarit copié dans $dir (rien d'existant n'a été écrasé)"
-      echo "Étapes suivantes : kit project add <type>... (kit project types) ; remplis .env.example ; ou /new-project dans Claude Code"
+      echo "Étapes suivantes : lance « claude » dans ce dossier puis /new-project \"<description>\""
       ;;
-    add) project_add "$@" ;;
+    new)
+      dir=${2:-}
+      [[ -n $dir && $dir != -* ]] || die "usage : kit project new <dossier> [type...] [--no-skills]"
+      [[ ! -e $dir ]] || [[ -d $dir && -z "$(ls -A "$dir")" ]] || die "$dir existe déjà et n'est pas vide : utilise « kit project init $dir »"
+      local t rows
+      rows=$(registry_rows)
+      for t in "${@:3}"; do
+        [[ $t == -* ]] && continue
+        awk -F';' -v t="$t" '$1 == t { f = 1 } END { exit !f }' <<<"$rows" || die "Type inconnu : $t (kit project types)"
+      done
+      mkdir -p "$dir"
+      cp -rn "$KIT_HOME/templates/project/." "$dir/" 2>/dev/null
+      if command -v git >/dev/null 2>&1 && [[ ! -d $dir/.git ]]; then git -C "$dir" init -q -b main; fi
+      shift 2
+      if (($#)); then project_add "$@" --dir "$dir"; fi
+      ok "projet créé dans $dir (dépôt git initialisé, aucun commit)"
+      echo "Étapes suivantes :"
+      echo "  cd $dir && claude"
+      echo "  puis : /new-project \"<description du projet>\"   (ajoute --rapide pour enchaîner sans pause)"
+      ;;
+    add) shift; project_add "$@" ;;
     types) project_types ;;
-    new) project_new "$@" ;;
-    template) project_template "$@" ;;
-    *) die "usage : kit project init [dossier] | add <type>... | new <nom> [type...] | template [nom] | types" ;;
+    template) shift; project_template "$@" ;;
+    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type>... | types | template [nom]" ;;
   esac
+}
+
+cmd_repo() {
+  [[ ${1:-} == create ]] || die "usage : kit repo create <nom> [--public] [--dir dossier]"
+  shift
+  local name=${1:-} private=true dir=.
+  [[ -n $name ]] || die "usage : kit repo create <nom> [--public] [--dir dossier]"
+  shift
+  while (($#)); do
+    case $1 in
+      --public) private=false; shift ;;
+      --dir) dir=${2:-}; shift 2 ;;
+      *) die "option inconnue : $1" ;;
+    esac
+  done
+  [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || die "nom de dépôt invalide (lettres, chiffres, . _ -)"
+  need git
+  need jq
+  need ssh-keygen
+  "$KIT_HOME/scripts/secrets.sh" list -g 2>/dev/null | grep -qxF GITHUB_TOKEN \
+    || die "GITHUB_TOKEN absent des secrets globaux : kit secrets add GITHUB_TOKEN -g"
+  local api="$KIT_HOME/scripts/api.sh" body resp full ssh_url key host
+  host=$(hostname -s 2>/dev/null || echo vps)
+  local login
+  login=$("$api" github /user --jq '.login' 2>/dev/null | tr -d '"') || true
+  [[ $login =~ ^[A-Za-z0-9-]+$ && $login != null ]] || die "GITHUB_TOKEN refusé par GitHub : jeton expiré ou sans accès ? (kit api github /user --jq .login)"
+  if resp=$("$api" github "/repos/$login/$name" --jq '{full_name,ssh_url}' 2>/dev/null); then
+    warn "le dépôt $login/$name existe déjà : réutilisé (aucune création)"
+  else
+    body=$(jq -nc --arg n "$name" --argjson p "$private" '{name:$n,private:$p,auto_init:false}')
+    resp=$("$api" github POST /user/repos --json "$body" --jq '{full_name,ssh_url}') \
+      || die "création refusée : le jeton a-t-il le droit de créer des dépôts ?"
+    ok "dépôt créé : $login/$name ($([[ $private == true ]] && echo privé || echo public))"
+  fi
+  full=$(jq -r .full_name <<<"$resp")
+  ssh_url=$(jq -r .ssh_url <<<"$resp")
+  [[ $full == */* && $ssh_url == git@* ]] || die "réponse GitHub inattendue"
+
+  # Clé de déploiement propre à ce dépôt, avec droit d'écriture : elle ne donne accès qu'à lui.
+  key="$HOME/.ssh/kit_deploy_$name"
+  mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+  [[ -f $key ]] || ssh-keygen -q -t ed25519 -N "" -C "kit-$host-$name" -f "$key"
+  # Relance : la clé peut déjà être enregistrée sur le dépôt (GitHub refuserait de l'ajouter deux fois).
+  local pub
+  pub=$(awk '{print $1" "$2}' "$key.pub")
+  if "$api" github "/repos/$full/keys" --jq 'map(.key)' 2>/dev/null | grep -qF "$pub"; then
+    ok "clé de déploiement déjà enregistrée : ${key/#$HOME/~}"
+  else
+    body=$(jq -nc --arg t "kit-$host-$name" --rawfile k "$key.pub" '{title:$t,key:($k|rtrimstr("\n")),read_only:false}')
+    "$api" github POST "/repos/$full/keys" --json "$body" --jq '{id,read_only}' >/dev/null \
+      || die "clé de déploiement refusée : le jeton a-t-il le droit « Administration » sur ce dépôt ?"
+    ok "clé de déploiement ajoutée (écriture) : ${key/#$HOME/~}"
+  fi
+
+  mkdir -p "$dir"
+  [[ -d $dir/.git ]] || git -C "$dir" init -q -b main
+  if git -C "$dir" remote get-url origin >/dev/null 2>&1; then
+    git -C "$dir" remote set-url origin "$ssh_url"
+  else
+    git -C "$dir" remote add origin "$ssh_url"
+  fi
+  git -C "$dir" config core.sshCommand "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+  ok "remote origin configuré dans $dir"
+  echo "Étapes suivantes : git add -A && git commit -m \"Initial commit\" && git push -u origin main"
 }
 
 cmd_list() {
@@ -537,6 +574,12 @@ cmd_doctor() {
   for t in "${tools[@]}"; do
     if command -v "$t" >/dev/null 2>&1; then ok "$t"; else echo "✗ $t manquant"; bad=1; fi
   done
+  command -v ssh-keygen >/dev/null 2>&1 && ok "ssh-keygen" || echo "! ssh-keygen manquant (openssh-client) : requis par « kit repo create »"
+  if [[ -n "$(git config --global user.name 2>/dev/null)" && -n "$(git config --global user.email 2>/dev/null)" ]]; then
+    ok "identité git configurée"
+  else
+    echo '! identité git absente : git config --global user.name "Ton Nom" && git config --global user.email "toi@exemple.org"'
+  fi
   [[ -L $CLAUDE_HOME/CLAUDE.md ]] && ok "CLAUDE.md global lié" || { echo "✗ CLAUDE.md global non lié : kit sync"; bad=1; }
   if [[ -f $CLAUDE_HOME/settings.json ]] && jq -e '.hooks.PreToolUse | length > 0' "$CLAUDE_HOME/settings.json" >/dev/null 2>&1; then
     ok "hook anti-fuite actif"
@@ -567,6 +610,7 @@ main() {
     new-skill) cmd_new_skill "$@" ;;
     registry) regen_registry ;;
     project) cmd_project "$@" ;;
+    repo) cmd_repo "$@" ;;
     list) cmd_list ;;
     mcp) cmd_mcp "$@" ;;
     sync) cmd_sync ;;

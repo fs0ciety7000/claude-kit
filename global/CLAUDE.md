@@ -24,8 +24,8 @@ Pour toute tâche non triviale :
 - Une commande qui a besoin de secrets passe par `kit secrets run [-g] -- <commande>`. Les valeurs ne sont injectées que dans cette commande.
 - Variable manquante : dis son NOM à l'utilisateur (`kit secrets add NOM`), ne demande jamais la valeur dans le chat.
 - Ne commite jamais de secret. `.env.example` ne contient que des noms et des valeurs factices.
-- Prod : tout déploiement, toute suppression, tout changement de secret distant demande une validation explicite.
-- Session cloud (`CLAUDE_CODE_REMOTE=true`) : pas de sops ni de `kit secrets`. Les secrets sont des variables de l'environnement cloud ; même règle, n'en affiche jamais la valeur.
+- Coolify et Cloudflare : l'utilisateur a autorisé Claude à créer, modifier et déployer lui-même via `kit api` (POST, PUT, PATCH, TRIGGER), sans confirmation à chaque appel. Annonce l'action en une ligne avant de l'exécuter, puis vérifie le résultat. La suppression (DELETE) reste interdite par les réglages ; une rotation de secret ou une action hors `kit api` demande une validation explicite.
+- Session cloud (`CLAUDE_CODE_REMOTE=true`) : pas de sops ni de `kit secrets`. Les jetons sont des variables de l'environnement cloud, que `kit api` lit directement ; même règle, n'en affiche jamais la valeur.
 
 ## Qualité
 

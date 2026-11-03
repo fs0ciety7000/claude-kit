@@ -47,9 +47,11 @@ kit mcp setup                             # déclare le MCP Coolify, jeton injec
 ```
 
 - **Sauvegarde ta clé privée** (`~/.config/sops/age/keys.txt`) dans ton gestionnaire de mots de passe : sans elle, les secrets sont perdus. Ne la mets jamais dans git.
-- Par projet : `kit project init`, remplis `.env.example`, puis `kit secrets add NOM` (fichier `secrets/dev.enc.json`, commitable car chiffré). `kit secrets check` compare les deux.
+- Nouveau projet : `kit project new mon-projet && cd mon-projet && claude`, puis `/new-project "<description>"` (ajoute `--rapide` pour enchaîner sans pause). Le flux guidé passe par cadrage, stack, design (`DESIGN.md`), gabarit, déploiement Coolify + sous-domaine Cloudflare (`DEPLOY.md`), secrets, puis plan de travail. Projet existant : `kit project init`.
+- Dépôt GitHub : `kit repo create mon-projet` (dans le dossier du projet) crée le dépôt privé, une clé de déploiement propre à ce dépôt (écriture) et configure `origin`. Prérequis : `git config --global user.name/user.email` et `kit secrets add GITHUB_TOKEN -g` (droits : création de dépôts + Administration pour la clé). `/new-project` l'appelle tout seul.
+- Par projet : remplis `.env.example`, puis `kit secrets add NOM` (fichier `secrets/dev.enc.json`, commitable car chiffré). `kit secrets check` compare les deux.
 - Lancer une commande avec secrets : `kit secrets run -g -- wrangler deploy`. Les valeurs n'existent que dans ce processus.
-- Interroger Coolify ou Cloudflare en lecture : `kit api coolify /applications --jq 'map({uuid,name,status})'`. Le jeton passe à `curl` par stdin (jamais dans `ps`), le filtre `--jq` est obligatoire (la réponse brute peut contenir des variables d'environnement), seul `GET` existe. Les agents utilisent cette commande plutôt que `curl`.
+- Interroger Coolify ou Cloudflare en lecture : `kit api coolify /applications --jq 'map({uuid,name,status})'`. Le jeton passe à `curl` par stdin (jamais dans `ps`), le filtre `--jq` est obligatoire (la réponse brute peut contenir des variables d'environnement). Les écritures (`POST`, `PUT`, `PATCH`) et les actions (`TRIGGER`, qui lance un déploiement) sont autorisées sans confirmation dans `global/settings.json` ; `DELETE` est refusé. Pour redemander une confirmation, déplace les lignes `kit api … POST/PUT/PATCH/TRIGGER` de `allow` vers `ask`. Une valeur secrète dans un corps JSON s'écrit `__SECRET:NOM__`. Les agents utilisent cette commande plutôt que `curl`.
 - Jetons à portée minimale : Cloudflare par zone et par permission, GitHub fine-grained, Coolify séparé dev/prod.
 
 ## Skills et profils
@@ -102,14 +104,18 @@ git clone --depth 1 https://github.com/fs0ciety7000/claude-kit ~/claude-kit 2>/d
 - **Depuis n'importe où, téléphone compris** : sur GitHub, ouvre ton dépôt modèle `project-template`, clique sur **Use this template**, puis donne un nom. Le modèle se publie une fois depuis ta machine, et se met à jour de la même façon après une modification de `templates/project/` :
 
   ```bash
-  kit project template          # crée ou met à jour <toi>/project-template, marqué « Template repository »
+  kit project template          # crée ou met à jour <toi>/project-template et le marque comme modèle
   ```
 
-- **Depuis ta machine ou le VPS** (`gh` connecté) : une commande crée le dépôt (privé par défaut), copie le gabarit, pose les agents et skills des types donnés et pousse :
+- **Depuis ta machine ou le VPS** : le dossier, le gabarit et les agents et skills des types donnés, puis le dépôt GitHub (privé, avec sa clé de déploiement) :
 
   ```bash
-  kit project new ma-boutique nextjs-cloudflare pocketbase
+  kit project new ma-boutique nextjs-cloudflare pocketbase && cd ma-boutique
+  kit repo create ma-boutique
+  git add -A && git commit -m "Initialise le projet" && git push -u origin main
   ```
+
+Les deux passent par `GITHUB_TOKEN` (`kit secrets add GITHUB_TOKEN -g`, droits : création de dépôts + Administration).
 
 **2. Ouvrir une session** sur claude.ai/code sur ce dépôt, puis :
 
@@ -163,5 +169,5 @@ claude-kit/
 │   ├── CLAUDE.md, settings.json, settings.vps.json, skills-registry.md
 │   ├── agents/  commands/  skills/
 ├── profiles/                   listes de skills par domaine
-└── templates/project/          gabarit copié par « kit project init »
+└── templates/project/          gabarit copié par « kit project new/init »
 ```

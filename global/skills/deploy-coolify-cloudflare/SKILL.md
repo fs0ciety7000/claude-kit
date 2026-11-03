@@ -39,5 +39,15 @@ Le serveur MCP Coolify (`kit mcp setup`) permet de diagnostiquer et déployer en
 1. Tests, lint et build passent (résultats réels).
 2. Variables et secrets attendus présents (`kit secrets check`, noms seulement).
 3. Plan de retour arrière écrit.
-4. Validation explicite de l'utilisateur sur l'action exacte (environnement, commande, effet).
+4. Annonce l'action exacte en une ligne (environnement, commande, effet). Via `kit api` sur Coolify et Cloudflare, l'utilisateur a donné son accord permanent : pas d'attente. Hors `kit api` (wrangler deploy, suppression, rotation de secret), demande la validation explicite.
 5. Après : statut, URL, logs récents, et rapport honnête de ce qui a été vérifié.
+
+## Créer et déployer avec `kit api`
+Les formats de requête dépendent de la version : vérifie la référence API de l'instance (Coolify : coolify.io/docs/api-reference ; Cloudflare : developers.cloudflare.com/api) avant d'envoyer un corps JSON, et lis la réponse (`HTTP <code>`).
+
+1. **DNS (Cloudflare)** : `kit api cloudflare /zones --jq '.result | map({name,id})'`, puis vérifier que le nom est libre : `kit api cloudflare "/zones/<id>/dns_records?name=<fqdn>" --jq '.result | map({type,content,proxied})'`. Créer : `kit api cloudflare POST /zones/<id>/dns_records --json '{"type":"A","name":"<sous-domaine>","content":"<ip>","proxied":true}' --jq '.result.id'`. Le jeton doit avoir le droit DNS Edit sur la zone.
+2. **Application (Coolify)** : créer la ressource (`POST /applications/...` selon la source : dépôt public, clé de déploiement, GitHub App, Dockerfile), puis `PATCH /applications/<uuid>` pour le domaine, le port, la santé.
+3. **Variables** : `POST /applications/<uuid>/envs` avec `{"key":"NOM","value":"__SECRET:NOM__"}` ; les valeurs viennent des secrets chiffrés (`kit secrets add`), jamais du chat.
+4. **Déploiement** : `kit api coolify TRIGGER "/deploy?uuid=<uuid>" --jq '.'`, puis surveiller `GET /applications/<uuid>` jusqu'à `running:healthy`, et tester l'URL.
+5. **En cas d'échec** : lire les logs de build avant de réessayer ; ne jamais boucler sur un déploiement qui échoue.
+`DELETE` est bloqué par les réglages : la suppression se fait dans l'interface ou après que l'utilisateur a levé la règle.
