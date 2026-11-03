@@ -29,6 +29,10 @@ PROJETS
   kit project add <type>... [--dir d] [--no-skills]
         copie dans .claude/ du projet les agents et skills maison du type, installe ses profils de skills
         ex. kit project add web-frontend deploy
+  kit project new <nom|owner/nom> [type...] [--public] [--dir d] [--no-skills]
+        crée le dépôt GitHub (privé par défaut), copie le gabarit, applique les types, pousse
+        ex. kit project new ma-boutique nextjs-cloudflare pocketbase
+  kit project template [owner/nom]        publie le gabarit comme dépôt modèle GitHub (défaut : project-template)
 
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
@@ -386,6 +390,82 @@ project_add() {
   echo "Commite .claude/ : le projet retrouvera ses agents et skills à chaque session, y compris sur claude.ai/code."
 }
 
+# kit project new <nom> [type...] : dépôt GitHub créé, gabarit copié, types appliqués, premier push.
+project_new() {
+  local name="" vis=--private dir="" skills=1 types=()
+  while (($#)); do
+    case $1 in
+      --public) vis=--public ;;
+      --private) vis=--private ;;
+      --dir) dir=${2:?"dossier manquant"}; shift ;;
+      --no-skills) skills=0 ;;
+      -*) die "option inconnue : $1" ;;
+      *) if [[ -z $name ]]; then name=$1; else types+=("$1"); fi ;;
+    esac
+    shift
+  done
+  [[ -n $name ]] || die "usage : kit project new <nom|owner/nom> [type...] [--public] [--dir d] [--no-skills]"
+  [[ $name =~ ^([A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]+$ ]] || die "Nom de dépôt invalide : $name"
+  need git
+  need gh "Installe GitHub CLI (Arch : sudo pacman -S github-cli) puis gh auth login."
+  gh auth status >/dev/null 2>&1 || die "gh n'est pas connecté : lance « gh auth login » toi-même."
+  gh repo view "$name" >/dev/null 2>&1 && die "Le dépôt $name existe déjà sur GitHub."
+  dir=${dir:-$PWD/${name##*/}}
+  [[ ! -e $dir || -z "$(ls -A "$dir" 2>/dev/null)" ]] || die "$dir existe et n'est pas vide."
+  # Types vérifiés avant de créer quoi que ce soit.
+  local rows t
+  rows=$(registry_rows)
+  for t in "${types[@]}"; do
+    awk -F';' -v t="$t" '$1 == t { f = 1 } END { exit !f }' <<<"$rows" || die "Type inconnu : $t (kit project types)"
+  done
+
+  mkdir -p "$dir"
+  cp -r "$KIT_HOME/templates/project/." "$dir/"
+  git -C "$dir" init -q -b main
+  if ((${#types[@]})); then
+    local flags=(--dir "$dir")
+    ((skills)) || flags+=(--no-skills)
+    project_add "${types[@]}" "${flags[@]}"
+  fi
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m "Initialise le projet (claude-kit${types[*]:+ : ${types[*]}})"
+  gh repo create "$name" "$vis" --source "$dir" --remote origin --push
+  ok "dépôt $name créé et poussé ($dir)"
+  echo "Sur claude.ai/code : nouvelle session sur ce dépôt, puis /new-project <description> pour remplir CLAUDE.md, AGENTS.md et le squelette."
+}
+
+# kit project template [owner/nom] : publie templates/project comme dépôt modèle GitHub (« Use this template »).
+# Relançable : met à jour le dépôt existant par un commit normal, sans force push.
+project_template() {
+  local name=${1:-project-template} tmp
+  need git
+  need gh "Installe GitHub CLI puis gh auth login."
+  gh auth status >/dev/null 2>&1 || die "gh n'est pas connecté : lance « gh auth login » toi-même."
+  tmp=$(mktemp -d)
+  if gh repo view "$name" >/dev/null 2>&1; then
+    gh repo clone "$name" "$tmp" -- -q
+    cp -r "$KIT_HOME/templates/project/." "$tmp/"
+    git -C "$tmp" add -A
+    if git -C "$tmp" diff --cached --quiet; then
+      ok "$name est déjà à jour"
+    else
+      git -C "$tmp" commit -q -m "Met à jour le gabarit depuis claude-kit"
+      git -C "$tmp" push -q
+      ok "$name mis à jour"
+    fi
+  else
+    cp -r "$KIT_HOME/templates/project/." "$tmp/"
+    git -C "$tmp" init -q -b main
+    git -C "$tmp" add -A
+    git -C "$tmp" commit -q -m "Gabarit de projet claude-kit"
+    gh repo create "$name" --private --source "$tmp" --remote origin --push \
+      --description "Gabarit de projet claude-kit (Use this template, puis /new-project sur claude.ai/code)"
+    ok "$name créé"
+  fi
+  gh repo edit "$name" --template >/dev/null && ok "$name est un dépôt modèle : bouton « Use this template » sur GitHub"
+  rm -rf "$tmp"
+}
+
 cmd_project() {
   local sub=${1:-}
   shift || true
@@ -399,7 +479,9 @@ cmd_project() {
       ;;
     add) project_add "$@" ;;
     types) project_types ;;
-    *) die "usage : kit project init [dossier] | add <type>... [--dir d] [--no-skills] | types" ;;
+    new) project_new "$@" ;;
+    template) project_template "$@" ;;
+    *) die "usage : kit project init [dossier] | add <type>... | new <nom> [type...] | template [nom] | types" ;;
   esac
 }
 

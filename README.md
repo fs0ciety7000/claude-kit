@@ -95,7 +95,23 @@ git clone --depth 1 https://github.com/fs0ciety7000/claude-kit ~/claude-kit 2>/d
 
 ### Démarrer un projet
 
-Ouvre une session sur le dépôt du projet (même vide), puis :
+**Avant tout**, sur github.com/apps/claude → Configure, donne à l'app l'accès à **All repositories** : chaque nouveau dépôt sera visible par claude.ai/code sans réglage supplémentaire.
+
+**1. Créer le dépôt** (une session cloud ne peut pas créer de dépôt elle-même), au choix :
+
+- **Depuis n'importe où, téléphone compris** : sur GitHub, ouvre ton dépôt modèle `project-template`, clique sur **Use this template**, puis donne un nom. Le modèle se publie une fois depuis ta machine, et se met à jour de la même façon après une modification de `templates/project/` :
+
+  ```bash
+  kit project template          # crée ou met à jour <toi>/project-template, marqué « Template repository »
+  ```
+
+- **Depuis ta machine ou le VPS** (`gh` connecté) : une commande crée le dépôt (privé par défaut), copie le gabarit, pose les agents et skills des types donnés et pousse :
+
+  ```bash
+  kit project new ma-boutique nextjs-cloudflare pocketbase
+  ```
+
+**2. Ouvrir une session** sur claude.ai/code sur ce dépôt, puis :
 
 ```
 /new-project <description du projet>
