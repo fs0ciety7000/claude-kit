@@ -79,6 +79,35 @@ kit new-skill mon-skill "Quand et pourquoi l'utiliser"
 - `kit add-agent` refuse un fichier sans en-tête valide et te signale un agent sans ligne `tools:` (il hériterait de tous les outils, Bash compris).
 - Le contenu tiers (skill, agent, plugin) est du prompt non fiable : relis-le avant de l'activer.
 
+## claude.ai/code (sessions cloud)
+
+Chaque session cloud démarre dans un conteneur neuf : le kit s'y réinstalle à chaque fois grâce au **script de démarrage** de l'environnement (menu de l'environnement dans la barre de titre de la session → Edit → Setup script) :
+
+```bash
+git clone --depth 1 https://github.com/fs0ciety7000/claude-kit ~/claude-kit 2>/dev/null || git -C ~/claude-kit pull --ff-only
+~/claude-kit/install.sh --cloud
+```
+
+- `--cloud` accepte root (le conteneur tourne en root), saute sops et age, met `kit` dans le PATH et installe le profil global `meta` (`find-skills`). Agents, skills, commandes, `CLAUDE.md` et hook anti-fuite sont alors disponibles dans toutes les sessions de cet environnement, quel que soit le dépôt ouvert.
+- Le script clone la branche par défaut du dépôt : une modification du kit n'arrive dans les sessions qu'une fois fusionnée.
+- L'accès réseau de l'environnement doit autoriser GitHub et npm (clone du kit, `npx skills add`).
+- Secrets : pas de `kit secrets` en cloud. Mets les jetons nécessaires dans les variables de l'environnement cloud, en version dev et à portée minimale ; jamais ceux de prod.
+
+### Démarrer un projet
+
+Ouvre une session sur le dépôt du projet (même vide), puis :
+
+```
+/new-project <description du projet>
+```
+
+Claude classe le projet avec `skills-registry.md`, puis lance `kit project add <type>...` après ton accord : les agents et skills maison du type sont **copiés** dans `.claude/` du projet, et ses profils de skills sont installés au niveau projet. Le tout est commité, donc le projet retrouve ses outils aux sessions suivantes. À la main :
+
+```bash
+kit project types                         # types, profils et agents de chacun
+kit project add web-frontend deploy       # plusieurs types se combinent
+```
+
 ## VPS
 
 ```bash
@@ -107,7 +136,7 @@ git add -A && git commit && git push
 
 ```
 claude-kit/
-├── install.sh                  installateur (--vps, --deps, --no-secrets)
+├── install.sh                  installateur (--vps, --cloud, --deps, --no-secrets)
 ├── PLUGINS.md                  commandes /plugin à taper dans Claude Code
 ├── scripts/
 │   ├── kit.sh                  CLI kit
