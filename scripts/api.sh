@@ -141,4 +141,8 @@ need jq
 need curl
 if [[ -n $body ]]; then jq -e . <<<"$body" >/dev/null 2>&1 || die "--json : JSON invalide"; fi
 
+# Session cloud (install.sh --cloud) : pas de sops, les jetons sont des variables de l'environnement cloud.
+if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
+  exec "$SELF" --inner "$svc" "$method" "$path" "$filter" "$body"
+fi
 exec "$KIT_HOME/scripts/secrets.sh" run -g -- "$SELF" --inner "$svc" "$method" "$path" "$filter" "$body"

@@ -24,11 +24,17 @@ SKILLS PAR PROFIL
   kit registry                            régénère la table des profils dans skills-registry.md
 
 PROJETS
-  kit repo create <nom> [--public] [--dir dossier]
-        crée le dépôt GitHub (privé par défaut), une clé de déploiement propre au dépôt, et configure git ici
-  kit project new <dossier>               crée un dossier neuf + gabarit + git init, puis lance claude et /new-project
+  kit project new <dossier> [type...] [--no-skills]
+        crée un dossier neuf + gabarit + git init ; avec des types, y copie aussi leurs agents et skills
+        ex. kit project new ma-boutique nextjs-cloudflare pocketbase
   kit project init [dossier]              copie le gabarit dans un dossier existant (n'écrase rien)
         gabarit : CLAUDE.md, AGENTS.md, DESIGN.md, DEPLOY.md, .env.example, .gitignore, secrets/
+  kit project types                       types de projet du registre (profils et agents de chacun)
+  kit project add <type>... [--dir d] [--no-skills]
+        copie dans .claude/ du projet les agents et skills maison du type, installe ses profils de skills
+  kit project template [nom]              publie le gabarit comme dépôt modèle GitHub (défaut : project-template)
+  kit repo create <nom> [--public] [--dir dossier]
+        crée le dépôt GitHub (privé par défaut), une clé de déploiement propre au dépôt, et configure git ici
 
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
@@ -311,6 +317,110 @@ EOF
 
 # ---------- projet, listes, maintenance ----------
 
+# Lignes de la table de routage du registre : type;profils;skills;agents
+# (séparateur « ; » : une tabulation ferait disparaître les cellules vides à la lecture).
+registry_rows() {
+  awk -F'|' '
+    /^## Table de routage/ { on = 1; next }
+    /^## / { on = 0 }
+    on && /^\| `/ {
+      for (i = 2; i <= 6; i++) { gsub(/^[ \t]+|[ \t]+$/, "", $i) }
+      gsub(/`/, "", $2)
+      print $2 ";" $4 ";" $5 ";" $6
+    }
+  ' "$KIT_HOME/global/skills-registry.md"
+}
+
+# Mots entre accents graves d'une cellule (`web`, `design` -> web design).
+backticked() { grep -oE '`[a-z0-9][a-z0-9_-]*`' <<<"$1" | tr -d '`' || true; }
+
+project_types() {
+  local type profiles skills agents
+  printf '%-18s %-16s %s\n' TYPE PROFILS AGENTS
+  while IFS=';' read -r type profiles skills agents; do
+    printf '%-18s %-16s %s\n' "$type" "$(backticked "$profiles" | paste -sd, -)" "$agents"
+  done < <(registry_rows)
+}
+
+# kit project add <type>... : pose dans .claude/ du projet les agents et skills maison du type,
+# puis installe ses profils de skills au niveau projet. Tout est copié (pas de liens) pour être commité :
+# le projet garde ses outils même dans une session cloud sans le kit.
+project_add() {
+  local dir=. skills=1 types=() t
+  while (($#)); do
+    case $1 in
+      --dir) dir=${2:?"dossier manquant"}; shift ;;
+      --no-skills) skills=0 ;;
+      -*) die "option inconnue : $1" ;;
+      *) types+=("$1") ;;
+    esac
+    shift
+  done
+  ((${#types[@]})) || die "usage : kit project add <type>... [--dir d] [--no-skills]   (types : kit project types)"
+  local rows profiles=() agents=() kskills=() row p a k
+  rows=$(registry_rows)
+  for t in "${types[@]}"; do
+    row=$(awk -F';' -v t="$t" '$1 == t' <<<"$rows")
+    [[ -n $row ]] || die "Type inconnu : $t (types : $(cut -d';' -f1 <<<"$rows" | paste -sd' ' -))"
+    IFS=';' read -r _ p k a <<<"$row"
+    mapfile -t -O "${#profiles[@]}" profiles < <(backticked "$p")
+    mapfile -t -O "${#kskills[@]}" kskills < <(backticked "$k")
+    mapfile -t -O "${#agents[@]}" agents < <(tr ',' '\n' <<<"$a" | grep -oE '^[[:space:]]*[a-z0-9][a-z0-9-]*[[:space:]]*$' | xargs -n1 2>/dev/null || true)
+  done
+  mkdir -p "$dir/.claude/agents" "$dir/.claude/skills"
+  local placed=()
+  for a in $(printf '%s\n' "${agents[@]}" | sort -u); do
+    [[ -f $KIT_HOME/global/agents/$a.md ]] || continue
+    cp "$KIT_HOME/global/agents/$a.md" "$dir/.claude/agents/$a.md"
+    placed+=("agent:$a")
+  done
+  # Skills maison du kit cités par le type (pocketbase, deploy-coolify-cloudflare, secrets-handling).
+  for k in $(printf '%s\n' "${kskills[@]}" | sort -u); do
+    [[ -d $KIT_HOME/global/skills/$k ]] || continue
+    rm -rf "${dir:?}/.claude/skills/$k"
+    cp -r "$KIT_HOME/global/skills/$k" "$dir/.claude/skills/$k"
+    placed+=("skill:$k")
+  done
+  ((${#placed[@]})) && ok "copiés dans $dir/.claude : ${placed[*]}"
+  local uprof
+  uprof=$(printf '%s\n' "${profiles[@]}" | sort -u | paste -sd' ' -)
+  if [[ -z $uprof ]]; then
+    info "aucun profil de skills pour : ${types[*]}"
+  elif ((skills)); then
+    # shellcheck disable=SC2086
+    (cd "$dir" && cmd_skills install $uprof) || warn "certaines lignes ont échoué (voir ci-dessus)"
+  else
+    echo "Profils à installer ensuite : kit skills install $uprof"
+  fi
+  echo "Commite .claude/ : le projet retrouvera ses agents et skills à chaque session, y compris sur claude.ai/code."
+}
+
+# kit project template [nom] : publie templates/project comme dépôt modèle GitHub (« Use this template »).
+# Passe par kit repo create (GITHUB_TOKEN, clé de déploiement) ; relançable : met à jour par un commit normal.
+project_template() {
+  local name=${1:-project-template} tmp full
+  [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || die "nom de dépôt invalide : $name"
+  tmp=$(mktemp -d)
+  cmd_repo create "$name" --dir "$tmp" >/dev/null
+  if git -C "$tmp" ls-remote --exit-code origin main >/dev/null 2>&1; then
+    git -C "$tmp" fetch -q origin main
+    git -C "$tmp" checkout -q -B main origin/main
+  fi
+  cp -r "$KIT_HOME/templates/project/." "$tmp/"
+  git -C "$tmp" add -A
+  if git -C "$tmp" diff --cached --quiet; then
+    ok "$name est déjà à jour"
+  else
+    git -C "$tmp" commit -q -m "Gabarit de projet claude-kit"
+    git -C "$tmp" push -q -u origin main
+    ok "$name publié"
+  fi
+  full=$(git -C "$tmp" remote get-url origin | sed -E 's#^git@github\.com:##; s#\.git$##')
+  "$KIT_HOME/scripts/api.sh" github PATCH "/repos/$full" --json '{"is_template":true}' --jq '.is_template' >/dev/null \
+    && ok "$full est un dépôt modèle : bouton « Use this template » sur GitHub"
+  rm -rf "$tmp"
+}
+
 cmd_project() {
   local sub=${1:-} dir
   case $sub in
@@ -323,17 +433,28 @@ cmd_project() {
       ;;
     new)
       dir=${2:-}
-      [[ -n $dir ]] || die "usage : kit project new <dossier>"
+      [[ -n $dir && $dir != -* ]] || die "usage : kit project new <dossier> [type...] [--no-skills]"
       [[ ! -e $dir ]] || [[ -d $dir && -z "$(ls -A "$dir")" ]] || die "$dir existe déjà et n'est pas vide : utilise « kit project init $dir »"
+      local t rows
+      rows=$(registry_rows)
+      for t in "${@:3}"; do
+        [[ $t == -* ]] && continue
+        awk -F';' -v t="$t" '$1 == t { f = 1 } END { exit !f }' <<<"$rows" || die "Type inconnu : $t (kit project types)"
+      done
       mkdir -p "$dir"
       cp -rn "$KIT_HOME/templates/project/." "$dir/" 2>/dev/null
       if command -v git >/dev/null 2>&1 && [[ ! -d $dir/.git ]]; then git -C "$dir" init -q -b main; fi
+      shift 2
+      if (($#)); then project_add "$@" --dir "$dir"; fi
       ok "projet créé dans $dir (dépôt git initialisé, aucun commit)"
       echo "Étapes suivantes :"
       echo "  cd $dir && claude"
       echo "  puis : /new-project \"<description du projet>\"   (ajoute --rapide pour enchaîner sans pause)"
       ;;
-    *) die "usage : kit project new <dossier> | kit project init [dossier]" ;;
+    add) shift; project_add "$@" ;;
+    types) project_types ;;
+    template) shift; project_template "$@" ;;
+    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type>... | types | template [nom]" ;;
   esac
 }
 
@@ -377,10 +498,17 @@ cmd_repo() {
   key="$HOME/.ssh/kit_deploy_$name"
   mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
   [[ -f $key ]] || ssh-keygen -q -t ed25519 -N "" -C "kit-$host-$name" -f "$key"
-  body=$(jq -nc --arg t "kit-$host-$name" --rawfile k "$key.pub" '{title:$t,key:($k|rtrimstr("\n")),read_only:false}')
-  "$api" github POST "/repos/$full/keys" --json "$body" --jq '{id,read_only}' >/dev/null \
-    || die "clé de déploiement refusée : le jeton a-t-il le droit « Administration » sur ce dépôt ?"
-  ok "clé de déploiement ajoutée (écriture) : ${key/#$HOME/~}"
+  # Relance : la clé peut déjà être enregistrée sur le dépôt (GitHub refuserait de l'ajouter deux fois).
+  local pub
+  pub=$(awk '{print $1" "$2}' "$key.pub")
+  if "$api" github "/repos/$full/keys" --jq 'map(.key)' 2>/dev/null | grep -qF "$pub"; then
+    ok "clé de déploiement déjà enregistrée : ${key/#$HOME/~}"
+  else
+    body=$(jq -nc --arg t "kit-$host-$name" --rawfile k "$key.pub" '{title:$t,key:($k|rtrimstr("\n")),read_only:false}')
+    "$api" github POST "/repos/$full/keys" --json "$body" --jq '{id,read_only}' >/dev/null \
+      || die "clé de déploiement refusée : le jeton a-t-il le droit « Administration » sur ce dépôt ?"
+    ok "clé de déploiement ajoutée (écriture) : ${key/#$HOME/~}"
+  fi
 
   mkdir -p "$dir"
   [[ -d $dir/.git ]] || git -C "$dir" init -q -b main
@@ -440,8 +568,10 @@ cmd_update() {
 }
 
 cmd_doctor() {
-  local bad=0 t
-  for t in git node npm jq sops age claude; do
+  local bad=0 t cloud=0 tools=(git node npm jq sops age claude)
+  [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]] && cloud=1
+  ((cloud)) && tools=(git node npm jq)
+  for t in "${tools[@]}"; do
     if command -v "$t" >/dev/null 2>&1; then ok "$t"; else echo "✗ $t manquant"; bad=1; fi
   done
   command -v ssh-keygen >/dev/null 2>&1 && ok "ssh-keygen" || echo "! ssh-keygen manquant (openssh-client) : requis par « kit repo create »"
@@ -457,6 +587,11 @@ cmd_doctor() {
     echo "✗ hook anti-fuite absent de settings.json : kit sync"; bad=1
   fi
   [[ -x $KIT_CONFIG/hooks/guard-secrets.sh ]] && ok "hook installé" || { echo "✗ hook introuvable : kit sync"; bad=1; }
+  if ((cloud)); then
+    command -v kit >/dev/null 2>&1 && ok "kit dans le PATH" || { echo "✗ kit absent du PATH"; bad=1; }
+    info "profil cloud : pas de sops/age, secrets via les variables de l'environnement cloud"
+    return "$bad"
+  fi
   case ":$PATH:" in *":$HOME/.local/bin:"*) ok "\$HOME/.local/bin dans le PATH" ;; *) echo "✗ ajoute \$HOME/.local/bin à ton PATH"; bad=1 ;; esac
   "$KIT_HOME/scripts/secrets.sh" doctor || bad=1
   return "$bad"
