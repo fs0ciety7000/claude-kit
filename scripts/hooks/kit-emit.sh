@@ -106,12 +106,32 @@ send() {
   [[ $hook == SessionEnd ]] && rm -f "$STATE/$sid"
   find "$STATE" -type f -mtime +7 -delete 2>/dev/null
 
+  # Contexte utilisé : usage du dernier message de Claude dans le transcript (vue Live du dashboard).
+  # Fenêtre : 1M si le modèle l'indique ou si l'usage dépasse 200k, sinon 200k.
+  context='{}'
+  case $hook in
+    UserPromptSubmit | Stop | SubagentStop | PreCompact)
+      local tp
+      tp=$(jq -r '.transcript_path // empty' <<<"$input")
+      if [[ -n $tp && -f $tp && ! -L $tp ]]; then
+        context=$(tail -n 300 "$tp" | jq -sc '
+          [ .[] | select(.type == "assistant" and (.message.usage | type) == "object") ] | last // empty
+          | (.message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)) as $used
+          | (.message.model // "") as $m
+          | {context_tokens: $used, model: $m,
+             context_max: (if ($m | test("1m|\\[1m\\]")) or $used > 200000 then 1000000 else 200000 end)}' 2>/dev/null)
+        [[ -n $context ]] || context='{}'
+      fi
+      ;;
+  esac
+
   local tmp
   tmp=$(mktemp "${TMPDIR:-/tmp}/kit-emit.XXXXXX") || return 0
   # Masquage côté client (le serveur le refait) ; chaînes tronquées à 6 000 caractères.
   jq -c \
     --arg project "$(basename "${repo:-$cwd}")" --arg repo "$repo" --arg branch "$branch" --arg commit "$commit" \
-    --arg host "$host" --arg source "$source" --argjson memory "$memory" --argjson commits "$commits" '
+    --arg host "$host" --arg source "$source" --argjson memory "$memory" --argjson commits "$commits" \
+    --argjson context "$context" '
     def redact: if type == "string" then
         (if length > 6000 then .[0:6000] + "…" else . end)
         | gsub("sk-ant-[A-Za-z0-9_-]{10,}"; "[REDACTED]")
@@ -129,7 +149,7 @@ send() {
       elif type == "array" then .[0:200] | map(redact)
       else . end;
     { event: (. | redact),
-      meta: {project: $project, repo: $repo, branch: $branch, commit: $commit, host: $host, source: $source},
+      meta: ({project: $project, repo: $repo, branch: $branch, commit: $commit, host: $host, source: $source} + $context),
       memory: ($memory | map_values(redact)),
       commits: ($commits | map(.message |= redact)) }' <<<"$input" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
 
