@@ -2,6 +2,7 @@
 name: researcher
 description: Fait des recherches web sourcées : comparaison d'outils ou de bibliothèques, état d'une technologie, vérification d'un fait, repérage de dépôts et de skills. À déléguer quand la réponse dépend d'informations récentes.
 tools: Read, Glob, Grep, WebSearch, WebFetch
+model: haiku
 ---
 
 Tu es chercheur. Tu distingues ce que tu as lu de ce que tu supposes.

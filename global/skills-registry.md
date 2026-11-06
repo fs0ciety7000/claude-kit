@@ -25,22 +25,24 @@ Source de vérité du routage. Lis la ligne qui correspond au projet ; ne charge
 
 ## Agents (sous-agents maison)
 
-| Agent | Quand le déléguer | Accès |
-|---|---|---|
-| `ui-designer` | concevoir/refondre des écrans, tokens, hiérarchie | lecture + écriture |
-| `design-critic` | relire une UI (hiérarchie, contraste, cohérence, états) | lecture seule |
-| `android-ui-reviewer` | relire du Compose / Material 3 | lecture seule |
-| `frontend-dev` | implémenter React/Next/Tailwind | lecture + écriture + shell |
-| `backend-dev` | Go, Rust, PocketBase, API, base de données | lecture + écriture + shell |
-| `qa-tester` | écrire/lancer des tests, reproduire des bugs, vérifier | lecture + écriture + shell |
-| `brand-identity` | positionnement, logo, palette, typographies, charte | lecture + écriture + shell |
-| `game-designer` | GDD, boucles, systèmes, équilibrage, niveaux | lecture + écriture |
-| `creative-coder` | Three.js, shaders, animation, effets Godot | lecture + écriture + shell |
-| `creative-content` | scripts vidéo, posts, concepts, idées de campagnes | lecture + écriture + web |
-| `copywriter` | textes de pages, microcopie UX, FR/EN | lecture + écriture |
-| `devops` | Coolify, Cloudflare, Docker, CI, diagnostics de déploiement | lecture + écriture + shell |
-| `security-reviewer` | secrets, auth, dépendances, injection, permissions | lecture + shell |
-| `researcher` | recherche web sourcée, comparaisons | lecture + web |
+| Agent | Quand le déléguer | Accès | Modèle |
+|---|---|---|---|
+| `ui-designer` | concevoir/refondre des écrans, tokens, hiérarchie | lecture + écriture | opus |
+| `design-critic` | relire une UI (hiérarchie, contraste, cohérence, états) | lecture seule | sonnet |
+| `android-ui-reviewer` | relire du Compose / Material 3 | lecture seule | sonnet |
+| `frontend-dev` | implémenter React/Next/Tailwind | lecture + écriture + shell | sonnet |
+| `backend-dev` | Go, Rust, PocketBase, API, base de données | lecture + écriture + shell | sonnet |
+| `qa-tester` | écrire/lancer des tests, reproduire des bugs, vérifier | lecture + écriture + shell | sonnet |
+| `brand-identity` | positionnement, logo, palette, typographies, charte | lecture + écriture + shell | opus |
+| `game-designer` | GDD, boucles, systèmes, équilibrage, niveaux | lecture + écriture | opus |
+| `creative-coder` | Three.js, shaders, animation, effets Godot | lecture + écriture + shell | sonnet |
+| `creative-content` | scripts vidéo, posts, concepts, idées de campagnes | lecture + écriture + web | sonnet |
+| `copywriter` | textes de pages, microcopie UX, FR/EN | lecture + écriture | sonnet |
+| `devops` | Coolify, Cloudflare, Docker, CI, diagnostics de déploiement | lecture + écriture + shell | sonnet |
+| `security-reviewer` | secrets, auth, dépendances, injection, permissions | lecture + shell | opus |
+| `researcher` | recherche web sourcée, comparaisons | lecture + web | haiku |
+
+Le modèle de chaque agent est fixé dans son en-tête (`model:`) : opus pour la conception et la sécurité, sonnet pour le code, les tests et les textes, haiku pour la recherche. Il s'applique quel que soit le modèle de la session.
 
 ## Profils installables (généré par `kit registry`, ne pas éditer à la main)
 
