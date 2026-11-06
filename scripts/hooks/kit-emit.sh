@@ -40,8 +40,11 @@ fi
 
 # --- mode headersHelper du serveur MCP kit-control (machine locale, via kit secrets run -g) ---
 if [[ ${1:-} == --headers ]]; then
-  [[ -n ${KIT_DASH_TOKEN:-} ]] || { echo '{}'; exit 0; }
-  jq -cn --arg t "$KIT_DASH_TOKEN" '{Authorization: ("Bearer " + $t)}'
+  # X-Kit-Job (worker VPS) : rattache les autorisations et validations à la tâche, donc au projet.
+  job=${KIT_JOB_ID:-}
+  [[ $job =~ ^[0-9]+$ ]] || job=""
+  jq -cn --arg t "${KIT_DASH_TOKEN:-}" --arg j "$job" \
+    '(if $t != "" then {Authorization: ("Bearer " + $t)} else {} end) + (if $j != "" then {"X-Kit-Job": $j} else {} end)'
   exit 0
 fi
 
