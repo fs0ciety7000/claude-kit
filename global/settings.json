@@ -103,7 +103,9 @@
       "Bash(kit api github POST *)",
       "Bash(kit api github PUT *)",
       "Bash(kit api github PATCH *)",
-      "Bash(kit repo create *)"
+      "Bash(kit repo create *)",
+      "Bash(kit detect*)",
+      "Bash(kit dash status*)"
     ],
     "ask": [
       "Bash(git push --force*)",
@@ -183,6 +185,105 @@
           {
             "type": "command",
             "command": "$HOME/.config/claude-kit/hooks/guard-secrets.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
           }
         ]
       }

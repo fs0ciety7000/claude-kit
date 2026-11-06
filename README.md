@@ -54,6 +54,22 @@ kit mcp setup                             # déclare le MCP Coolify, jeton injec
 - Interroger Coolify ou Cloudflare en lecture : `kit api coolify /applications --jq 'map({uuid,name,status})'`. Le jeton passe à `curl` par stdin (jamais dans `ps`), le filtre `--jq` est obligatoire (la réponse brute peut contenir des variables d'environnement). Les écritures (`POST`, `PUT`, `PATCH`) et les actions (`TRIGGER`, qui lance un déploiement) sont autorisées sans confirmation dans `global/settings.json` ; `DELETE` est refusé. Pour redemander une confirmation, déplace les lignes `kit api … POST/PUT/PATCH/TRIGGER` de `allow` vers `ask`. Une valeur secrète dans un corps JSON s'écrit `__SECRET:NOM__`. Les agents utilisent cette commande plutôt que `curl`.
 - Jetons à portée minimale : Cloudflare par zone et par permission, GitHub fine-grained, Coolify séparé dev/prod.
 
+## Dashboard en direct (kit.fs0ciety.org)
+
+Le dépôt [`claude-kit-dashboard`](https://github.com/fs0ciety7000/claude-kit-dashboard) affiche en direct les sessions Claude Code (terminal, claude.ai/code, worker VPS) : fil d'événements, arbre des sous-agents et workflows, fichiers modifiés, commits, mémoire du projet (`.claude/memory/*.md`) et statut Coolify. Il est protégé par Cloudflare Access.
+
+Le hook `kit-emit` (installé par `kit sync`, inactif tant que rien n'est configuré) envoie chaque événement en arrière-plan, sans jamais ralentir Claude, après masquage des valeurs qui ressemblent à des secrets.
+
+```bash
+kit dash setup https://kit.fs0ciety.org     # active l'envoi
+kit secrets add KIT_DASH_TOKEN -g           # jeton affiché dans Réglages du dashboard
+kit dash status
+```
+
+Session claude.ai/code : dans l'environnement cloud, autorise l'hôte `kit.fs0ciety.org` et ajoute les variables `KIT_DASH_URL=https://kit.fs0ciety.org` et `KIT_DASH_TOKEN`.
+
+`kit detect [--json]` devine les types de projet à partir des fichiers (`global/detect-rules.tsv`) et en déduit profils, skills et agents ; `/new-project` s'en sert et note le choix dans `.claude/memory/stack.md`.
+
 ## Skills et profils
 
 ```bash
