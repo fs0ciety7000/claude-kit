@@ -5,8 +5,9 @@
 #
 # Configuration (rien = hook inactif) :
 #   KIT_DASH_URL    ou ~/.config/claude-kit/dash.url   (kit dash setup <url>)
-#   KIT_DASH_TOKEN  variable d'environnement (session cloud), sinon secret global chiffré
-#                   KIT_DASH_TOKEN injecté par `kit secrets run -g` (machine locale)
+#   KIT_DASH_TOKEN  variable d'environnement si présente ; sinon :
+#                   - session cloud : jeton injecté par le proxy (network secret de l'hôte du dashboard)
+#                   - machine locale : secret global chiffré injecté par `kit secrets run -g`
 # Données ajoutées : dépôt, branche, commit, source (cloud/terminal/vps), mémoire du projet
 # (.claude/memory/*.md) au début et à la fin de chaque tour, commits faits pendant la session.
 # Les valeurs qui ressemblent à des secrets sont masquées avant l'envoi.
@@ -19,7 +20,14 @@ STATE=${XDG_STATE_HOME:-$HOME/.local/state}/claude-kit/sessions
 # --- mode interne : POST du fichier $2 vers $3, jeton lu dans l'environnement ---
 if [[ ${1:-} == --post ]]; then
   file=$2 url=$3
-  [[ -n ${KIT_DASH_TOKEN:-} && $KIT_DASH_TOKEN != *[\"\\[:space:]]* ]] || exit 0
+  if [[ -z ${KIT_DASH_TOKEN:-} ]]; then
+    # Session cloud sans variable : le proxy de l'environnement injecte le jeton (network secret).
+    curl -sS -o /dev/null --max-time 8 -H 'Content-Type: application/json' \
+      --data-binary "@$file" "${url%/}/ingest"
+    rm -f "$file"
+    exit 0
+  fi
+  [[ $KIT_DASH_TOKEN != *[\"\\[:space:]]* ]] || exit 0
   # Le jeton passe par stdin (curl -K -), jamais dans les arguments d'un processus.
   printf 'header = "Authorization: Bearer %s"\n' "$KIT_DASH_TOKEN" |
     curl -sS -o /dev/null --max-time 8 -K - -H 'Content-Type: application/json' \
@@ -106,7 +114,7 @@ send() {
       memory: ($memory | map_values(redact)),
       commits: ($commits | map(.message |= redact)) }' <<<"$input" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
 
-  if [[ -n ${KIT_DASH_TOKEN:-} ]]; then
+  if [[ -n ${KIT_DASH_TOKEN:-} || ${CLAUDE_CODE_REMOTE:-} == true ]]; then
     "$SELF" --post "$tmp" "$url"
   elif [[ "$(cat "$CONF/profile" 2>/dev/null)" != cloud ]] && command -v kit >/dev/null 2>&1; then
     # Machine locale : le jeton vient du secret global chiffré, injecté dans ce seul processus.

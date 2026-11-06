@@ -66,7 +66,7 @@ kit secrets add KIT_DASH_TOKEN -g           # jeton affiché dans Réglages du d
 kit dash status
 ```
 
-Session claude.ai/code : dans l'environnement cloud, autorise l'hôte `kit.fs0ciety.org` et ajoute les variables `KIT_DASH_URL=https://kit.fs0ciety.org` et `KIT_DASH_TOKEN`.
+Session claude.ai/code : ajoute la variable `KIT_DASH_URL=https://kit.fs0ciety.org` à l'environnement cloud et enregistre le jeton comme *network secret* de l'hôte `kit.fs0ciety.org` (en-tête `Authorization: Bearer`) : le proxy l'injecte, il n'existe dans aucune variable.
 
 `kit detect [--json]` devine les types de projet à partir des fichiers (`global/detect-rules.tsv`) et en déduit profils, skills et agents ; `/new-project` s'en sert et note le choix dans `.claude/memory/stack.md`.
 
