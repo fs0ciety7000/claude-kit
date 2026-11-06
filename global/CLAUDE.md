@@ -37,9 +37,10 @@ Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le trav
 
 ## Mémoire projet
 
-- Si le projet a `.claude/memory/` : lis `state.md` et `decisions.md` au début de la tâche.
+- Si le projet a `docs/memory/` : lis `state.md` et `decisions.md` au début de la tâche.
 - À la fin d'une tâche, réécris `state.md` (fait, en cours, bloquant, 3 prochaines étapes) et ajoute dans `decisions.md` toute décision durable. Court : ces fichiers sont relus à chaque session et affichés dans le dashboard.
-- Projet sans `.claude/memory/` : `kit project init .` le crée (n'écrase rien).
+- Projet sans `docs/memory/` : `kit project init .` le crée (n'écrase rien).
+- Ancien projet avec `.claude/memory/` : déplace-le (`git mv .claude/memory docs/memory`). `.claude/` est protégé par Claude Code (réglages, hooks, agents) : la mémoire n'y a pas sa place.
 
 ## Qualité
 

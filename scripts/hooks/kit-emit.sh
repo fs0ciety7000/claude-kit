@@ -9,7 +9,7 @@
 #                   - session cloud : jeton injecté par le proxy (network secret de l'hôte du dashboard)
 #                   - machine locale : secret global chiffré injecté par `kit secrets run -g`
 # Données ajoutées : dépôt, branche, commit, source (cloud/terminal/vps), mémoire du projet
-# (.claude/memory/*.md) au début et à la fin de chaque tour, commits faits pendant la session.
+# (docs/memory/*.md, ou .claude/memory/ pour les anciens projets) au début et à la fin de chaque tour, commits faits pendant la session.
 # Les valeurs qui ressemblent à des secrets sont masquées avant l'envoi.
 # Au SessionStart, le hook écrit aussi le session_id dans le contexte de Claude (outils kit-control).
 # kit-emit.sh --headers : en-tête Authorization pour le serveur MCP kit-control (headersHelper).
@@ -40,8 +40,11 @@ fi
 
 # --- mode headersHelper du serveur MCP kit-control (machine locale, via kit secrets run -g) ---
 if [[ ${1:-} == --headers ]]; then
-  [[ -n ${KIT_DASH_TOKEN:-} ]] || { echo '{}'; exit 0; }
-  jq -cn --arg t "$KIT_DASH_TOKEN" '{Authorization: ("Bearer " + $t)}'
+  # X-Kit-Job (worker VPS) : rattache les autorisations et validations à la tâche, donc au projet.
+  job=${KIT_JOB_ID:-}
+  [[ $job =~ ^[0-9]+$ ]] || job=""
+  jq -cn --arg t "${KIT_DASH_TOKEN:-}" --arg j "$job" \
+    '(if $t != "" then {Authorization: ("Bearer " + $t)} else {} end) + (if $j != "" then {"X-Kit-Job": $j} else {} end)'
   exit 0
 fi
 
@@ -88,9 +91,12 @@ send() {
   commits='[]'
   case $hook in
     SessionStart | Stop | SessionEnd)
-      if [[ -d $cwd/.claude/memory ]]; then
+      # docs/memory/ (emplacement actuel), sinon .claude/memory/ (anciens projets).
+      local mdir=$cwd/docs/memory
+      [[ -d $mdir ]] || mdir=$cwd/.claude/memory
+      if [[ -d $mdir ]]; then
         local f n=0
-        for f in "$cwd"/.claude/memory/*.md; do
+        for f in "$mdir"/*.md; do
           [[ -f $f && ! -L $f ]] || continue
           ((n++ < 12)) || break
           memory=$(jq -c --arg k "$(basename "$f")" --rawfile v <(head -c 65536 "$f") '. + {($k): $v}' <<<"$memory")

@@ -56,7 +56,7 @@ kit mcp setup                             # déclare le MCP Coolify, jeton injec
 
 ## Dashboard en direct (kit.fs0ciety.org)
 
-Le dépôt [`claude-kit-dashboard`](https://github.com/fs0ciety7000/claude-kit-dashboard) affiche en direct les sessions Claude Code (terminal, claude.ai/code, worker VPS) : fil d'événements, arbre des sous-agents et workflows, fichiers modifiés, commits, mémoire du projet (`.claude/memory/*.md`) et statut Coolify. Il est protégé par Cloudflare Access.
+Le dépôt [`claude-kit-dashboard`](https://github.com/fs0ciety7000/claude-kit-dashboard) affiche en direct les sessions Claude Code (terminal, claude.ai/code, worker VPS) : fil d'événements, arbre des sous-agents et workflows, fichiers modifiés, commits, mémoire du projet (`docs/memory/*.md`) et statut Coolify. Il est protégé par Cloudflare Access.
 
 Le hook `kit-emit` (installé par `kit sync`, inactif tant que rien n'est configuré) envoie chaque événement en arrière-plan, sans jamais ralentir Claude, après masquage des valeurs qui ressemblent à des secrets.
 
@@ -70,7 +70,7 @@ Session claude.ai/code : ajoute la variable `KIT_DASH_URL=https://kit.fs0ciety.o
 
 `kit dash setup` déclare aussi le serveur MCP **kit-control** (`/mcp`) : Claude y demande les validations de phase (`checkpoint`) et pose ses questions (`ask`), auxquelles tu réponds depuis le dashboard, et tient le tableau de tâches. En local, le jeton est fourni par `headersHelper` (`kit secrets run`), jamais écrit en clair ; en cloud, `install.sh --cloud` le déclare si `KIT_DASH_URL` est défini, et le proxy injecte le jeton.
 
-`kit detect [--json]` devine les types de projet à partir des fichiers (`global/detect-rules.tsv`) et en déduit profils, skills et agents ; `/new-project` s'en sert et note le choix dans `.claude/memory/stack.md`.
+`kit detect [--json]` devine les types de projet à partir des fichiers (`global/detect-rules.tsv`) et en déduit profils, skills et agents ; `/new-project` s'en sert et note le choix dans `docs/memory/stack.md`.
 
 ## Skills et profils
 
