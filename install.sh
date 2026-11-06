@@ -77,6 +77,13 @@ if ((CLOUD)); then
   "$HERE/scripts/kit.sh" skills install -g meta >/dev/null 2>&1 \
     && ok "profil global « meta » installé" \
     || warn "profil « meta » non installé (réseau ?) : kit skills install -g meta"
+  # Dashboard : KIT_DASH_URL dans l'environnement cloud active le hook et le serveur MCP kit-control.
+  if [[ -n ${KIT_DASH_URL:-} ]]; then
+    printf '%s\n' "${KIT_DASH_URL%/}" >"$KIT_CONFIG/dash.url"
+    "$HERE/scripts/kit.sh" dash setup "${KIT_DASH_URL%/}" >/dev/null 2>&1 \
+      && ok "dashboard ${KIT_DASH_URL%/} : hook et MCP kit-control actifs" \
+      || warn "dashboard : configuration incomplète (kit dash status)"
+  fi
   cat <<'MSG'
 
 Kit installé pour cette session cloud (agents, skills, commandes, CLAUDE.md, hook anti-fuite).

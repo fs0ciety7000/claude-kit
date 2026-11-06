@@ -8,7 +8,7 @@ Démarre un nouveau projet à partir de cette description : $ARGUMENTS
 Mode : **guidé** par défaut (une phase à la fois, validation de l'utilisateur entre les phases). Si l'argument contient `--rapide`, enchaîne les phases en prenant les choix par défaut et résume les hypothèses à la fin.
 
 Règles de conduite :
-- Avant chaque phase, annonce-la en une ligne. À la fin, demande « valide / modifie ? » en une seule question.
+- Avant chaque phase, annonce-la en une ligne. À la fin, demande « valide / modifie ? » en une seule question. **Si les outils `mcp__kit-control__*` sont disponibles** (dashboard), la validation passe par `checkpoint` (phase + résumé en Markdown) et les questions par `ask` : l'utilisateur répond depuis le dashboard. Attends la réponse (`wait_for_answer` tant que `PENDING`), n'avance jamais sur une validation en attente.
 - Pose les questions d'une phase en une seule fois, 4 maximum. Ne demande pas ce qui se déduit de la description ou de `~/.claude/skills-registry.md`.
 - N'installe, ne crée et ne déploie rien sans accord. Jamais de lecture de `.env*`. Une valeur secrète n'est jamais demandée dans le chat : `kit secrets add NOM` est lancé par l'utilisateur.
 - Si le dossier courant contient déjà du code, lis-le d'abord et n'écrase rien.
@@ -65,5 +65,6 @@ Liste dans `.env.example` les noms de variables (valeurs factices). Puis :
 ## Phase 7 — Workflow et suite
 1. Remplis `.claude/memory/state.md` (fait, prochaines étapes) et `decisions.md` (choix de stack, d'hébergement). Le dashboard les affiche.
 2. Fais un premier commit propre (petits commits, un sujet par commit) et pousse-le (indispensable en session cloud).
-3. Propose le plan de travail : si Superpowers est installé, `writing-plans` à partir de `docs/brief.md`, puis exécution et revue par fonctionnalité.
-4. Termine par un résumé de 6 lignes maximum : type, stack, fichiers créés (`CLAUDE.md`, `AGENTS.md`, `DESIGN.md`, `DEPLOY.md`, `docs/brief.md`), profils et agents à utiliser, secrets à ajouter, prochaine étape.
+3. Avec kit-control : crée le plan comme tâches (`task_create`, une par étape, dans l'ordre) et valide-le par un `checkpoint`.
+4. Propose le plan de travail : si Superpowers est installé, `writing-plans` à partir de `docs/brief.md`, puis exécution et revue par fonctionnalité.
+5. Termine par un résumé de 6 lignes maximum : type, stack, fichiers créés (`CLAUDE.md`, `AGENTS.md`, `DESIGN.md`, `DEPLOY.md`, `docs/brief.md`), profils et agents à utiliser, secrets à ajouter, prochaine étape.

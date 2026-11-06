@@ -27,6 +27,14 @@ Pour toute tâche non triviale :
 - Coolify et Cloudflare : l'utilisateur a autorisé Claude à créer, modifier et déployer lui-même via `kit api` (POST, PUT, PATCH, TRIGGER), sans confirmation à chaque appel. Annonce l'action en une ligne avant de l'exécuter, puis vérifie le résultat. La suppression (DELETE) reste interdite par les réglages ; une rotation de secret ou une action hors `kit api` demande une validation explicite.
 - Session cloud (`CLAUDE_CODE_REMOTE=true`) : pas de sops ni de `kit secrets`. Les jetons sont des variables de l'environnement cloud, que `kit api` lit directement ; même règle, n'en affiche jamais la valeur.
 
+## Dashboard (kit-control)
+
+Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le travail depuis le dashboard :
+- Validation d'une phase ou d'un plan : `checkpoint` (au lieu de « valide / modifie ? » dans le chat). Sur `PENDING`, appelle `wait_for_answer` et n'avance pas. Sur `CHANGES REQUESTED`, corrige puis refais un `checkpoint`.
+- Question bloquante : `ask` (options courtes, recommandée en premier).
+- Plan de travail : `task_create` (une tâche par étape), puis `task_update` (`doing` au début, `done` à la fin, `blocked` + note si bloqué). En reprenant un projet : `task_list`.
+- Passe toujours le `session_id` donné au démarrage (« kit-control session_id=… »).
+
 ## Mémoire projet
 
 - Si le projet a `.claude/memory/` : lis `state.md` et `decisions.md` au début de la tâche.
