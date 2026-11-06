@@ -72,6 +72,10 @@ Session claude.ai/code : ajoute la variable `KIT_DASH_URL=https://kit.fs0ciety.o
 
 `kit detect [--json]` devine les types de projet à partir des fichiers (`global/detect-rules.tsv`) et en déduit profils, skills et agents ; `/new-project` s'en sert et note le choix dans `docs/memory/stack.md`.
 
+## Équiper un projet selon son domaine et sa stack
+
+`/new-project` a une phase « Équipement » : Claude extrait des mots-clés du domaine (finance, compta…) et de la stack (laravel, php…), lance `kit equip search` (skills de skills.sh triés par installations, agents des collections de `global/agent-sources.txt`), garde ce qui est utile au projet après relecture, le fait valider (outil `equip` de kit-control, avec sources de confiance), l'installe au niveau du projet (`--project`, commité dans `.claude/`) puis relance la session pour charger les nouveaux skills. Une stack absente du registre fait l'objet d'une PR automatique (`kit registry propose`) : une fois fusionnée, le projet suivant l'installe directement.
+
 ## Skills et profils
 
 ```bash

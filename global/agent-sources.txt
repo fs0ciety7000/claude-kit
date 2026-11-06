@@ -1,0 +1,4 @@
+# Collections d'agents Claude Code où `kit equip search` cherche (owner/repo). Contenu tiers :
+# chaque agent proposé est relu avant installation. Vérifiées en novembre 2026 (licence MIT, maintenues).
+wshobson/agents
+VoltAgent/awesome-claude-code-subagents

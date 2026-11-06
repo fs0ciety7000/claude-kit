@@ -49,6 +49,15 @@ API COOLIFY / CLOUDFLARE / GITHUB (jeton jamais visible dans `ps`)
         ex. kit api coolify /applications --jq 'map({uuid,name,status})'
         DELETE est bloqué par les réglages (permissions.deny)
 
+ÉQUIPER UN PROJET (skills et agents selon le domaine et la stack)
+  kit equip search <mot-clé>... [--max n]
+        cherche des skills (npx skills find, skills.sh) et des agents (collections de global/agent-sources.txt)
+        pour chaque mot-clé (domaine : finance, compta… ; stack : laravel, php…) ; sortie JSON triée par popularité
+        installer ensuite : kit add-skill <owner/repo> --skill <nom> --project ; kit add-agent gh:<owner/repo/chemin.md> --project
+  kit registry propose <fichier.json>
+        ouvre une PR sur claude-kit qui ajoute une stack au registre (ligne de routage, profil de skills, détection)
+        JSON : {"type","detection","profile","skills":[{"source","skill"}],"load":[...],"agents":[...],"detect":[{"kind":"file|pkg","pattern"}]}
+
 DASHBOARD (vue en direct des sessions, agents, mémoire : claude-kit-dashboard)
   kit dash setup <url>                    active le hook kit-emit et le serveur MCP kit-control (ex. https://kit.fs0ciety.org)
         jeton : kit secrets add KIT_DASH_TOKEN -g (local) ; variable KIT_DASH_TOKEN (session cloud)
@@ -149,11 +158,11 @@ regen_registry() {
 }
 
 cmd_add_skill() {
-  local source="" names=() profile=custom global=1 collecting=0
+  local source="" names=() profile=custom global=1 collecting=0 profile_set=0
   while (($#)); do
     case $1 in
       --skill|-s) collecting=1 ;;
-      --profile|-p) profile=${2:?"nom de profil manquant"}; shift; collecting=0 ;;
+      --profile|-p) profile=${2:?"nom de profil manquant"}; profile_set=1; shift; collecting=0 ;;
       --project) global=0; collecting=0 ;;
       -g|--global) global=1; collecting=0 ;;
       -*) die "option inconnue : $1" ;;
@@ -172,6 +181,11 @@ cmd_add_skill() {
   local line=$source
   if ((${#names[@]})); then line+=" --skill ${names[*]}"; fi
   install_line "$line" "$global" || die "Installation échouée. Vérifie la source et les noms (npx skills add $source -l)."
+  # Installation de projet : le kit n'est pas modifié (l'apprentissage passe par « kit registry propose »).
+  if ((!global && !profile_set)); then
+    ok "installé dans le projet ($line). Relis le SKILL.md (contenu tiers) et commite .claude/."
+    return 0
+  fi
   local pf="$KIT_HOME/profiles/$profile.txt"
   touch "$pf"
   if grep -qxF "$line" "$pf"; then
@@ -506,6 +520,97 @@ dash_mcp() {
   fi
 }
 
+# ---------- équipement : recherche de skills et d'agents ----------
+
+# kit equip search <mot-clé>... : JSON {skills:[...], agents:[...]} (contenu tiers : à relire avant installation)
+cmd_equip() {
+  local sub=${1:-}
+  shift || true
+  [[ $sub == search ]] || die "usage : kit equip search <mot-clé>... [--max n]"
+  local max=5 kws=() kw
+  while (($#)); do
+    case $1 in
+      --max) max=${2:?}; shift ;;
+      -*) die "option inconnue : $1" ;;
+      *) kws+=("$1") ;;
+    esac
+    shift
+  done
+  ((${#kws[@]})) || die "usage : kit equip search <mot-clé>... [--max n]"
+  [[ $max =~ ^[0-9]+$ ]] || die "--max : nombre attendu"
+  need jq
+  local skills='[]' agents='[]' out repo q
+  for kw in "${kws[@]}"; do
+    kw=$(tr 'A-Z' 'a-z' <<<"$kw")
+    [[ $kw =~ ^[a-z0-9][a-z0-9.+_-]{0,40}$ ]] || { warn "mot-clé ignoré : $kw"; continue; }
+    # Skills : sortie texte de « npx skills find » → owner/repo@skill  N installs
+    out=$(timeout 90 npx --yes skills find "$kw" </dev/null 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' || true)
+    skills=$(jq -c --arg kw "$kw" --argjson max "$max" --argjson acc "$skills" -Rn '
+      [inputs | capture("^(?<source>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@(?<skill>[A-Za-z0-9_.:-]+)\\s+(?<n>[0-9.]+)(?<k>[KM]?) installs") ]
+      | map({keyword: $kw, source, skill,
+             installs: ((.n | tonumber) * (if .k == "K" then 1000 elif .k == "M" then 1000000 else 1 end) | floor),
+             url: ("https://skills.sh/" + .source + "/" + .skill)})
+      | sort_by(-.installs) | .[0:$max] | $acc + .' <<<"$out")
+    # Agents : recherche de code GitHub dans les collections de confiance.
+    while read -r repo; do
+      [[ -z $repo || $repo == \#* ]] && continue
+      q="$kw+repo:$repo+extension:md"
+      out=$("$KIT_HOME/scripts/api.sh" github "/search/code?q=$q&per_page=20" \
+        --jq '[.items[]? | .path | select(test("README|readme|CHANGELOG|CONTRIBUTING|LICENSE") | not)]' 2>/dev/null || echo '[]')
+      agents=$(jq -c --arg kw "$kw" --arg repo "$repo" --argjson max "$max" --argjson acc "$agents" '
+        map({keyword: $kw, source: $repo, path: ., name: (split("/") | last | sub("\\.md$"; "")),
+             install: ("gh:" + $repo + "/" + .)}) | .[0:$max] | $acc + .' <<<"${out:-[]}" 2>/dev/null || echo "$agents")
+    done <"$KIT_HOME/global/agent-sources.txt"
+  done
+  jq -n --argjson s "$skills" --argjson a "$agents" '{skills: ($s | unique_by(.source + "@" + .skill) | sort_by(-.installs)), agents: ($a | unique_by(.install))}'
+}
+
+# kit registry propose <fichier.json> : PR sur claude-kit qui ajoute une stack au registre.
+registry_propose() {
+  local f=${1:-}
+  [[ -f $f ]] || die "usage : kit registry propose <fichier.json>"
+  need jq
+  jq -e '
+    (.type | test("^[a-z0-9][a-z0-9-]{1,30}$")) and (.profile | test("^[a-z0-9][a-z0-9_-]{1,30}$")) and
+    ((.detection // "") | type == "string") and
+    ((.skills // []) | all(.source | test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))) and
+    ((.skills // []) | all(.skill | test("^[A-Za-z0-9_.:-]+$"))) and
+    ((.agents // []) | all(test("^[a-z0-9][a-z0-9-]*$"))) and
+    ((.detect // []) | all((.kind == "file" or .kind == "pkg") and (.pattern | type == "string") and (.pattern | test("[\t\n]") | not)))
+  ' "$f" >/dev/null || die "JSON invalide (voir : kit help, section ÉQUIPER UN PROJET)"
+  local type profile remote full branch wt
+  type=$(jq -r .type "$f"); profile=$(jq -r .profile "$f")
+  remote=$(git -C "$KIT_HOME" remote get-url origin)
+  full=$(sed -E 's#\.git$##; s#^.*[:/]([^/:]+/[^/:]+)$#\1#' <<<"$remote")
+  [[ $full == */* ]] || die "dépôt du kit introuvable (origin : $remote)"
+  branch="kit/registry-$type"
+  wt=$(mktemp -d)
+  git -C "$KIT_HOME" fetch -q origin main || die "git fetch impossible"
+  git -C "$KIT_HOME" worktree add -q -B "$branch" "$wt" origin/main || die "worktree impossible"
+  (
+    set -e
+    cd "$wt"
+    jq -r '(.skills // []) | group_by(.source)[] | "\(.[0].source) --skill \(map(.skill) | join(" "))"' "$f" >>"profiles/$profile.txt"
+    sort -u -o "profiles/$profile.txt" "profiles/$profile.txt"
+    row=$(jq -r '"| `\(.type)` | \(.detection // "") | `\(.profile)` | \((.load // (.skills // [] | map(.skill))) | map("`" + . + "`") | join(", ")) | \((.agents // []) | join(", ")) |"' "$f")
+    if grep -q "^| \`$type\` |" global/skills-registry.md; then
+      echo "type déjà présent dans le registre : $type" >&2; exit 3
+    fi
+    awk -v row="$row" '/^\| `autre` \|/ && !done { print row; done = 1 } { print }' global/skills-registry.md >reg.tmp && mv reg.tmp global/skills-registry.md
+    jq -r --arg t "$type" '(.detect // [])[] | "\($t)\t\(.kind)\t\(.pattern)"' "$f" >>global/detect-rules.tsv
+    git add -A
+    git commit -q -m "Registre : stack $type (profil $profile)"
+    git push -q -u origin "$branch" --force-with-lease
+  ) || { git -C "$KIT_HOME" worktree remove --force "$wt" >/dev/null 2>&1; die "proposition interrompue (voir ci-dessus)"; }
+  git -C "$KIT_HOME" worktree remove --force "$wt" >/dev/null 2>&1 || true
+  local body
+  body=$(jq -n --arg t "$type" --arg p "$profile" --slurpfile s "$f" '{
+    title: ("Registre : stack " + $t),
+    head: ("kit/registry-" + $t), base: "main",
+    body: ("Proposé automatiquement par `kit registry propose` après un projet qui utilisait cette stack.\n\n- Type : `" + $t + "`\n- Profil : `" + $p + "`\n- Skills : " + (($s[0].skills // []) | map("`" + .source + "@" + .skill + "`") | join(", ")) + "\n- Agents : " + (($s[0].agents // []) | join(", ")) + "\n\nRelis les skills tiers avant de fusionner.")}')
+  "$KIT_HOME/scripts/api.sh" github POST "/repos/$full/pulls" --json "$body" --jq '{number, html_url}'
+}
+
 # kit dash : branche le hook kit-emit sur le dashboard.
 cmd_dash() {
   local sub=${1:-status} url
@@ -730,8 +835,9 @@ main() {
     add-agent) cmd_add_agent "$@" ;;
     new-agent) cmd_new_agent "$@" ;;
     new-skill) cmd_new_skill "$@" ;;
-    registry) regen_registry ;;
+    registry) if [[ ${1:-} == propose ]]; then shift; registry_propose "$@"; else regen_registry; fi ;;
     project) cmd_project "$@" ;;
+    equip) cmd_equip "$@" ;;
     detect) cmd_detect "$@" ;;
     dash) cmd_dash "$@" ;;
     repo) cmd_repo "$@" ;;

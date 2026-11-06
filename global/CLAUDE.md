@@ -15,7 +15,7 @@ Pour toute tâche non triviale :
 1. Lis `~/.claude/skills-registry.md` et identifie le type de projet.
 2. Charge **seulement** les skills de ce type (outil Skill). Pas tous : moins de contexte, meilleures réponses.
 3. Délègue aux sous-agents adaptés (table « Agents » du registre) plutôt que de tout faire toi-même.
-4. Aucun skill ne correspond : cherche avec `find-skills`, propose, installe avec `kit add-skill` après accord.
+4. Domaine métier ou stack non couverts par le registre : `kit equip search <mots-clés>` (domaine + stack), sélectionne, fais valider (`equip` de kit-control, sinon une question), installe au niveau du projet (`kit add-skill … --project`, `kit add-agent … --project`). Nouvelle stack : `kit registry propose` pour l'ajouter au kit.
 5. Fonctionnalité nouvelle : brainstorming → plan → exécution → revue (skills Superpowers si installés).
 
 ## Secrets : règles strictes

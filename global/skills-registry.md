@@ -52,5 +52,5 @@ Source de vérité du routage. Lis la ligne qui correspond au projet ; ne charge
 1. **Toujours actifs** : `writing-for-agents` dès qu'on écrit un fichier destiné à un agent ; Superpowers pour le workflow.
 2. **Combiner** quand le projet mélange plusieurs types (ex. Shopify + backend Go : profils `shopify` + `go`).
 3. **Ne pas tout charger** : un skill par besoin réel.
-4. **Skill manquant** : `find-skills`, présenter 3 candidats max (source, étoiles, licence), installer après accord avec `kit add-skill`, puis ajouter une ligne de routage ci-dessus.
+4. **Skill ou agent manquant** (domaine métier, stack absente) : `kit equip search <mots-clés>`, sélection relue, validation (`equip` de kit-control), installation au niveau du projet. Stack nouvelle : `kit registry propose <fichier.json>` ouvre la PR qui ajoute sa ligne ici.
 5. **Noms de skills** : vérifiés en novembre 2026 avec `npx skills add <source> -l`, sauf `compose-pro` (dépôt non clonable lors du test). Les dépôts évoluent : si une installation échoue, relance `-l`, corrige la ligne du profil et `kit registry`.
