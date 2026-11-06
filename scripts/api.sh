@@ -54,6 +54,8 @@ if [[ ${1:-} == --inner ]]; then
     exit 1
   fi
   [[ $method == TRIGGER ]] && http=GET || http=$method
+  # Coolify (v4 récent) : /deploy n'accepte plus que POST.
+  if [[ $method == TRIGGER && $svc == coolify && $path =~ ^/deploy([/?]|$) ]]; then http=POST; fi
   accept=${accept:-application/json}
   extra=${extra:-}
 
