@@ -20,7 +20,7 @@ Objectif, public, fonctionnalités indispensables (3 à 5), ce qui est hors pér
 ## Phase 2 — Type et stack
 1. Lance `kit detect --json` (indices tirés des fichiers et des dépendances), puis classe le projet avec la table de routage de `~/.claude/skills-registry.md` en t'appuyant sur ce résultat et sur la description (plusieurs types possibles ; dossier vide : la description seule décide). Sans correspondance : `find-skills`.
 2. Propose **deux options de stack** (une recommandée, une alternative), chacune avec : composants (front, back, base, auth, stockage), avantages, coût de maintenance, risque principal. Par défaut, privilégie la stack que l'utilisateur utilise déjà (Go, Rust, Next.js, React, PocketBase, Godot, Three.js, Shopify) plutôt qu'une nouveauté.
-3. Écris le choix validé dans `.claude/memory/stack.md` (types, stack, profils, agents).
+3. Écris le choix validé dans `docs/memory/stack.md` (types, stack, profils, agents).
 4. Après choix, liste les profils de skills et agents recommandés, puis après accord : `kit project add <type>...`. La commande copie les agents et skills maison du type dans `.claude/` du projet (commitable, donc retrouvés à chaque session, y compris en cloud) et installe ses profils de skills au niveau projet. Si `.claude/agents/` est déjà rempli (projet créé par `kit project new <dossier> <type>...`), ne la relance que pour un type en plus.
 
 ## Phase 3 — Gabarit et instructions
@@ -63,7 +63,7 @@ Liste dans `.env.example` les noms de variables (valeurs factices). Puis :
 - en session cloud : indique-lui les noms à ajouter dans les variables de l'environnement cloud (jetons de dev, portée minimale). `kit api` les y lit directement.
 
 ## Phase 7 — Workflow et suite
-1. Remplis `.claude/memory/state.md` (fait, prochaines étapes) et `decisions.md` (choix de stack, d'hébergement). Le dashboard les affiche.
+1. Remplis `docs/memory/state.md` (fait, prochaines étapes) et `decisions.md` (choix de stack, d'hébergement). Le dashboard les affiche.
 2. Fais un premier commit propre (petits commits, un sujet par commit) et pousse-le (indispensable en session cloud).
 3. Avec kit-control : crée le plan comme tâches (`task_create`, une par étape, dans l'ordre) et valide-le par un `checkpoint`.
 4. Propose le plan de travail : si Superpowers est installé, `writing-plans` à partir de `docs/brief.md`, puis exécution et revue par fonctionnalité.

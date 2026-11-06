@@ -9,7 +9,7 @@
 #                   - session cloud : jeton injecté par le proxy (network secret de l'hôte du dashboard)
 #                   - machine locale : secret global chiffré injecté par `kit secrets run -g`
 # Données ajoutées : dépôt, branche, commit, source (cloud/terminal/vps), mémoire du projet
-# (.claude/memory/*.md) au début et à la fin de chaque tour, commits faits pendant la session.
+# (docs/memory/*.md, ou .claude/memory/ pour les anciens projets) au début et à la fin de chaque tour, commits faits pendant la session.
 # Les valeurs qui ressemblent à des secrets sont masquées avant l'envoi.
 # Au SessionStart, le hook écrit aussi le session_id dans le contexte de Claude (outils kit-control).
 # kit-emit.sh --headers : en-tête Authorization pour le serveur MCP kit-control (headersHelper).
@@ -88,9 +88,12 @@ send() {
   commits='[]'
   case $hook in
     SessionStart | Stop | SessionEnd)
-      if [[ -d $cwd/.claude/memory ]]; then
+      # docs/memory/ (emplacement actuel), sinon .claude/memory/ (anciens projets).
+      local mdir=$cwd/docs/memory
+      [[ -d $mdir ]] || mdir=$cwd/.claude/memory
+      if [[ -d $mdir ]]; then
         local f n=0
-        for f in "$cwd"/.claude/memory/*.md; do
+        for f in "$mdir"/*.md; do
           [[ -f $f && ! -L $f ]] || continue
           ((n++ < 12)) || break
           memory=$(jq -c --arg k "$(basename "$f")" --rawfile v <(head -c 65536 "$f") '. + {($k): $v}' <<<"$memory")
