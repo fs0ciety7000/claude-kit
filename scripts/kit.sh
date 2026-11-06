@@ -488,7 +488,11 @@ cmd_detect() {
 dash_mcp() {
   local url=$1 conf
   command -v claude >/dev/null 2>&1 || { warn "claude introuvable : serveur MCP kit-control non déclaré"; return 0; }
-  if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
+  if [[ -n ${KIT_DASH_TOKEN:-} ]]; then
+    # Jeton présent dans l'environnement (worker VPS) : le helper le lit à chaque connexion.
+    conf=$(jq -cn --arg u "$url/mcp" --arg h "$KIT_CONFIG/hooks/kit-emit.sh --headers" \
+      '{type: "http", url: $u, headersHelper: $h}')
+  elif [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
     conf=$(jq -cn --arg u "$url/mcp" '{type: "http", url: $u}')
   else
     conf=$(jq -cn --arg u "$url/mcp" --arg h "kit secrets run -g -- $KIT_CONFIG/hooks/kit-emit.sh --headers" \
