@@ -55,10 +55,11 @@ link_global() {
   link_file "$KIT_HOME/global/CLAUDE.md"          "$CLAUDE_HOME/CLAUDE.md"
   link_file "$KIT_HOME/global/skills-registry.md" "$CLAUDE_HOME/skills-registry.md"
   ln -sfn "$KIT_HOME/scripts/hooks/guard-secrets.sh" "$KIT_CONFIG/hooks/guard-secrets.sh"
+  ln -sfn "$KIT_HOME/scripts/hooks/kit-emit.sh" "$KIT_CONFIG/hooks/kit-emit.sh"
 }
 
 # merge_settings <fichier-existant> <réglages-kit> <current|kit>
-# Fusionne en union les listes allow/ask/deny et les hooks PreToolUse.
+# Fusionne en union les listes allow/ask/deny et les hooks de chaque événement.
 # "current" : les valeurs scalaires existantes gagnent ; "kit" : celles du kit gagnent.
 merge_settings() {
   local cur=$1 kit=$2 winner=${3:-current} out base created=0
@@ -78,8 +79,8 @@ merge_settings() {
     | .permissions.allow = ((($cur.permissions.allow // []) + ($kit.permissions.allow // [])) | unique)
     | .permissions.ask   = ((($cur.permissions.ask   // []) + ($kit.permissions.ask   // [])) | unique)
     | .permissions.deny  = ((($cur.permissions.deny  // []) + ($kit.permissions.deny  // [])) | unique)
-    | (($cur.hooks.PreToolUse // []) + ($kit.hooks.PreToolUse // [])) as $h
-    | if ($h | length) > 0 then .hooks.PreToolUse = ($h | unique) else . end
+    | reduce ((($cur.hooks // {}) + ($kit.hooks // {})) | keys[]) as $e (.;
+        .hooks[$e] = ((($cur.hooks[$e] // []) + ($kit.hooks[$e] // [])) | unique))
   ' "$base" "$kit"); then
     if ((created)); then rm -f "$base"; fi
     die "fusion des réglages échouée"

@@ -27,6 +27,8 @@ if [[ ${1:-} == --inner ]]; then
   svc=$1 method=$2 path=$3 filter=$4 body=$5
   case $svc in
     coolify)
+      COOLIFY_BASE_URL=${COOLIFY_BASE_URL:-${COOLIFY_API_URL:-}}
+      COOLIFY_ACCESS_TOKEN=${COOLIFY_ACCESS_TOKEN:-${COOLIFY_API_TOKEN:-}}
       : "${COOLIFY_BASE_URL:?COOLIFY_BASE_URL manquant (kit secrets add COOLIFY_BASE_URL -g)}"
       : "${COOLIFY_ACCESS_TOKEN:?COOLIFY_ACCESS_TOKEN manquant (kit secrets add COOLIFY_ACCESS_TOKEN -g)}"
       base="${COOLIFY_BASE_URL%/}/api/v1"
@@ -52,6 +54,8 @@ if [[ ${1:-} == --inner ]]; then
     exit 1
   fi
   [[ $method == TRIGGER ]] && http=GET || http=$method
+  # Coolify (v4 récent) : /deploy n'accepte plus que POST.
+  if [[ $method == TRIGGER && $svc == coolify && $path =~ ^/deploy([/?]|$) ]]; then http=POST; fi
   accept=${accept:-application/json}
   extra=${extra:-}
 

@@ -1,0 +1,16 @@
+# kit detect : type de projet (table de routage du registre) <TAB> genre <TAB> motif
+# genre file : nom de fichier ou dossier cherché jusqu'à 3 niveaux (motif find -name, alternatives séparées par |)
+# genre pkg  : dépendance de package.json (regex étendue sur le nom)
+web-frontend	pkg	^(react|next|vue|nuxt|svelte|@sveltejs/kit|astro|solid-js|tailwindcss)$
+nextjs-cloudflare	file	wrangler.toml|wrangler.json|wrangler.jsonc|open-next.config.ts
+nextjs-cloudflare	pkg	^(@opennextjs/cloudflare|wrangler)$
+android	file	build.gradle.kts|AndroidManifest.xml
+shopify	file	shopify.app.toml|shopify.theme.toml|*.liquid
+gamedev-godot	file	project.godot
+threejs-3d	pkg	^(three|@react-three/fiber|@react-three/drei)$
+motion	pkg	^(gsap|framer-motion|motion|lottie-web|lottie-react)$
+backend-go	file	go.mod
+backend-rust	file	Cargo.toml
+pocketbase	file	pb_migrations|pb_hooks|pb_data
+pocketbase	pkg	^pocketbase$
+deploy	file	Dockerfile|docker-compose.yml|docker-compose.yaml|compose.yaml|DEPLOY.md

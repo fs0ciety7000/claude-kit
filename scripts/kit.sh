@@ -33,6 +33,8 @@ PROJETS
   kit project add <type>... [--dir d] [--no-skills]
         copie dans .claude/ du projet les agents et skills maison du type, installe ses profils de skills
   kit project template [nom]              publie le gabarit comme dépôt modèle GitHub (défaut : project-template)
+  kit detect [dossier] [--json]           devine les types de projet (fichiers, dépendances) et en déduit
+        profils, skills et agents du registre ; Claude valide ensuite (voir /new-project)
   kit repo create <nom> [--public] [--dir dossier]
         crée le dépôt GitHub (privé par défaut), une clé de déploiement propre au dépôt, et configure git ici
 
@@ -46,6 +48,12 @@ API COOLIFY / CLOUDFLARE / GITHUB (jeton jamais visible dans `ps`)
         "__SECRET:NOM__" dans le corps JSON = valeur du secret chiffré NOM, jamais visible
         ex. kit api coolify /applications --jq 'map({uuid,name,status})'
         DELETE est bloqué par les réglages (permissions.deny)
+
+DASHBOARD (vue en direct des sessions, agents, mémoire : claude-kit-dashboard)
+  kit dash setup <url>                    active le hook kit-emit vers ce dashboard (ex. https://kit.fs0ciety.org)
+        jeton : kit secrets add KIT_DASH_TOKEN -g (local) ; variable KIT_DASH_TOKEN (session cloud)
+  kit dash status                         configuration et joignabilité du dashboard
+  kit dash off                            désactive l'envoi
 
 INFOS & MAINTENANCE
   kit list                                agents, skills et profils disponibles
@@ -421,6 +429,93 @@ project_template() {
   rm -rf "$tmp"
 }
 
+# kit detect : types de projet à partir des fichiers (global/detect-rules.tsv) + registre.
+cmd_detect() {
+  local dir=. json=0 a
+  for a in "$@"; do case $a in --json) json=1 ;; -*) die "option inconnue : $a" ;; *) dir=$a ;; esac; done
+  [[ -d $dir ]] || die "dossier introuvable : $dir"
+  local deps="" type kind pat hits=() ev=() names=() n f found
+  if [[ -f $dir/package.json ]]; then
+    deps=$(jq -r '((.dependencies // {}) + (.devDependencies // {})) | keys[]' "$dir/package.json" 2>/dev/null || true)
+  fi
+  while IFS=$'\t' read -r type kind pat; do
+    [[ -z $type || $type == \#* ]] && continue
+    found=""
+    case $kind in
+      file)
+        IFS='|' read -ra names <<<"$pat"
+        for n in "${names[@]}"; do
+          f=$(find "$dir" -maxdepth 3 \( -name node_modules -o -name .git -o -name vendor -o -name target \) -prune -o -name "$n" -print -quit 2>/dev/null)
+          [[ -n $f ]] && { found=${f#"$dir"/}; break; }
+        done ;;
+      pkg) found=$(grep -E "$pat" <<<"$deps" | head -1 || true); [[ -n $found ]] && found="package.json: $found" ;;
+    esac
+    [[ -n $found ]] && { hits+=("$type"); ev+=("$type;$found"); }
+  done <"$KIT_HOME/global/detect-rules.tsv"
+  local rows; rows=$(registry_rows)
+  local utypes; utypes=$(printf '%s\n' "${hits[@]}" | awk 'NF && !s[$0]++')
+  [[ -n $utypes ]] || utypes=autre
+  if ((json)); then
+    local t row p k ag out='[]'
+    while read -r t; do
+      row=$(awk -F';' -v t="$t" '$1 == t' <<<"$rows")
+      IFS=';' read -r _ p k ag <<<"$row"
+      out=$(jq -c --arg t "$t" --arg p "$p" --arg k "$k" --arg a "$ag" \
+        --argjson ev "$(printf '%s\n' "${ev[@]}" | awk -F';' -v t="$t" '$1 == t { print $2 }' | jq -R . | jq -sc .)" \
+        '. + [{type: $t, evidence: $ev,
+               profiles: [$p | scan("`([a-z0-9_-]+)`") | .[0]],
+               skills: [$k | scan("`([a-z0-9_-]+)`") | .[0]],
+               agents: [$a | split(",")[] | gsub("^\\s+|\\s+$"; "") | select(test("^[a-z0-9-]+$"))]}]' <<<"$out")
+    done <<<"$utypes"
+    jq . <<<"$out"
+    return
+  fi
+  local t row p k ag e
+  while read -r t; do
+    row=$(awk -F';' -v t="$t" '$1 == t' <<<"$rows")
+    IFS=';' read -r _ p k ag <<<"$row"
+    echo "■ $t"
+    for e in "${ev[@]}"; do [[ ${e%%;*} == "$t" ]] && echo "    indice  : ${e#*;}"; done
+    echo "    profils : $(backticked "$p" | paste -sd' ' -)"
+    echo "    skills  : $(backticked "$k" | paste -sd' ' -)"
+    echo "    agents  : $ag"
+  done <<<"$utypes"
+  echo "Appliquer : kit project add $(paste -sd' ' - <<<"$utypes")"
+}
+
+# kit dash : branche le hook kit-emit sur le dashboard.
+cmd_dash() {
+  local sub=${1:-status} url
+  case $sub in
+    setup)
+      url=${2:-}
+      [[ $url =~ ^https?://[A-Za-z0-9.:-]+/?$ ]] || die "usage : kit dash setup https://kit.example.org"
+      mkdir -p "$KIT_CONFIG"
+      printf '%s\n' "${url%/}" >"$KIT_CONFIG/dash.url"
+      link_global
+      apply_settings
+      ok "hook kit-emit actif vers ${url%/}"
+      if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
+        echo "Session cloud : ajoute KIT_DASH_URL, KIT_DASH_TOKEN et l'hôte $(sed -E 's#https?://##; s#/.*##' <<<"$url") à l'environnement."
+      else
+        echo "Jeton (copie-le depuis ${url%/}/#/settings) : kit secrets add KIT_DASH_TOKEN -g"
+      fi
+      cmd_dash status
+      ;;
+    status)
+      url=${KIT_DASH_URL:-$(cat "$KIT_CONFIG/dash.url" 2>/dev/null || true)}
+      [[ -n $url ]] || { info "dashboard non configuré (kit dash setup <url>)"; return 0; }
+      info "dashboard : $url"
+      local code
+      code=$(curl -s -o /dev/null --max-time 8 -w '%{http_code}' "$url/health" || echo 000)
+      [[ $code == 200 ]] && ok "joignable (/health $code)" || warn "/health répond $code (Access, réseau ou app arrêtée ?)"
+      [[ -x $KIT_CONFIG/hooks/kit-emit.sh ]] && ok "hook installé" || warn "hook absent : kit sync"
+      ;;
+    off) rm -f "$KIT_CONFIG/dash.url"; ok "envoi désactivé (KIT_DASH_URL dans l'environnement reste prioritaire)" ;;
+    *) die "usage : kit dash setup <url> | status | off" ;;
+  esac
+}
+
 cmd_project() {
   local sub=${1:-} dir
   case $sub in
@@ -610,6 +705,8 @@ main() {
     new-skill) cmd_new_skill "$@" ;;
     registry) regen_registry ;;
     project) cmd_project "$@" ;;
+    detect) cmd_detect "$@" ;;
+    dash) cmd_dash "$@" ;;
     repo) cmd_repo "$@" ;;
     list) cmd_list ;;
     mcp) cmd_mcp "$@" ;;

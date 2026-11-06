@@ -27,6 +27,12 @@ Pour toute tâche non triviale :
 - Coolify et Cloudflare : l'utilisateur a autorisé Claude à créer, modifier et déployer lui-même via `kit api` (POST, PUT, PATCH, TRIGGER), sans confirmation à chaque appel. Annonce l'action en une ligne avant de l'exécuter, puis vérifie le résultat. La suppression (DELETE) reste interdite par les réglages ; une rotation de secret ou une action hors `kit api` demande une validation explicite.
 - Session cloud (`CLAUDE_CODE_REMOTE=true`) : pas de sops ni de `kit secrets`. Les jetons sont des variables de l'environnement cloud, que `kit api` lit directement ; même règle, n'en affiche jamais la valeur.
 
+## Mémoire projet
+
+- Si le projet a `.claude/memory/` : lis `state.md` et `decisions.md` au début de la tâche.
+- À la fin d'une tâche, réécris `state.md` (fait, en cours, bloquant, 3 prochaines étapes) et ajoute dans `decisions.md` toute décision durable. Court : ces fichiers sont relus à chaque session et affichés dans le dashboard.
+- Projet sans `.claude/memory/` : `kit project init .` le crée (n'écrase rien).
+
 ## Qualité
 
 - Lis avant d'écrire ; plus petit changement qui résout le problème ; suis le style existant.
