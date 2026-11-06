@@ -105,7 +105,13 @@
       "Bash(kit api github PATCH *)",
       "Bash(kit repo create *)",
       "Bash(kit detect*)",
-      "Bash(kit dash status*)"
+      "mcp__kit-control__checkpoint",
+      "mcp__kit-control__ask",
+      "mcp__kit-control__wait_for_answer",
+      "mcp__kit-control__task_create",
+      "mcp__kit-control__task_update",
+      "mcp__kit-control__task_list",
+      "Bash(kit dash *)"
     ],
     "ask": [
       "Bash(git push --force*)",

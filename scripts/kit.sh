@@ -50,7 +50,7 @@ API COOLIFY / CLOUDFLARE / GITHUB (jeton jamais visible dans `ps`)
         DELETE est bloqué par les réglages (permissions.deny)
 
 DASHBOARD (vue en direct des sessions, agents, mémoire : claude-kit-dashboard)
-  kit dash setup <url>                    active le hook kit-emit vers ce dashboard (ex. https://kit.fs0ciety.org)
+  kit dash setup <url>                    active le hook kit-emit et le serveur MCP kit-control (ex. https://kit.fs0ciety.org)
         jeton : kit secrets add KIT_DASH_TOKEN -g (local) ; variable KIT_DASH_TOKEN (session cloud)
   kit dash status                         configuration et joignabilité du dashboard
   kit dash off                            désactive l'envoi
@@ -483,6 +483,25 @@ cmd_detect() {
   echo "Appliquer : kit project add $(paste -sd' ' - <<<"$utypes")"
 }
 
+# Déclare le serveur MCP kit-control (portée utilisateur). En cloud, le proxy injecte le jeton ;
+# en local, headersHelper le tire du secret chiffré au moment de la connexion (jamais écrit en clair).
+dash_mcp() {
+  local url=$1 conf
+  command -v claude >/dev/null 2>&1 || { warn "claude introuvable : serveur MCP kit-control non déclaré"; return 0; }
+  if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
+    conf=$(jq -cn --arg u "$url/mcp" '{type: "http", url: $u}')
+  else
+    conf=$(jq -cn --arg u "$url/mcp" --arg h "kit secrets run -g -- $KIT_CONFIG/hooks/kit-emit.sh --headers" \
+      '{type: "http", url: $u, headersHelper: $h}')
+  fi
+  claude mcp remove --scope user kit-control >/dev/null 2>&1 || true
+  if claude mcp add-json --scope user kit-control "$conf" >/dev/null 2>&1; then
+    ok "serveur MCP kit-control déclaré ($url/mcp)"
+  else
+    warn "déclaration MCP échouée : claude mcp add-json --scope user kit-control '$conf'"
+  fi
+}
+
 # kit dash : branche le hook kit-emit sur le dashboard.
 cmd_dash() {
   local sub=${1:-status} url
@@ -495,8 +514,9 @@ cmd_dash() {
       link_global
       apply_settings
       ok "hook kit-emit actif vers ${url%/}"
+      dash_mcp "${url%/}"
       if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
-        echo "Session cloud : ajoute KIT_DASH_URL, KIT_DASH_TOKEN et l'hôte $(sed -E 's#https?://##; s#/.*##' <<<"$url") à l'environnement."
+        echo "Session cloud : variable KIT_DASH_URL dans l'environnement, jeton en secret réseau de l'hôte $(sed -E 's#https?://##; s#/.*##' <<<"$url") (Authorization: Bearer)."
       else
         echo "Jeton (copie-le depuis ${url%/}/#/settings) : kit secrets add KIT_DASH_TOKEN -g"
       fi
@@ -511,7 +531,10 @@ cmd_dash() {
       [[ $code == 200 ]] && ok "joignable (/health $code)" || warn "/health répond $code (Access, réseau ou app arrêtée ?)"
       [[ -x $KIT_CONFIG/hooks/kit-emit.sh ]] && ok "hook installé" || warn "hook absent : kit sync"
       ;;
-    off) rm -f "$KIT_CONFIG/dash.url"; ok "envoi désactivé (KIT_DASH_URL dans l'environnement reste prioritaire)" ;;
+    off)
+      rm -f "$KIT_CONFIG/dash.url"
+      command -v claude >/dev/null 2>&1 && claude mcp remove --scope user kit-control >/dev/null 2>&1
+      ok "envoi désactivé (KIT_DASH_URL dans l'environnement reste prioritaire)" ;;
     *) die "usage : kit dash setup <url> | status | off" ;;
   esac
 }

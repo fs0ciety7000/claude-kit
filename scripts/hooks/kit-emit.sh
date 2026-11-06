@@ -11,6 +11,8 @@
 # Données ajoutées : dépôt, branche, commit, source (cloud/terminal/vps), mémoire du projet
 # (.claude/memory/*.md) au début et à la fin de chaque tour, commits faits pendant la session.
 # Les valeurs qui ressemblent à des secrets sont masquées avant l'envoi.
+# Au SessionStart, le hook écrit aussi le session_id dans le contexte de Claude (outils kit-control).
+# kit-emit.sh --headers : en-tête Authorization pour le serveur MCP kit-control (headersHelper).
 set -uo pipefail
 
 SELF=$(readlink -f "${BASH_SOURCE[0]}")
@@ -36,10 +38,27 @@ if [[ ${1:-} == --post ]]; then
   exit 0
 fi
 
+# --- mode headersHelper du serveur MCP kit-control (machine locale, via kit secrets run -g) ---
+if [[ ${1:-} == --headers ]]; then
+  [[ -n ${KIT_DASH_TOKEN:-} ]] || { echo '{}'; exit 0; }
+  jq -cn --arg t "$KIT_DASH_TOKEN" '{Authorization: ("Bearer " + $t)}'
+  exit 0
+fi
+
 input=$(cat)
 url=${KIT_DASH_URL:-$(cat "$CONF/dash.url" 2>/dev/null || true)}
 [[ -n $url ]] || exit 0
 command -v jq >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 || exit 0
+
+# SessionStart : donne à Claude l'identifiant de session à passer aux outils kit-control
+# (seule sortie synchrone du hook ; elle est ajoutée au contexte de la session).
+if [[ $(jq -r '.hook_event_name // empty' <<<"$input") == SessionStart ]]; then
+  sid=$(jq -r '.session_id // empty' <<<"$input")
+  if [[ $sid =~ ^[A-Za-z0-9._-]+$ ]]; then
+    jq -cn --arg c "kit-control session_id=$sid — dashboard ${url%/} : passe ce session_id aux outils mcp__kit-control__* (checkpoint, ask, task_*)." \
+      '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'
+  fi
+fi
 
 send() {
   local hook sid cwd remote repo branch commit host source memory commits start
