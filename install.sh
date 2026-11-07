@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Installe le kit sur cette machine (Garuda/Arch, ou VPS Debian/Ubuntu).
+# Installe le kit sur cette machine (Garuda/Arch, macOS, ou VPS Debian/Ubuntu).
 # Usage : ./install.sh [--vps|--cloud] [--deps] [--no-secrets]
 #   --vps         profil serveur : permissions plus strictes (modifications validées une à une)
 #   --cloud       session claude.ai/code : accepte root, sans sops/age (implique --no-secrets),
 #                 installe aussi le profil global « meta » (find-skills) au mieux
-#   --deps        installe les dépendances avec sudo (pacman ou apt) ; sans ce flag, vérifie seulement
+#   --deps        installe les dépendances avec sudo (pacman, apt ou Homebrew) ; sans ce flag, vérifie seulement
 #   --no-secrets  ne crée pas la clé age
 # Relançable sans risque : rien d'existant n'est écrasé sans sauvegarde.
 set -euo pipefail
@@ -35,20 +35,29 @@ deps=(git node npm jq age sops)
 ((CLOUD)) && deps=(git node npm jq)
 for t in "${deps[@]}"; do command -v "$t" >/dev/null 2>&1 || missing+=("$t"); done
 if ((${#missing[@]})); then
+  os=$(os_kind)
   if ((DEPS)); then
-    if command -v pacman >/dev/null 2>&1; then
-      info "pacman : installation des dépendances (sudo)"
-      sudo pacman -S --needed --noconfirm git nodejs npm jq sops age github-cli ripgrep
-    elif command -v apt-get >/dev/null 2>&1; then
-      info "apt : installation des dépendances (sudo)"
-      sudo apt-get install -y git nodejs npm jq age ripgrep curl
-      warn "sops n'est pas dans apt : télécharge le binaire sur https://github.com/getsops/sops/releases et vérifie son checksum."
-    else
-      die "Gestionnaire de paquets non reconnu : installe à la main : ${missing[*]}"
-    fi
+    case $os in
+      arch)
+        info "pacman : installation des dépendances (sudo)"
+        sudo pacman -S --needed --noconfirm git nodejs npm jq sops age github-cli ripgrep ;;
+      debian)
+        info "apt : installation des dépendances (sudo)"
+        sudo apt-get install -y git nodejs npm jq age ripgrep curl
+        warn "sops n'est pas dans apt : télécharge le binaire sur https://github.com/getsops/sops/releases et vérifie son checksum." ;;
+      macos)
+        command -v brew >/dev/null 2>&1 || die "Homebrew introuvable : installe-le (https://brew.sh), puis relance ./install.sh --deps"
+        info "Homebrew : installation des dépendances"
+        brew install git node jq sops age gh ripgrep bash coreutils ;;
+      *) die "Gestionnaire de paquets non reconnu : installe à la main : ${missing[*]}" ;;
+    esac
   else
     warn "Manquant : ${missing[*]}"
-    echo "  Arch/Garuda : sudo pacman -S --needed git nodejs npm jq sops age github-cli ripgrep   (ou relance avec --deps)"
+    case $os in
+      macos) echo "  macOS : brew install git node jq sops age gh ripgrep bash coreutils   (ou relance avec --deps)" ;;
+      debian) echo "  Debian/Ubuntu : sudo apt-get install -y git nodejs npm jq age ripgrep curl   + sops : https://github.com/getsops/sops/releases   (ou relance avec --deps)" ;;
+      *) echo "  Arch/Garuda : sudo pacman -S --needed git nodejs npm jq sops age github-cli ripgrep   (ou relance avec --deps)" ;;
+    esac
   fi
 fi
 ((CLOUD)) || command -v claude >/dev/null 2>&1 || warn "Claude Code n'est pas installé : voir README.md (section Installer Claude Code)."

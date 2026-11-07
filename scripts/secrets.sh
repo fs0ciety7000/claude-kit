@@ -64,13 +64,13 @@ tmpdir() {
 
 recipients_csv() {
   [[ -s $RECIPIENTS_FILE ]] || die "Aucun destinataire enregistré. Lance : kit secrets init"
-  grep -E '^age1[a-z0-9]+$' "$RECIPIENTS_FILE" | paste -sd,
+  grep -E '^age1[a-z0-9]+$' "$RECIPIENTS_FILE" | paste -sd, -
 }
 
 require_tools() {
-  need sops "Arch : sudo pacman -S sops   |   autre : https://github.com/getsops/sops/releases"
-  need age "Arch : sudo pacman -S age"
-  need jq "Arch : sudo pacman -S jq"
+  need sops "$(pkg_hint sops)"
+  need age "$(pkg_hint age)"
+  need jq "$(pkg_hint jq)"
 }
 
 names_of() { # fichier -> noms de variables, un par ligne
@@ -80,7 +80,7 @@ names_of() { # fichier -> noms de variables, un par ligne
 
 cmd_init() {
   require_tools
-  need age-keygen "Arch : sudo pacman -S age"
+  need age-keygen "$(pkg_hint age)"
   if [[ ! -f $AGE_KEY ]]; then
     mkdir -p "$(dirname "$AGE_KEY")"
     (umask 077; age-keygen -o "$AGE_KEY" 2>/dev/null)
@@ -242,7 +242,7 @@ cmd_doctor() {
   done
   if [[ -f $AGE_KEY ]]; then
     ok "clé age : $AGE_KEY"
-    [[ "$(stat -c %a "$AGE_KEY")" == 600 ]] || { echo "✗ permissions de la clé : chmod 600 $AGE_KEY"; bad=1; }
+    [[ "$(file_mode "$AGE_KEY")" == 600 ]] || { echo "✗ permissions de la clé : chmod 600 $AGE_KEY"; bad=1; }
   else
     echo "✗ clé age absente : kit secrets init"; bad=1
   fi

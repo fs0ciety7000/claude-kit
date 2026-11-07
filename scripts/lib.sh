@@ -11,6 +11,52 @@ ok()   { echo "✓ $*"; }
 warn() { echo "! $*" >&2; }
 need() { command -v "$1" >/dev/null 2>&1 || die "'$1' introuvable. ${2:-}"; }
 
+# macOS fournit bash 3.2 (pas de mapfile, tableaux vides fragiles avec set -u).
+if ((BASH_VERSINFO[0] < 4)); then
+  die "bash ${BASH_VERSION} trop ancien (4+ requis). macOS : brew install bash, puis relance (ouvre un nouveau terminal)."
+fi
+
+# Système : arch | debian | macos | other
+os_kind() {
+  case $(uname -s) in
+    Darwin) echo macos ;;
+    Linux)
+      if command -v pacman >/dev/null 2>&1; then echo arch
+      elif command -v apt-get >/dev/null 2>&1; then echo debian
+      else echo other; fi ;;
+    *) echo other ;;
+  esac
+}
+
+# Commande d'installation suggérée pour des paquets (noms Arch ; traduits si besoin).
+pkg_hint() { # paquet...
+  local p out=()
+  case $(os_kind) in
+    macos)
+      for p in "$@"; do case $p in nodejs) out+=(node) ;; npm) ;; github-cli) out+=(gh) ;; *) out+=("$p") ;; esac; done
+      echo "brew install ${out[*]}" ;;
+    debian)
+      for p in "$@"; do case $p in github-cli) out+=(gh) ;; sops) ;; *) out+=("$p") ;; esac; done
+      local s="sudo apt-get install -y ${out[*]}"
+      [[ " $* " == *" sops "* ]] && s+="   (sops : https://github.com/getsops/sops/releases)"
+      echo "$s" ;;
+    arch) echo "sudo pacman -S --needed $*" ;;
+    *) echo "installe : $*" ;;
+  esac
+}
+
+# stat portable (GNU / BSD)
+file_size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
+file_mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
+# timeout portable : GNU timeout, gtimeout (coreutils Homebrew), sinon sans limite.
+run_timeout() { # secondes commande...
+  local s=$1; shift
+  if command -v timeout >/dev/null 2>&1; then timeout "$s" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$s" "$@"
+  else "$@"; fi
+}
+
 # Lie chaque élément de $1 (dans le kit) vers $2 (dans ~/.claude).
 # Ne remplace jamais un élément existant qui n'est pas déjà un lien.
 link_dir() { # src_dir dst_dir
@@ -30,7 +76,12 @@ link_dir() { # src_dir dst_dir
   done
   shopt -u nullglob
   # Supprime les liens cassés qui pointaient vers le kit (agent/skill retiré).
-  find "$dst" -maxdepth 1 -xtype l -lname "$KIT_HOME/*" -delete 2>/dev/null || true
+  # (sans find -xtype, absent sous macOS)
+  shopt -s nullglob
+  for item in "$dst"/*; do
+    [[ -L $item && ! -e $item && $(readlink "$item") == "$KIT_HOME"/* ]] && rm -f "$item"
+  done
+  shopt -u nullglob
 }
 
 # Lie un fichier unique ; sauvegarde l'existant s'il n'est pas déjà un lien vers le kit.
