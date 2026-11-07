@@ -137,7 +137,7 @@ if [[ $method == DELETE && -n $body ]]; then die "DELETE n'accepte pas --json"; 
 if [[ $body == @* ]]; then
   f=${body#@}
   [[ -f $f && ! -L $f ]] || die "fichier JSON introuvable : $f"
-  (($(stat -c %s "$f") <= 1048576)) || die "fichier JSON trop gros (> 1 Mo)"
+  (($(file_size "$f") <= 1048576)) || die "fichier JSON trop gros (> 1 Mo)"
   body=$(<"$f")
 fi
 

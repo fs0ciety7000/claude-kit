@@ -1,6 +1,6 @@
 # claude-kit
 
-Environnement Claude Code réutilisable : 14 sous-agents, skills routés par profil, secrets chiffrés (sops + age), garde-fous, et une commande `kit` pour tout étendre en une ligne. Pensé pour Garuda Linux (Arch) et un VPS Debian/Ubuntu.
+Environnement Claude Code réutilisable : 14 sous-agents, skills routés par profil, secrets chiffrés (sops + age), garde-fous, et une commande `kit` pour tout étendre en une ligne. Pensé pour Garuda Linux (Arch), macOS et un VPS Debian/Ubuntu.
 
 ## Ce qui est installé
 
@@ -30,6 +30,18 @@ curl -fsSL https://claude.ai/install.sh | bash
 # 3. Ce kit
 git clone <ton-dépôt>/claude-kit ~/claude-kit && cd ~/claude-kit
 ./install.sh            # ajoute --deps pour que le script lance pacman à ta place
+kit doctor
+```
+
+### macOS
+
+Pré-requis : [Homebrew](https://brew.sh). macOS fournit bash 3.2, trop ancien : le kit demande bash 4+ (installé par Homebrew).
+
+```bash
+brew install git node jq sops age gh ripgrep bash coreutils
+curl -fsSL https://claude.ai/install.sh | bash
+git clone <ton-dépôt>/claude-kit ~/claude-kit && cd ~/claude-kit
+./install.sh            # ou ./install.sh --deps pour lancer brew à ta place
 kit doctor
 ```
 

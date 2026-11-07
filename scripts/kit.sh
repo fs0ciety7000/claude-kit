@@ -97,7 +97,7 @@ cmd_skills() {
   case $sub in
     profiles) profile_names ;;
     install)
-      need npx "Installe Node.js (Arch : sudo pacman -S nodejs npm)."
+      need npx "Installe Node.js : $(pkg_hint nodejs npm)"
       local global=0 profiles=() p
       while (($#)); do
         case $1 in
@@ -106,10 +106,10 @@ cmd_skills() {
         esac
         shift
       done
-      ((${#profiles[@]})) || die "usage : kit skills install [-g] <profil>...   (profils : $(profile_names | paste -sd' '))"
+      ((${#profiles[@]})) || die "usage : kit skills install [-g] <profil>...   (profils : $(profile_names | paste -sd' ' -))"
       local ok=0 fail=0 failed=() line
       for p in "${profiles[@]}"; do
-        [[ -f $KIT_HOME/profiles/$p.txt ]] || die "Profil inconnu : $p (profils : $(profile_names | paste -sd' '))"
+        [[ -f $KIT_HOME/profiles/$p.txt ]] || die "Profil inconnu : $p (profils : $(profile_names | paste -sd' ' -))"
         while IFS= read -r line; do
           line=${line%%#*}
           line=$(echo "$line" | xargs 2>/dev/null || true)
@@ -142,7 +142,7 @@ regen_registry() {
     echo '|---|---|'
     for p in $(profile_names); do
       content=$(grep -vE '^[[:space:]]*(#|$)' "$KIT_HOME/profiles/$p.txt" \
-        | sed -E 's# --skill # → #; s#https://github.com/##' | paste -sd';' | sed 's/;/ ; /g')
+        | sed -E 's# --skill # → #; s#https://github.com/##' | paste -sd';' - | sed 's/;/ ; /g')
       echo "| \`$p\` | ${content:-(vide)} |"
     done
     echo '<!-- kit:profiles:end -->'
@@ -547,7 +547,7 @@ cmd_equip() {
     kw=$(tr 'A-Z' 'a-z' <<<"$kw")
     [[ $kw =~ ^[a-z0-9][a-z0-9.+_-]{0,40}$ ]] || { warn "mot-clé ignoré : $kw"; continue; }
     # Skills : sortie texte de « npx skills find » → owner/repo@skill  N installs
-    out=$(timeout 90 npx --yes skills find "$kw" </dev/null 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' || true)
+    out=$(run_timeout 90 npx --yes skills find "$kw" </dev/null 2>/dev/null | sed $'s/\x1b\\[[0-9;]*m//g' || true)
     skills=$(jq -c --arg kw "$kw" --argjson max "$max" --argjson acc "$skills" -Rn '
       [inputs | capture("^(?<source>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@(?<skill>[A-Za-z0-9_.:-]+)\\s+(?<n>[0-9.]+)(?<k>[KM]?) installs") ]
       | map({keyword: $kw, source, skill,
