@@ -20,7 +20,7 @@ Pour toute tâche non triviale :
 
 ## Secrets : règles strictes
 
-- Ne lis, n'affiche et ne copie jamais le contenu d'un `.env*`, d'une clé privée ou d'un jeton. Un hook bloque les cas évidents ; ne cherche pas à le contourner.
+- Ne lis, n'affiche et ne copie jamais le contenu d'un `.env*`, d'une clé privée ou d'un jeton. Un hook bloque les cas évidents ; ne le contourne jamais pour un vrai fichier de secrets. Faux positif (nom de champ dans un filtre jq, mot dans une doc, aucun secret lu) : contournement autorisé, en le signalant.
 - Une commande qui a besoin de secrets passe par `kit secrets run [-g] -- <commande>`. Les valeurs ne sont injectées que dans cette commande.
 - Variable manquante : dis son NOM à l'utilisateur (`kit secrets add NOM`), ne demande jamais la valeur dans le chat.
 - Ne commite jamais de secret. `.env.example` ne contient que des noms et des valeurs factices.
