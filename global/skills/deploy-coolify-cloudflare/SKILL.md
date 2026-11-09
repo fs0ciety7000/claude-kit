@@ -48,6 +48,13 @@ Les formats de requête dépendent de la version : vérifie la référence API d
 1. **DNS (Cloudflare)** : `kit api cloudflare /zones --jq '.result | map({name,id})'`, puis vérifier que le nom est libre : `kit api cloudflare "/zones/<id>/dns_records?name=<fqdn>" --jq '.result | map({type,content,proxied})'`. Créer : `kit api cloudflare POST /zones/<id>/dns_records --json '{"type":"A","name":"<sous-domaine>","content":"<ip>","proxied":true}' --jq '.result.id'`. Le jeton doit avoir le droit DNS Edit sur la zone.
 2. **Application (Coolify)** : créer la ressource (`POST /applications/...` selon la source : dépôt public, clé de déploiement, GitHub App, Dockerfile), puis `PATCH /applications/<uuid>` pour le domaine, le port, la santé.
 3. **Variables** : `POST /applications/<uuid>/envs` avec `{"key":"NOM","value":"__SECRET:NOM__"}` ; les valeurs viennent des secrets chiffrés (`kit secrets add`), jamais du chat.
-4. **Déploiement** : `kit api coolify TRIGGER "/deploy?uuid=<uuid>" --jq '.'`, puis surveiller `GET /applications/<uuid>` jusqu'à `running:healthy`, et tester l'URL.
+4. **Déploiement** : une application liée à GitHub (GitHub App, déploiement automatique) se redéploie **seule** à chaque
+   push ou fusion sur sa branche, par webhook. **Ne déclenche alors aucun déploiement par l'API** : il s'ajouterait à
+   celui du webhook. Pour suivre, `GET /deployments/applications/<uuid>?take=5`, trié par `created_at` (la liste n'est
+   pas triée), avec `is_webhook: true` ; attends quelques secondes après la fusion. `kit api coolify TRIGGER
+   "/deploy?uuid=<uuid>" --jq '.'` seulement pour une première mise en ligne, une application sans déploiement
+   automatique, ou un redéploiement sans commit (variable modifiée). Un doublon déjà lancé :
+   `POST /deployments/<deployment_uuid>/cancel`. Ensuite, surveiller `GET /applications/<uuid>` jusqu'à
+   `running:healthy`, et tester l'URL.
 5. **En cas d'échec** : lire les logs de build avant de réessayer ; ne jamais boucler sur un déploiement qui échoue.
 `DELETE` est bloqué par les réglages : la suppression se fait dans l'interface ou après que l'utilisateur a levé la règle.
