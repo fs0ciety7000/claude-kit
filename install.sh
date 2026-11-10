@@ -61,6 +61,17 @@ if ((${#missing[@]})); then
   fi
 fi
 ((CLOUD)) || command -v claude >/dev/null 2>&1 || warn "Claude Code n'est pas installé : voir README.md (section Installer Claude Code)."
+# En cloud, conteneur neuf à chaque session : ssh-keygen (openssh-client), requis par « kit repo create », est
+# installé s'il manque. Sans échec bloquant : un apt injoignable laisse un simple avertissement.
+if ((CLOUD)) && ! command -v ssh-keygen >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1 && ((EUID == 0)); then
+    info "apt : installation de openssh-client (ssh-keygen)"
+    { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-client; } >/dev/null 2>&1 \
+      || warn "openssh-client non installé : « kit repo create » restera indisponible dans cette session."
+  else
+    warn "ssh-keygen manquant (openssh-client) : requis par « kit repo create »."
+  fi
+fi
 
 # 2) Liens et réglages
 mkdir -p "$KIT_CONFIG" "$HOME/.local/bin"
