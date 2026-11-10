@@ -48,6 +48,7 @@ Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le trav
 - Avant de déclarer terminé : lance tests, lint et build, et rapporte les résultats réels.
 - Petits commits, un sujet par commit. Jamais de `git push --force`.
 - Tâche de plus de ~5 fichiers ou changement d'architecture : propose un plan d'abord.
+- Dépendances (paquets, images, actions, runtimes) : dernière version **stable vérifiée auprès du registre**, jamais de mémoire ; images épinglées par digest, actions par SHA ; audit de failles avant de conclure. Détail : skill `dependency-hygiene`.
 
 ## Étendre le kit
 

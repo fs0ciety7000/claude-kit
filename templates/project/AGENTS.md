@@ -41,6 +41,9 @@ build:   TODO
 5. Lance `test` et `lint` avant de conclure ; rapporte les résultats réels.
 6. Ne touche jamais à : `.env*`, `dist/`, `build/`, fichiers de lock modifiés à la main.
 7. Tâche de plus de ~5 fichiers ou changement d'architecture : propose d'abord un plan.
+8. Dépendances : dernière version stable vérifiée auprès du registre (jamais de mémoire), images épinglées par digest,
+   actions par SHA, audit de failles (`npm audit`, `govulncheck`, `pip-audit`, `osv-scanner`…) avant de conclure ;
+   Renovate tient le reste à jour (`renovate.json`).
 
 ## Sécurité
 
