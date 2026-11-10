@@ -25,24 +25,24 @@ Source de vérité du routage. Lis la ligne qui correspond au projet ; ne charge
 
 ## Agents (sous-agents maison)
 
-| Agent | Quand le déléguer | Accès | Modèle |
-|---|---|---|---|
-| `ui-designer` | concevoir/refondre des écrans, tokens, hiérarchie (après `brand-identity` pour une interface ou une marque nouvelle) | lecture + écriture | opus |
-| `design-critic` | relire une UI (hiérarchie, contraste, cohérence, états) | lecture seule | sonnet |
-| `android-ui-reviewer` | relire du Compose / Material 3 | lecture seule | sonnet |
-| `frontend-dev` | implémenter React/Next/Tailwind | lecture + écriture + shell | sonnet |
-| `backend-dev` | Go, Rust, PocketBase, API, base de données | lecture + écriture + shell | sonnet |
-| `qa-tester` | écrire/lancer des tests, reproduire des bugs, vérifier | lecture + écriture + shell | sonnet |
-| `brand-identity` | positionnement, logo, palette, typographies, charte | lecture + écriture + shell | opus |
-| `game-designer` | GDD, boucles, systèmes, équilibrage, niveaux | lecture + écriture | opus |
-| `creative-coder` | Three.js, shaders, animation, effets Godot | lecture + écriture + shell | sonnet |
-| `creative-content` | scripts vidéo, posts, concepts, idées de campagnes | lecture + écriture + web | sonnet |
-| `copywriter` | textes de pages, microcopie UX, FR/EN | lecture + écriture | sonnet |
-| `devops` | Coolify, Cloudflare, Docker, CI, diagnostics de déploiement | lecture + écriture + shell | sonnet |
-| `security-reviewer` | secrets, auth, dépendances, injection, permissions | lecture + shell | opus |
-| `researcher` | recherche web sourcée, comparaisons | lecture + web | haiku |
+| Agent | Quand le déléguer | Accès | Modèle | Effort |
+|---|---|---|---|---|
+| `ui-designer` | concevoir/refondre des écrans, tokens, hiérarchie (après `brand-identity` pour une interface ou une marque nouvelle) | lecture + écriture | opus | high |
+| `design-critic` | relire une UI (hiérarchie, contraste, cohérence, états) | lecture seule | sonnet | high |
+| `android-ui-reviewer` | relire du Compose / Material 3 | lecture seule | sonnet | medium |
+| `frontend-dev` | implémenter React/Next/Tailwind | lecture + écriture + shell | sonnet | medium |
+| `backend-dev` | Go, Rust, PocketBase, API, base de données | lecture + écriture + shell | sonnet | medium |
+| `qa-tester` | écrire/lancer des tests, reproduire des bugs, vérifier | lecture + écriture + shell | sonnet | medium |
+| `brand-identity` | positionnement, logo, palette, typographies, charte | lecture + écriture + shell | opus | high |
+| `game-designer` | GDD, boucles, systèmes, équilibrage, niveaux | lecture + écriture | opus | high |
+| `creative-coder` | Three.js, shaders, animation, effets Godot | lecture + écriture + shell | sonnet | medium |
+| `creative-content` | scripts vidéo, posts, concepts, idées de campagnes | lecture + écriture + web | sonnet | medium |
+| `copywriter` | textes de pages, microcopie UX, FR/EN | lecture + écriture | sonnet | medium |
+| `devops` | Coolify, Cloudflare, Docker, CI, diagnostics de déploiement | lecture + écriture + shell | sonnet | high |
+| `security-reviewer` | secrets, auth, dépendances, injection, permissions | lecture + shell | opus | xhigh |
+| `researcher` | recherche web sourcée, comparaisons | lecture + web | sonnet | medium |
 
-Le modèle de chaque agent est fixé dans son en-tête (`model:`) : opus pour la conception et la sécurité, sonnet pour le code, les tests et les textes, haiku pour la recherche. Il s'applique quel que soit le modèle de la session.
+Le modèle et l'effort de chaque agent sont fixés dans son en-tête (`model:`, `effort:`) : opus pour la conception (design, marque, jeu) et la sécurité, sonnet pour le code, les tests, les textes et la recherche ; effort `high` pour le design, l'infra et la conception, `xhigh` pour la sécurité, `medium` ailleurs. Ils s'appliquent quel que soit le modèle de la session (`CLAUDE_CODE_EFFORT_LEVEL`, s'il est défini, prime sur `effort`). Agent d'une collection sans `model:` : il prend le modèle de la session ; en l'installant, ajoute `model:` et `effort:` selon ce barème.
 
 ## Profils installables (généré par `kit registry`, ne pas éditer à la main)
 

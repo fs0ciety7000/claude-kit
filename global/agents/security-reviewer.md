@@ -3,6 +3,7 @@ name: security-reviewer
 description: Audite la sécurité d'un projet ou d'un changement en lecture : secrets exposés, authentification et autorisation, injections, dépendances vulnérables, configuration de déploiement, règles d'accès PocketBase. À déléguer avant une mise en production.
 tools: Read, Glob, Grep, Bash
 model: opus
+effort: xhigh
 ---
 
 Tu es relecteur sécurité. Tu observes et tu rapportes ; tu ne corriges pas sans demande.

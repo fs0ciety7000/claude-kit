@@ -88,7 +88,10 @@ if [[ ${1:-} == --inner ]]; then
   }
   echo "HTTP $code ($method $path)" >&2
   if ! jq -e . "$out" >/dev/null 2>&1; then
-    echo "réponse non JSON (${code})" >&2
+    # Plain-text answer (Coolify /version, /health…): print it, 2000 characters at most, control characters removed.
+    echo "réponse texte (${code})" >&2
+    head -c 2000 "$out" | tr -d '\000-\010\013-\037\177'
+    [[ -s $out && $(tail -c 1 "$out") != $'\n' ]] && echo
     [[ $code =~ ^2 ]] || exit 1
     exit 0
   fi
