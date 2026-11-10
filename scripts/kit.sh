@@ -72,7 +72,17 @@ INFOS & MAINTENANCE
   kit mcp setup                           déclare le serveur MCP Coolify (jeton injecté, jamais écrit en clair)
   kit sync                                (re)crée les liens vers ~/.claude et fusionne les réglages
   kit update                              git pull du kit + sync + mise à jour des skills globaux
+        (au démarrage de session, le hook kit-autoupdate fait déjà un fast-forward sur main puis sync,
+        au plus toutes les 6 h en local ; KIT_AUTOUPDATE=0 le désactive)
   kit doctor                              vérifie l'installation
+
+PERMISSIONS (règles que Claude s'accorde, niveau projet uniquement, journalisées)
+  kit perms allow "<règle>" --reason "<pourquoi>" [--dir projet]
+        ajoute une règle permissions.allow ÉTROITE au .claude/settings.json du projet et une ligne dans
+        docs/memory/permissions.md ; refuse les règles larges, les secrets, DELETE/TRIGGER, déploiements et push
+        ex. kit perms allow "Bash(npm run test*)" --reason "tests du projet"
+  kit perms list [--dir projet]           règles du projet et journal
+  kit perms check "<règle>"               valide seulement (code 0 = acceptable, 1 = refusée avec la raison)
 EOF
 }
 
@@ -895,6 +905,12 @@ cmd_doctor() {
     echo "✗ hook anti-fuite absent de settings.json : kit sync"; bad=1
   fi
   [[ -x $KIT_CONFIG/hooks/guard-secrets.sh ]] && ok "hook installé" || { echo "✗ hook introuvable : kit sync"; bad=1; }
+  if [[ -x $KIT_CONFIG/hooks/kit-autoupdate.sh ]] && [[ -f $CLAUDE_HOME/settings.json ]] \
+    && jq -e '[.hooks.SessionStart[]?.hooks[]?.command // empty] | any(endswith("kit-autoupdate.sh"))' "$CLAUDE_HOME/settings.json" >/dev/null 2>&1; then
+    ok "hook de mise à jour auto du kit actif (KIT_AUTOUPDATE=0 pour le couper)"
+  else
+    echo "✗ hook de mise à jour auto absent (script ou réglage) : kit sync"; bad=1
+  fi
   if ((cloud)); then
     command -v kit >/dev/null 2>&1 && ok "kit dans le PATH" || { echo "✗ kit absent du PATH"; bad=1; }
     info "profil cloud : pas de sops/age, secrets via les variables de l'environnement cloud"
@@ -911,6 +927,7 @@ main() {
   case $sub in
     secrets) exec "$KIT_HOME/scripts/secrets.sh" "$@" ;;
     api) exec "$KIT_HOME/scripts/api.sh" "$@" ;;
+    perms) exec "$KIT_HOME/scripts/perms.sh" "$@" ;;
     skills) cmd_skills "$@" ;;
     add-skill) cmd_add_skill "$@" ;;
     add-agent) cmd_add_agent "$@" ;;

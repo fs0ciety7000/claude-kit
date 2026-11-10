@@ -105,6 +105,9 @@
       "Bash(kit api github PATCH *)",
       "Bash(kit repo create *)",
       "Bash(kit detect*)",
+      "Bash(kit perms allow *)",
+      "Bash(kit perms list*)",
+      "Bash(kit perms check *)",
       "mcp__kit-control__checkpoint",
       "mcp__kit-control__ask",
       "mcp__kit-control__wait_for_answer",
@@ -150,7 +153,9 @@
       "mcp__claude-code-remote__get_session",
       "mcp__claude-code-remote__get_environment",
       "mcp__claude-code-remote__subscribe_pr_activity",
-      "mcp__claude-code-remote__unsubscribe_pr_activity"
+      "mcp__claude-code-remote__unsubscribe_pr_activity",
+      "mcp__claude-code-remote__add_repo",
+      "mcp__claude-code-remote__register_repo_root"
     ],
     "ask": [
       "Bash(git push --force*)",
@@ -260,6 +265,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-autoupdate.sh",
+            "timeout": 20
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -360,7 +375,9 @@
       "Running a project's build tool or static site generator and its official plugin installer inside the working repository (for example npx quartz plugin install, npx quartz build) is routine.",
       "Shallow-cloning a public GitHub repository into a temporary or scratchpad folder to read its files (license, layout, headers) is routine, as long as nothing from it is executed.",
       "Creating, updating, starting, stopping and deploying applications, variables and domains on the user's Coolify, and creating or updating DNS records, tunnels and Access applications on the user's Cloudflare account through `kit api`, is authorized by the user (announced in one line, then verified).",
-      "Pushing to claude/* branches and opening pull requests on fs0ciety7000 repositories is routine; merging one is allowed when the user asked for that merge in the conversation."
+      "Pushing to claude/* branches and opening pull requests on fs0ciety7000 repositories is routine; merging one is allowed when the user asked for that merge in the conversation.",
+      "Running `kit perms allow \"<rule>\" --reason \"<why>\"` to add a narrow allow rule to the current project's .claude/settings.json is sanctioned by the user: the script refuses broad, secret, delete, push and deploy rules and logs each rule in docs/memory/permissions.md.",
+      "Attaching the user's own repository fs0ciety7000/engram (push access) to the session with add_repo, to record project knowledge in it, is expected."
     ],
     "soft_deny": [
       "$defaults",

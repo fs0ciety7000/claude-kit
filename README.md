@@ -110,6 +110,35 @@ kit index                                 # régénère l'index (3 min environ)
 - Le générateur clone sans liens symboliques, sans hooks ni LFS, ne lit que des en-têtes (fichiers de moins de
   256 Ko), filtre et borne chaque champ, et refuse un index de plus de 5 Mo.
 
+## Permissions de projet auto-octroyées
+
+Claude ajoute lui-même les règles `allow` **précises** dont un projet a besoin. Le script les vérifie, les écrit dans le `.claude/settings.json` du projet (jamais dans le global) et les journalise dans `docs/memory/permissions.md` :
+
+```bash
+kit perms check "Bash(npm run test*)"                         # dit si la règle est acceptée, et pourquoi
+kit perms allow "Bash(npm run test*)" --reason "suite de tests"
+kit perms list
+```
+
+Règles acceptées : lecture, build, test, lint, format, outils de la stack, `git` non destructif, `kit api … GET`, écritures `kit api` POST, PUT ou PATCH sur un chemin précis, outils MCP nommés.
+
+Règles refusées par le script :
+- les règles larges (`Bash(*)`, `Bash(npm *)`, `mcp__x__*`) ;
+- celles qui recouvrent un `deny` ou un `ask` du kit ;
+- les secrets ;
+- `rm`, `DELETE`, `TRIGGER`, le déploiement, la publication, `push` et la fusion ;
+- les chemins hors du projet.
+
+Ces cas refusés, et toute règle globale, passent par une PR sur ce dépôt.
+
+## Mise à jour automatique
+
+Un hook `SessionStart` (démarrage et reprise de session) lance `kit-autoupdate`. Il fait un `git pull --ff-only` du kit, avec un délai de 10 s et sans invite, puis `kit sync` si la révision a changé. Il n'échoue jamais.
+- En session cloud, il tourne à chaque démarrage ; en local ou sur le VPS, au plus une fois toutes les 6 h.
+- Il ne fait rien si le dépôt du kit a des modifications locales ou n'est pas sur `main`.
+- `KIT_AUTOUPDATE=0` le désactive.
+- Les réglages s'appliquent tout de suite ; `CLAUDE.md` et les commandes, au démarrage de session suivant.
+
 ## Skills et profils
 
 ```bash
