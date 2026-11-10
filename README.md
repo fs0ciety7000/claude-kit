@@ -120,16 +120,13 @@ kit perms allow "Bash(npm run test *)" --reason "suite de tests"
 kit perms list
 ```
 
-Règles acceptées : commandes précises de lecture, build, test, lint et format (au moins deux mots fixes, `*` seulement en fin après une espace : `Bash(npm run test *)`, `Bash(go test ./...)`), chemins du projet (`Read(src/**)`), `git` non destructif, `kit api … GET`, écritures `kit api` POST, PUT ou PATCH sur un chemin précis, outils MCP nommés sans verbe dangereux. Refusés aussi : jokers en milieu de mot (`?`, `[…]`, `test*`), chemins absolus ou `..`, interpréteurs et lanceurs de code (`node`, `python`, `make`, `go run`, `npx` hors prettier/eslint/tsc/vitest/playwright), écriture dans les fichiers à point, manifestes et scripts exécutés (`.claude/`, `.github/`, `package.json`, `Makefile`…).
+Le script valide sur une **liste blanche** (tableaux commentés en tête de `scripts/perms.sh`, à étendre par PR) :
+- `Bash` : commandes de test, build, lint et format de la stack (`npm|pnpm|yarn|bun run <script>`, `go test`, `cargo clippy`, `pytest`, `npx prettier`…), `git` en lecture, `kit api <service> GET <chemin>`, utilitaires de lecture (`ls`, `cat`, `rg`, `jq`…). Un seul `*`, en fin, après une espace ; ni guillemet, ni `\`, ni `$`, ni chaînage ; ni chemin absolu ni `..` ;
+- `Read`, `Grep`, `Glob` : chemin ancré du projet (`Read(src/**)`), sans segment à point ;
+- outils MCP de lecture (`get_…`, `list_…`, `search_…`, `…_read`) sans verbe d'écriture ;
+- `WebFetch(domain:<hôte>)`.
 
-Règles refusées par le script :
-- les règles larges (`Bash(*)`, `Bash(npm *)`, `mcp__x__*`) ;
-- celles qui recouvrent un `deny` ou un `ask` du kit ;
-- les secrets ;
-- `rm`, `DELETE`, `TRIGGER`, le déploiement, la publication, `push` et la fusion ;
-- les chemins hors du projet.
-
-Ces cas refusés, et toute règle globale, passent par une PR sur ce dépôt.
+Tout le reste est refusé : `Edit`/`Write`, écritures `kit api`, outils MCP qui écrivent, règles larges, secrets, suppression, déploiement, `push`, fusion. Ces cas refusés, et toute règle globale, passent par une PR sur ce dépôt.
 
 ## Mise à jour automatique
 

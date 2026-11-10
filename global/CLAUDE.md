@@ -87,12 +87,13 @@ Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le trav
   - **Règle de projet, sans demander** : une action de routine bloquée (permission ou classifieur) que le projet
     refera → `kit perms allow "<règle précise>" --reason "<pourquoi>"`. Le script écrit dans le
     `.claude/settings.json` **du projet**, journalise dans `docs/memory/permissions.md` et refuse ce qui sort du
-    périmètre accordé : commandes précises de lecture, build, test, lint, format (`Bash(npm run test *)`, `*` seulement
-    en fin après une espace), chemins du projet, `git` non destructif, `kit api … GET`,
-    écritures `kit api` POST/PUT/PATCH sur un chemin précis, outils MCP nommés. Annonce la règle en une ligne, puis
+    périmètre accordé, une **liste blanche** (`scripts/perms.sh`) : commandes de test, build, lint, format et lecture
+    de la stack (`Bash(npm run test *)`, `Bash(go test ./...)`, `*` seulement en fin après une espace), `git` en
+    lecture, `kit api … GET <chemin>`, `Read`/`Grep`/`Glob` sur un chemin ancré du projet (`Read(src/**)`), outils
+    MCP de lecture (`get_`, `list_`, `search_`…), `WebFetch(domain:…)`. Annonce la règle en une ligne, puis
     commite le réglage avec le travail.
-  - **Toujours refusé** (le script le bloque, ne le contourne pas) : règle large (`Bash(*)`, `Bash(npm *)`…),
-    recouvrement d'un `deny`/`ask` du kit, secrets, `rm`, `DELETE`, `TRIGGER`, déploiement, publication, `push`,
-    fusion. Ces cas, et toute règle globale (`~/.claude/settings.json`, `autoMode`), passent par une PR sur
+  - **Toujours refusé** (le script le bloque, ne le contourne pas) : tout ce qui n'est pas dans la liste blanche,
+    dont `Edit`/`Write`, les écritures `kit api`, les outils MCP qui écrivent, les règles larges, les secrets, la
+    suppression, le déploiement, `push` et la fusion. Ces cas, et toute règle globale (`~/.claude/settings.json`, `autoMode`), passent par une PR sur
     `fs0ciety7000/claude-kit` (raison + commande bloquée) ; l'utilisateur fusionne, `kit update` l'applique.
   - Jamais d'édition à la main de tes réglages, ni de retrait d'un `deny` ou d'un `ask`.
