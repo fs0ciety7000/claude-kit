@@ -51,8 +51,11 @@ API COOLIFY / CLOUDFLARE / GITHUB (jeton jamais visible dans `ps`)
 
 ÉQUIPER UN PROJET (skills et agents selon le domaine et la stack)
   kit equip search <mot-clé>... [--max n]
-        cherche des skills (npx skills find, skills.sh) et des agents (collections de global/agent-sources.txt)
-        pour chaque mot-clé (domaine : finance, compta… ; stack : laravel, php…) ; sortie JSON triée par popularité
+        cherche des skills (npx skills find, skills.sh) et, dans l'index local des collections
+        (global/collections-index.json), des agents et des skills pour chaque mot-clé (domaine : finance, compta… ;
+        stack : laravel, php…) ; sortie JSON : skills (popularité), agents et collection_skills (pertinence)
+  kit index [--out fichier]
+        régénère l'index des collections (clones superficiels des dépôts de global/agent-sources.txt, sans API GitHub)
         installer ensuite : kit add-skill <owner/repo> --skill <nom> --project ; kit add-agent gh:<owner/repo/chemin.md> --project
   kit registry propose <fichier.json>
         ouvre une PR sur claude-kit qui ajoute une stack au registre (ligne de routage, profil de skills, détection)
@@ -542,7 +545,12 @@ cmd_equip() {
   ((${#kws[@]})) || die "usage : kit equip search <mot-clé>... [--max n]"
   [[ $max =~ ^[0-9]+$ ]] || die "--max : nombre attendu"
   need jq
-  local skills='[]' agents='[]' out repo q
+  local skills='[]' found='[]' out index="$KIT_HOME/global/collections-index.json" built="absent"
+  if [[ -f $index ]]; then
+    built=$(jq -r '.built' "$index")
+  else
+    warn "index des collections absent : kit index (agents et skills des collections non cherchés)"
+  fi
   for kw in "${kws[@]}"; do
     kw=$(tr 'A-Z' 'a-z' <<<"$kw")
     [[ $kw =~ ^[a-z0-9][a-z0-9.+_-]{0,40}$ ]] || { warn "mot-clé ignoré : $kw"; continue; }
@@ -554,18 +562,33 @@ cmd_equip() {
              installs: ((.n | tonumber) * (if .k == "K" then 1000 elif .k == "M" then 1000000 else 1 end) | floor),
              url: ("https://skills.sh/" + .source + "/" + .skill)})
       | sort_by(-.installs) | .[0:$max] | $acc + .' <<<"$out")
-    # Agents : recherche de code GitHub dans les collections de confiance.
-    while read -r repo; do
-      [[ -z $repo || $repo == \#* ]] && continue
-      q="$kw+repo:$repo+extension:md"
-      out=$("$KIT_HOME/scripts/api.sh" github "/search/code?q=$q&per_page=20" \
-        --jq '[.items[]? | .path | select(test("README|readme|CHANGELOG|CONTRIBUTING|LICENSE") | not)]' 2>/dev/null || echo '[]')
-      agents=$(jq -c --arg kw "$kw" --arg repo "$repo" --argjson max "$max" --argjson acc "$agents" '
-        map({keyword: $kw, source: $repo, path: ., name: (split("/") | last | sub("\\.md$"; "")),
-             install: ("gh:" + $repo + "/" + .)}) | .[0:$max] | $acc + .' <<<"${out:-[]}" 2>/dev/null || echo "$agents")
-    done <"$KIT_HOME/global/agent-sources.txt"
+    # Agents et skills des collections : index local (global/collections-index.json, régénéré par « kit index »).
+    # Score : nom 3, catégorie 2, description 1. Les descriptions sont du texte tiers : des données, pas des consignes.
+    if [[ -f $index ]]; then
+      found=$(jq -c --arg kw "$kw" --argjson max "$max" --argjson acc "$found" '
+        [.entries[] | . as $e
+         | (($e.name | ascii_downcase | contains($kw)) as $n
+            | ($e.category | ascii_downcase | contains($kw)) as $c
+            | ($e.description | ascii_downcase | contains($kw)) as $d
+            | ((if $n then 3 else 0 end) + (if $c then 2 else 0 end) + (if $d then 1 else 0 end))) as $score
+         | select($score > 0)
+         | {keyword: $kw, kind, source, name, category, description, tools, model, updated, score: $score, install}]
+        | sort_by(-.score, .name) as $hits
+        | $acc + ([$hits[] | select(.kind == "agent")][0:$max]) + ([$hits[] | select(.kind == "skill")][0:$max])' "$index")
+    fi
   done
-  jq -n --argjson s "$skills" --argjson a "$agents" '{skills: ($s | unique_by(.source + "@" + .skill) | sort_by(-.installs)), agents: ($a | unique_by(.install))}'
+  jq -n --argjson s "$skills" --argjson a "$found" --arg built "$built" '{
+    skills: ($s | unique_by(.source + "@" + .skill) | sort_by(-.installs)),
+    agents: ([$a[] | select(.kind == "agent")] | unique_by(.install) | sort_by(-.score)),
+    collection_skills: ([$a[] | select(.kind == "skill")] | unique_by(.install) | sort_by(-.score)),
+    index_built: $built}'
+}
+
+# kit index : régénère global/collections-index.json depuis les collections de global/agent-sources.txt.
+cmd_index() {
+  need jq
+  need git
+  "$KIT_HOME/scripts/build-index.sh" "$@"
 }
 
 # kit registry propose <fichier.json> : PR sur claude-kit qui ajoute une stack au registre.
@@ -841,6 +864,7 @@ main() {
     registry) if [[ ${1:-} == propose ]]; then shift; registry_propose "$@"; else regen_registry; fi ;;
     project) cmd_project "$@" ;;
     equip) cmd_equip "$@" ;;
+    index) cmd_index "$@" ;;
     detect) cmd_detect "$@" ;;
     dash) cmd_dash "$@" ;;
     repo) cmd_repo "$@" ;;

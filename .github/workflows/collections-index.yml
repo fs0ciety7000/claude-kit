@@ -1,0 +1,51 @@
+# Rebuilds global/collections-index.json every Monday (and on demand) from global/agent-sources.txt, and proposes the
+# change as a pull request: the index holds third-party descriptions, so a human reads the diff before it lands.
+name: Collections index
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [global/agent-sources.txt, scripts/build-index.sh]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: collections-index
+  cancel-in-progress: true
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the index (shallow clones, no API)
+        run: bash scripts/build-index.sh
+      - name: Propose the update
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # Only the build date changed: nothing to propose.
+          if git diff --quiet -I '"built":' -- global/collections-index.json; then
+            echo "index unchanged"; exit 0
+          fi
+          # One dated branch per run (never a forced push); an older open PR of this workflow is closed by the new one.
+          branch="kit/collections-index-$(date -u +%Y%m%d-%H%M)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add global/collections-index.json
+          git commit -m "Collections index: $(jq -r .count global/collections-index.json) entries"
+          git push origin "$branch"
+          for old in $(gh pr list --state open --json number,headRefName \
+                         --jq '.[] | select(.headRefName | startswith("kit/collections-index-")) | .number'); do
+            gh pr close "$old" --delete-branch --comment "Remplacée par une mise à jour plus récente."
+          done
+          gh pr create --head "$branch" --base main --title "Index des collections : mise à jour" \
+            --body "Régénéré par \`scripts/build-index.sh\` depuis \`global/agent-sources.txt\`. Contenu tiers (noms et descriptions d'agents et de skills) : relire le diff, en particulier les nouvelles sources."
