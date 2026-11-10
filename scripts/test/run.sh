@@ -54,19 +54,29 @@ PROJ="$TMP/proj"
 mkdir -p "$PROJ"
 
 accepted=(
-  'Bash(npm run test*)'
+  'Bash(npm run test *)'
+  'Bash(npm run test)'
   'Bash(go test ./...)'
-  'Bash(kit api coolify GET /applications*)'
-  'Bash(kit api coolify PATCH /applications/abc*)'
+  'Bash(git status *)'
+  'Bash(git diff HEAD~1)'
+  'Bash(kit api coolify GET /applications/*)'
+  'Bash(kit api coolify GET *)'
+  'Bash(kit api coolify PATCH /applications/abc)'
+  'Bash(kit api coolify PATCH /applications/abc *)'
+  'Bash(kit api coolify PATCH /applications/abc/envs/*)'
   'Bash(kit api cloudflare POST /zones/abc/dns_records)'
   'Read(src/**)'
+  'Read(src/*)'
+  'Grep(src/*)'
+  'Glob(docs/**)'
   'Edit(src/**)'
   'WebFetch(domain:docs.example.com)'
   'mcp__github__pull_request_read'
   'mcp__github__create_pull_request'
-  'Bash(npx prettier --check*)'
-  'Bash(cargo clippy --all-targets*)'
-  'Read(.env.example)'
+  'Bash(npx prettier --check *)'
+  'Bash(npx playwright test *)'
+  'Bash(cargo clippy --all-targets *)'
+  'Read(docs/.env.example)'
 )
 for r in "${accepted[@]}"; do
   if out=$("$PERMS" check "$r" 2>&1); then ok_ "accepté : $r"; else ko_ "accepté : $r" "$out"; fi
@@ -130,6 +140,109 @@ refused=(
   'mcp__github__merge_pull_request'
   'Task(foo)'
   'Bash(python -c print(1))'
+  # A. Jokers : collés à un mot, au milieu, ou de classe (? [ ] { }).
+  'Bash(npm run test*)'
+  'Bash(kit perm* allow x)'
+  'Bash(ls * -l)'
+  'Bash(npm run * test)'
+  'Bash(npm run te?t)'
+  'Bash(npm run [t]est)'
+  'Bash(npm run {test,lint})'
+  'Bash(cat src/?.ts)'
+  'Bash(npm run test **)'
+  'Read(.e*)'
+  'Read(**/x)'
+  'Read(id_*)'
+  'Read(src/*.ts)'
+  'Read(src/[a]/x)'
+  'Read(./src/**)'
+  'Read(.github/**)'
+  'Grep(**/*)'
+  'Edit(.github/workflows/**)'
+  'Edit(src/.husky/x)'
+  'Edit(package.json)'
+  'Edit(src/Makefile)'
+  'Edit(Dockerfile)'
+  'Edit(yarn.lock)'
+  'Edit(scripts/**)'
+  'Write(.vscode/settings.json)'
+  'Write(*.md)'
+  # B. Premier mot : chemin de binaire, shells, interpréteurs, lanceurs de code.
+  'Bash(/usr/bin/git status *)'
+  'Bash(./node_modules/.bin/eslint src)'
+  'Bash(git -C sub status)'
+  'Bash(bash scripts/x.sh)'
+  'Bash(python3 -m pytest)'
+  'Bash(node build.js)'
+  'Bash(env FOO=1 npm test)'
+  'Bash(xargs echo)'
+  'Bash(npx cowsay hi)'
+  'Bash(npx -y prettier --check *)'
+  'Bash(npx playwright install)'
+  'Bash(pnpm dlx create-x)'
+  'Bash(yarn dlx x)'
+  'Bash(bunx x)'
+  'Bash(uvx x)'
+  'Bash(pip install requests)'
+  'Bash(npm install -g typescript)'
+  'Bash(npm i -g typescript)'
+  'Bash(cargo run --release)'
+  'Bash(cargo install ripgrep)'
+  'Bash(go run main.go)'
+  'Bash(go install x@latest)'
+  'Bash(make build)'
+  'Bash(just build)'
+  'Bash(gh workflow run x)'
+  'Bash(git config user.name x)'
+  'Bash(git rebase main)'
+  'Bash(git restore .)'
+  'Bash(git checkout -- .)'
+  'Bash(git filter-branch --all)'
+  'Bash(FOO=1 npm test)'
+  'Bash(curl https://example.com/x)'
+  # C. Arguments : chemins absolus, ~, .. ; options globales de git ; push en position quelconque.
+  'Bash(cat /etc/hostname)'
+  'Bash(ls ~)'
+  'Bash(cat ../x)'
+  'Bash(cat src/../../x)'
+  'Bash(cat --file=/etc/x)'
+  'Bash(git -C /tmp status)'
+  'Bash(git -c core.pager=x log)'
+  'Bash(git --git-dir=x log)'
+  'Bash(git --work-tree=x status)'
+  'Bash(git remote push x)'
+  'Bash(git status /*)'
+  # D. Mots dangereux restent refusés (sans joker pour les masquer).
+  'Bash(kit perms allow x)'
+  'Bash(kit secrets list)'
+  'Bash(git push)'
+  # E. MCP : verbes dangereux n'importe où, y compris derrière un préfixe de lecture.
+  'mcp__github__get_and_delete_branch'
+  'mcp__github__list_releases'
+  'mcp__github__push_files'
+  'mcp__db__execute_sql'
+  'mcp__db__run_query'
+  'mcp__db__apply_migration'
+  'mcp__fs__write_file'
+  'mcp__github__create_or_update_file'
+  'mcp__github__update_file'
+  'mcp__shell__exec'
+  'mcp__github__force_thing'
+  'mcp__github__search_*'
+  # F. kit api : chemins larges, actions, joker mal placé.
+  'Bash(kit api coolify PATCH /applications/abc*)'
+  'Bash(kit api coolify PATCH /applications/*)'
+  'Bash(kit api coolify PATCH /applications/abc/*)'
+  'Bash(kit api coolify POST /applications/abc/envs/*/x)'
+  'Bash(kit api coolify POST /applications/abc/restart)'
+  'Bash(kit api coolify POST /applications/abc/start)'
+  'Bash(kit api coolify GET /applications/abc/stop)'
+  'Bash(kit api coolify GET /applications*)'
+  'Bash(kit api coolify GET /applications/abc/restart)'
+  'Bash(kit api coolify PUT /servers/../x)'
+  'Bash(kit api coolify PATCH *)'
+  'Bash(kit api coolify PATCH)'
+  'Bash(kit api coolify GET *.*)'
 )
 for r in "${refused[@]}"; do
   out=$("$PERMS" check "$r" 2>&1); rc=$?
@@ -141,7 +254,7 @@ mkdir -p "$PROJ/.claude"
 cat >"$PROJ/.claude/settings.json" <<'EOF'
 {"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"echo hi"}]}]},"permissions":{"deny":["Read(x)"],"allow":["Bash(ls*)"]},"model":"sonnet"}
 EOF
-rule='Bash(npm run test*)'
+rule='Bash(npm run test *)'
 "$PERMS" allow "$rule" --reason "tests du projet" --dir "$PROJ" >/dev/null 2>&1
 rc1=$?
 "$PERMS" allow "$rule" --reason "tests du projet" --dir "$PROJ" >/dev/null 2>&1
@@ -151,7 +264,7 @@ LOG="$PROJ/docs/memory/permissions.md"
 ((rc1 == 0 && rc2 == 0)) && ok_ "allow deux fois : codes 0" || ko_ "allow deux fois : codes 0" "rc1=$rc1 rc2=$rc2"
 [[ $(jq --arg r "$rule" '[.permissions.allow[] | select(. == $r)] | length' "$S") == 1 ]] && ok_ "une seule entrée dans allow" || ko_ "une seule entrée dans allow"
 [[ $(grep -cF "\`$rule\`" "$LOG" 2>/dev/null) == 1 ]] && ok_ "une seule ligne de journal" || ko_ "une seule ligne de journal"
-grep -qE "^- [0-9]{4}-[0-9]{2}-[0-9]{2} \`Bash\(npm run test\*\)\` — tests du projet$" "$LOG" && ok_ "format de la ligne de journal" || ko_ "format de la ligne de journal" "$(cat "$LOG" 2>/dev/null)"
+grep -qE "^- [0-9]{4}-[0-9]{2}-[0-9]{2} \`Bash\(npm run test \*\)\` — tests du projet$" "$LOG" && ok_ "format de la ligne de journal" || ko_ "format de la ligne de journal" "$(cat "$LOG" 2>/dev/null)"
 jq -e '.hooks.SessionStart[0].hooks[0].command == "echo hi"' "$S" >/dev/null && ok_ "clé hooks préservée" || ko_ "clé hooks préservée"
 jq -e '.model == "sonnet" and .permissions.deny == ["Read(x)"] and (.permissions.allow | index("Bash(ls*)") != null)' "$S" >/dev/null && ok_ "autres clés et règles préservées" || ko_ "autres clés et règles préservées"
 "$PERMS" allow 'Read(src/**)' --reason "lecture des sources" --dir "$PROJ" >/dev/null 2>&1
@@ -166,10 +279,27 @@ jq -e '.permissions.allow == ["mcp__github__pull_request_read"]' "$P2/.claude/se
 # Refus : rien n'est écrit.
 "$PERMS" allow 'Bash(rm -rf build)' --reason "x" --dir "$P2" >/dev/null 2>&1; rc=$?
 ((rc != 0)) && ! grep -q 'rm -rf' "$P2/.claude/settings.json" "$P2/docs/memory/permissions.md" && ok_ "règle refusée : rien d'écrit" || ko_ "règle refusée : rien d'écrit"
-"$PERMS" allow 'Bash(npm run lint*)' --dir "$P2" >/dev/null 2>&1 && ko_ "--reason obligatoire" || ok_ "--reason obligatoire"
-"$PERMS" allow 'Bash(npm run lint*)' --reason "x" --dir "$HOME" >/dev/null 2>&1 && ko_ "dossier \$HOME refusé" || ok_ "dossier \$HOME refusé"
-"$PERMS" allow 'Bash(npm run lint*)' --reason "x" --dir / >/dev/null 2>&1 && ko_ "dossier / refusé" || ok_ "dossier / refusé"
+"$PERMS" allow 'Bash(npm run lint *)' --dir "$P2" >/dev/null 2>&1 && ko_ "--reason obligatoire" || ok_ "--reason obligatoire"
+"$PERMS" allow 'Bash(npm run lint *)' --reason "x" --dir "$HOME" >/dev/null 2>&1 && ko_ "dossier \$HOME refusé" || ok_ "dossier \$HOME refusé"
+"$PERMS" allow 'Bash(npm run lint *)' --reason "x" --dir / >/dev/null 2>&1 && ko_ "dossier / refusé" || ok_ "dossier / refusé"
 [[ ! -e $HOME/.claude/settings.json && ! -e $HOME/.claude ]] && ok_ "settings.json global jamais touché" || ko_ "settings.json global jamais touché"
+# G. Liens symboliques : refus avant toute écriture (docs/ ou docs/memory hors du projet).
+P3="$TMP/proj3"; OUTSIDE="$TMP/outside"; mkdir -p "$P3" "$OUTSIDE"
+ln -s "$OUTSIDE" "$P3/docs"
+"$PERMS" allow 'Bash(npm run lint *)' --reason "x" --dir "$P3" >/dev/null 2>&1; rc=$?
+((rc != 0)) && [[ ! -e $P3/.claude/settings.json && -z $(ls -A "$OUTSIDE") ]] && ok_ "docs/ lien symbolique : refusé avant toute écriture" || ko_ "docs/ lien symbolique : refusé avant toute écriture"
+P4="$TMP/proj4"; mkdir -p "$P4/docs"
+ln -s "$OUTSIDE" "$P4/docs/memory"
+"$PERMS" allow 'Bash(npm run lint *)' --reason "x" --dir "$P4" >/dev/null 2>&1; rc=$?
+((rc != 0)) && [[ ! -e $P4/.claude/settings.json && -z $(ls -A "$OUTSIDE") ]] && ok_ "docs/memory lien symbolique : refusé avant toute écriture" || ko_ "docs/memory lien symbolique : refusé avant toute écriture"
+# Écritures concurrentes : toutes les règles survivent (verrou).
+P5="$TMP/proj5"; mkdir -p "$P5"
+for n in 1 2 3 4 5 6 7 8; do
+  "$PERMS" allow "Bash(npm run task$n *)" --reason "concurrence $n" --dir "$P5" >/dev/null 2>&1 &
+done
+wait
+[[ $(jq '.permissions.allow | length' "$P5/.claude/settings.json" 2>/dev/null) == 8 && $(grep -c '^- ' "$P5/docs/memory/permissions.md" 2>/dev/null) == 8 ]] \
+  && ok_ "8 allow concurrents : 8 règles, 8 lignes de journal" || ko_ "8 allow concurrents" "$(jq -c '.permissions.allow' "$P5/.claude/settings.json" 2>&1)"
 out=$(cd "$P2" && "$PERMS" list 2>&1) && [[ $out == *"mcp__github__pull_request_read"* ]] && ok_ "list affiche les règles" || ko_ "list affiche les règles" "$out"
 out=$("$ROOT/scripts/kit.sh" perms check 'Bash(*)' 2>&1); rc=$?
 ((rc == 1)) && ok_ "kit perms dispatché par kit.sh" || ko_ "kit perms dispatché par kit.sh" "code $rc : $out"
