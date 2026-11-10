@@ -852,7 +852,8 @@ sync_context() {
     [[ $repo =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || continue
     name=${repo#*/}
     if [[ -d $dir/$name/.git ]]; then
-      origin=$(git -C "$dir/$name" remote get-url origin 2>/dev/null || true)
+      # Raw stored URL: `remote get-url` applies url.*.insteadOf rewrites (e.g. https -> ssh) and would never match.
+      origin=$(git -C "$dir/$name" config --get remote.origin.url 2>/dev/null || true)
       case $origin in
         "https://github.com/$repo" | "https://github.com/$repo.git" | "git@github.com:$repo.git") ;;
         *) warn "contexte ignoré : ~/.kit/context/$name ne pointe pas vers $repo"; continue ;;
