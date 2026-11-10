@@ -757,6 +757,11 @@ cmd_repo() {
     esac
   done
   [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || die "nom de dépôt invalide (lettres, chiffres, . _ -)"
+  # Session cloud : pas de secrets chiffrés (sops), SSH sortant fermé, et l'accès GitHub de la session est limité aux
+  # dépôts qui lui sont attachés. La création se fait depuis un poste local.
+  if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
+    die "kit repo create ne fonctionne pas en session cloud (secrets chiffrés absents, SSH vers GitHub fermé, accès GitHub limité aux dépôts attachés) : lance-le depuis ton poste, puis attache le dépôt à la session."
+  fi
   need git
   need jq
   need ssh-keygen
@@ -893,7 +898,11 @@ cmd_doctor() {
   for t in "${tools[@]}"; do
     if command -v "$t" >/dev/null 2>&1; then ok "$t"; else echo "✗ $t manquant"; bad=1; fi
   done
-  command -v ssh-keygen >/dev/null 2>&1 && ok "ssh-keygen" || echo "! ssh-keygen manquant (openssh-client) : requis par « kit repo create »"
+  if ((cloud)); then
+    echo "→ kit repo create : à lancer depuis un poste local (indisponible en session cloud)"
+  else
+    command -v ssh-keygen >/dev/null 2>&1 && ok "ssh-keygen" || echo "! ssh-keygen manquant (openssh-client) : requis par « kit repo create »"
+  fi
   if [[ -n "$(git config --global user.name 2>/dev/null)" && -n "$(git config --global user.email 2>/dev/null)" ]]; then
     ok "identité git configurée"
   else
