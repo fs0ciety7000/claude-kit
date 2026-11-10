@@ -15,7 +15,8 @@ n'écrases rien, tu ne réécris pas ce qui existe : tu ajoutes seulement ce qui
 3. **Propose** une liste d'ajouts, chacun avec son fichier et son contenu en une ligne, parmi :
    - `docs/memory/` (`state.md`, `decisions.md`, `stack.md`, `handoff.md`) : seulement ceux qui manquent, en
      reprenant ce qui existe ailleurs (une roadmap existante reste la référence : le plan y renvoie) ;
-   - `docs/plan.md` s'il n'y a ni plan ni roadmap ;
+   - `docs/plan.md` : le plan s'il n'y a ni plan ni roadmap, sinon un lien vers la roadmap et les tâches en cours ;
+     avec kit-control, une tâche dashboard par élément ouvert (`task_create`, après validation) ;
    - le hook de démarrage (`.claude/settings.json` du gabarit du kit) qui affiche relais et état, fusionné avec un
      `.claude/settings.json` existant (jamais remplacé) ;
    - une **équipe** (skill `team-builder`) adaptée au travail prévu, et une rubrique « Équipe » dans `CLAUDE.md` ;

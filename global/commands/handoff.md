@@ -15,7 +15,9 @@ Prépare la prochaine session de ce projet. Note de l'utilisateur à transmettre
    - à savoir : pièges rencontrés, hypothèses prises ; un sujet sensible est nommé, jamais détaillé.
 3. **`docs/memory/state.md`** : fait, en cours, bloquant, 3 prochaines étapes. **`decisions.md`** : ajoute toute
    décision durable prise cette session (date, décision, raison).
-4. **`docs/plan.md`** : coche ce qui est fini, ajoute ce qui a été découvert.
+4. **`docs/plan.md` et tâches** : coche ce qui est fini, ajoute ce qui a été découvert ou demandé ; le dashboard
+   suit à l'identique (`task_create` pour le nouveau, `task_update` `done`/`blocked` + note). Aucune tâche ne reste
+   `doing` sans travail en cours.
 5. **Engram, vérification obligatoire** (skill `engram`) :
    - la fiche `content/projects/<dépôt>.md` existe et reflète la session (État, Stack, Dernière activité,
      `updated`) ; sinon, crée-la ou mets-la à jour ;

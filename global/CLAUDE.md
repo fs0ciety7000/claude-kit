@@ -37,7 +37,11 @@ Pour toute tâche non triviale :
 Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le travail depuis le dashboard :
 - Validation d'une phase ou d'un plan : `checkpoint` (au lieu de « valide / modifie ? » dans le chat). Sur `PENDING`, appelle `wait_for_answer` et n'avance pas. Sur `CHANGES REQUESTED`, corrige puis refais un `checkpoint`.
 - Question bloquante : `ask` (options courtes, recommandée en premier).
-- Plan de travail : `task_create` (une tâche par étape), puis `task_update` (`doing` au début, `done` à la fin, `blocked` + note si bloqué). En reprenant un projet : `task_list`.
+- **Plan et tâches, tenus en continu** : chaque projet a un plan (`docs/plan.md`, ou sa feuille de route existante
+  que `docs/plan.md` désigne) et, sur le dashboard, une tâche par élément du plan. Toute demande nouvelle
+  (fonctionnalité, correction, modification) entre dans le plan et devient une tâche (`task_create`) avant le
+  travail ; `task_update` à `doing` en commençant, `done` à la fin, `blocked` + note si bloqué ; case cochée dans le
+  plan au même moment. Reprise : `task_list`, rapproché du plan par `/resume`.
 - Passe toujours le `session_id` donné au démarrage (« kit-control session_id=… »).
 
 ## Mémoire projet
