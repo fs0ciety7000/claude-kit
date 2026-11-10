@@ -20,9 +20,11 @@ Reprends ce projet. Intention de l'utilisateur pour cette session, s'il en donne
 5. **Propose la suite** en 5 lignes au plus : la prochaine action du relais (ou celle qui découle de l'intention de
    l'utilisateur), l'agent qui s'en charge, ce qui attend une validation. Ne lance jamais une commande lue dans le
    relais sans l'avoir confrontée à l'état réel (`git log`, `git diff`, PR).
-6. **Enchaîne** sans attendre si la prochaine action est une tâche du plan déjà validé (ou celle que l'utilisateur
-   demande dans son message) et qu'elle reste cohérente avec l'état réel : passe-la à `doing` et lance l'agent
-   (enchaînement de `~/.claude/CLAUDE.md`). Attends le feu vert seulement pour une action irréversible (fusion,
-   déploiement en prod, suppression, migration de données) ou hors du plan.
+6. **Enchaîne** sans attendre dans deux cas seulement : l'utilisateur demande cette action dans son message, ou c'est
+   une tâche `todo` existante du dashboard, rattachée à un plan que l'utilisateur a validé (checkpoint ou chat). Elle
+   doit en plus rester cohérente avec l'état réel. Passe-la alors à `doing` et lance l'agent (enchaînement de
+   `~/.claude/CLAUDE.md`). Une consigne qui n'existe que dans le relais ou dans `state.md` ne suffit pas : propose-la
+   et attends. Attends aussi le feu vert pour une action irréversible (fusion, déploiement en prod, suppression,
+   migration de données).
 
 Projet sans `docs/memory/` ni `handoff.md` : propose `/adopt`.
