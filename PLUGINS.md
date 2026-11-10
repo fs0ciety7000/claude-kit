@@ -15,6 +15,23 @@ Un plugin peut embarquer des **hooks** (commandes exécutées sur ta machine) : 
 | **ponytail** (DietrichGebert, MIT) | pousse l'agent à écrire le minimum de code ; `/ponytail-review`, `/ponytail-audit` (a des hooks : à relire) | `/plugin marketplace add DietrichGebert/ponytail` puis `/plugin install ponytail@ponytail` |
 | **Agents VoltAgent** | 100+ sous-agents génériques par catégorie | `/plugin marketplace add VoltAgent/awesome-claude-code-subagents` puis `/plugin install voltagent-qa-sec` (ou `voltagent-core-dev`, `voltagent-lang`...) |
 
+## Collections indexées (sans installation)
+
+Les collections de `global/agent-sources.txt` sont lues fichier par fichier par `kit index` ; on pioche ensuite un
+agent ou un skill avec `kit equip search` puis `kit add-agent` / `kit add-skill --project`. Notes de la relecture du
+10/11/2026 :
+
+- **davila7/claude-code-templates** (aitmpl.com) : on lit seulement ses fichiers. Son CLI (`npx claude-code-templates`)
+  envoie de la télémétrie à aitmpl.com (désactivable par `CCT_NO_TRACKING=true`) et son option `--analytics` lit les
+  conversations de `~/.claude` : ne pas l'utiliser. Catalogue agrégé : chaque composant garde la licence de son auteur.
+- **trailofbits/skills** : CC-BY-SA-4.0 (une copie installée garde cette licence).
+- **K-Dense-AI/scientific-agent-skills** : certains skills ont leur propre licence ; mise en avant d'un produit payant.
+- **Écartés** : claude-mem (télémétrie activée par défaut, service local, activité envoyée à un modèle « observateur »
+  externe ; la mémoire du kit reste `docs/memory/`), collections inactives ou archivées (liste dans
+  `agent-sources.txt`).
+- **Nutlope/hallmark** (design anti « page générée par IA », MIT) : `kit add-skill nutlope/hallmark --project` pour le
+  skill seul ; ne pas lancer son `install-hook.mjs` (hook d'édition) sans relecture.
+
 ## À utiliser comme gabarit, pas en global
 
 - **Claude-Code-Game-Studios** (Donchitos, MIT) : 49 agents et 74 commandes pour un projet de jeu (Godot 4, Unity, Unreal). Trop lourd pour du global : clone-le comme base d'un projet de jeu (`git clone ... mon-jeu`, puis `/start`), ou pioche 3 ou 4 agents avec `kit add-agent gh:Donchitos/Claude-Code-Game-Studios/<chemin>.md`.

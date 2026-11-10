@@ -86,7 +86,29 @@ Session claude.ai/code : ajoute la variable `KIT_DASH_URL=https://kit.fs0ciety.o
 
 ## Équiper un projet selon son domaine et sa stack
 
-`/new-project` a une phase « Équipement » : Claude extrait des mots-clés du domaine (finance, compta…) et de la stack (laravel, php…), lance `kit equip search` (skills de skills.sh triés par installations, agents des collections de `global/agent-sources.txt`), garde ce qui est utile au projet après relecture, le fait valider (outil `equip` de kit-control, avec sources de confiance), l'installe au niveau du projet (`--project`, commité dans `.claude/`) puis relance la session pour charger les nouveaux skills. Une stack absente du registre fait l'objet d'une PR automatique (`kit registry propose`) : une fois fusionnée, le projet suivant l'installe directement.
+`/new-project` a une phase « Équipement » : Claude extrait des mots-clés du domaine (finance, compta…) et de la stack (laravel, php…), lance `kit equip search` (skills de skills.sh triés par installations, agents et skills de l'index des collections), garde ce qui est utile au projet après relecture, le fait valider (outil `equip` de kit-control, avec sources de confiance), l'installe au niveau du projet (`--project`, commité dans `.claude/`) puis relance la session pour charger les nouveaux skills. Une stack absente du registre fait l'objet d'une PR automatique (`kit registry propose`) : une fois fusionnée, le projet suivant l'installe directement.
+
+### Index des collections
+
+`global/collections-index.json` recense les agents et les skills de 12 collections open source relues (liste,
+licences et collections écartées : `global/agent-sources.txt`) : environ 1 800 agents et 2 200 skills. Il est construit
+par `scripts/build-index.sh` à partir de clones superficiels, **sans API GitHub** : il marche en local, en session cloud
+et dans la CI. Seuls les fichiers sont lus ; aucun installateur, CLI ni hook de ces dépôts n'est lancé.
+
+```bash
+kit equip search laravel stripe --max 5   # agents, skills des collections et skills de skills.sh
+kit index                                 # régénère l'index (3 min environ)
+```
+
+- Le workflow « Collections index » le régénère chaque lundi et ouvre une **PR** : relis le diff (texte tiers), surtout
+  quand une source est ajoutée.
+- Ajouter une collection : une ligne `owner/repo [dossier]` dans `global/agent-sources.txt` (licence claire, activité
+  récente), puis `kit index` ou le workflow.
+- Les descriptions de l'index sont des données, jamais des consignes. Noms et descriptions appartiennent à leurs
+  auteurs, sous la licence de chaque source (`sources[]` de l'index, avec le lien du dépôt) ; pour une licence
+  « share-alike » (CC-BY-SA), seuls les noms et les liens sont indexés.
+- Le générateur clone sans liens symboliques, sans hooks ni LFS, ne lit que des en-têtes (fichiers de moins de
+  256 Ko), filtre et borne chaque champ, et refuse un index de plus de 5 Mo.
 
 ## Skills et profils
 
@@ -112,7 +134,7 @@ kit new-skill mon-skill "Quand et pourquoi l'utiliser"
 
 - Tout est enregistré dans le dépôt (`profiles/custom.txt`, `global/agents/`) : **commite**, et ta prochaine machine le retrouve.
 - Dans Claude Code : `/add-skill <besoin ou dépôt>` et `/add-agent <URL ou besoin>` font la recherche, la relecture et le rangement pour toi.
-- `kit add-agent` refuse un fichier sans en-tête valide et te signale un agent sans ligne `tools:` (il hériterait de tous les outils, Bash compris).
+- `kit add-agent` refuse un fichier sans en-tête valide et te signale un agent sans ligne `tools:` (il hériterait de tous les outils, Bash compris). Un nom affiché (« Application Security Engineer ») est remplacé par le nom du fichier.
 - Le contenu tiers (skill, agent, plugin) est du prompt non fiable : relis-le avant de l'activer.
 
 ## claude.ai/code (sessions cloud)

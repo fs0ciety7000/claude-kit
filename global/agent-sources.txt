@@ -1,4 +1,38 @@
-# Collections d'agents Claude Code où `kit equip search` cherche (owner/repo). Contenu tiers :
-# chaque agent proposé est relu avant installation. Vérifiées en novembre 2026 (licence MIT, maintenues).
-wshobson/agents
+# Collections indexed by `kit index` (scripts/build-index.sh) and searched by `kit equip search`.
+# Format: owner/repo [path-prefix]   (the prefix limits indexing to one folder of the repository)
+# Third-party content: each agent or skill is read before installation (kit add-agent / kit add-skill).
+# Only the files are read: no installer, CLI or hook of these repositories is ever run.
+# Reviewed on 2026-11-10 (license, last commit, layout). Not kept: vijaythecoder/awesome-claude-agents,
+# lst97/claude-code-sub-agents, contains-studio/agents (inactive), iannuttall/claude-agents (archived),
+# travisvn/awesome-claude-skills, rahulvrane/awesome-claude-agents (link lists), tryalan-ai/awesome-claude-code-sub-agents
+# (inactive since September 2025), ComposioHQ/awesome-claude-skills
+# (inactive since July 2026). To discover more: hesreallyhim/awesome-claude-code.
+
+# --- Agents --------------------------------------------------------------------------------------------------------
+# MIT, very active, agents by division (engineering, design, game-development…)
+msitarzewski/agency-agents
+# MIT, categories/NN-*/
 VoltAgent/awesome-claude-code-subagents
+# MIT, plugins/<plugin>/agents and plugins/<plugin>/skills
+wshobson/agents
+# MIT; aggregated catalogue (each component keeps its author's license). Files only: the CLI sends telemetry.
+davila7/claude-code-templates cli-tool/components/
+# MIT, game studio (Godot, Unity, Unreal); agents only, never its settings or hooks
+Donchitos/Claude-Code-Game-Studios .claude/agents/
+# MIT, flat agents/
+0xfurai/claude-code-subagents agents/
+# MIT, plugins/agents-*/agents/
+davepoon/buildwithclaude plugins/
+
+# --- Skills --------------------------------------------------------------------------------------------------------
+# Official; Apache-2.0 for the skills read (Office skills moved to Apache-2.0 on 2026-11-06). Each skill folder has
+# its own LICENSE.txt, recorded per entry in the index: check it before installing.
+anthropics/skills skills/
+# MIT, very broad (engineering, product, finance…)
+alirezarezvani/claude-skills
+# MIT, workflow (brainstorming, plans, TDD, review); skills only, never its hooks
+obra/superpowers skills/
+# Security (CC-BY-SA-4.0: an installed copy keeps that license)
+trailofbits/skills plugins/
+# MIT (some skills carry their own license), science
+K-Dense-AI/scientific-agent-skills skills/
