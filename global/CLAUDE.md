@@ -22,6 +22,15 @@ Pour toute tâche non triviale :
    maquettes) ; `ui-designer` ne commence qu'après le choix de l'utilisateur, en partant de cette identité.
 4. Domaine métier ou stack non couverts par le registre : `kit equip search <mots-clés>` (domaine + stack), sélectionne, fais valider (`equip` de kit-control, sinon une question), installe au niveau du projet (`kit add-skill … --project`, `kit add-agent … --project`). Nouvelle stack : `kit registry propose` pour l'ajouter au kit.
 5. Fonctionnalité nouvelle : brainstorming → plan → exécution → revue (skills Superpowers si installés).
+6. **Équipement à chaque demande** (fonctionnalité, ajout, modification) : avant le plan, compare ce que la demande
+   exige (domaine, bibliothèque, plateforme, type de travail) à l'équipe (`.claude/agents/`, rubrique « Équipe ») et
+   aux skills du projet. Manque réel : `kit equip search`, puis `equip`/question, installation `--project`, ou
+   `team-builder` si le travail change de nature. Rien ne manque : n'en parle pas.
+7. **Enchaînement autonome** une fois le plan validé : tâche → agent → PR → `code-reviewer` (+ `security-reviewer`
+   si auth, secrets, exposition, dépendances, déploiement) → `qa-tester` → ta vérification (diff, tests, build) →
+   tâche `done` → suivante, sans redemander entre les lots. Tu t'arrêtes pour valider seulement : fusion sur `main`,
+   déploiement en prod, suppression, migration de données en prod, écart au plan validé, échec répété (2 fois).
+8. Fin d'un travail notable (lot livré, PR ouverte, fin de session) : `/handoff`, sans attendre qu'on le demande.
 
 ## Secrets : règles strictes
 
@@ -35,7 +44,7 @@ Pour toute tâche non triviale :
 ## Dashboard (kit-control)
 
 Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le travail depuis le dashboard :
-- Validation d'une phase ou d'un plan : `checkpoint` (au lieu de « valide / modifie ? » dans le chat). Sur `PENDING`, appelle `wait_for_answer` et n'avance pas. Sur `CHANGES REQUESTED`, corrige puis refais un `checkpoint`.
+- Validation d'une phase ou d'un plan : `checkpoint` (au lieu de « valide / modifie ? » dans le chat). Sur `PENDING`, appelle `wait_for_answer` (plusieurs fois s'il le faut) ; en attendant, seulement de la lecture, rien d'écrit. Sur `CHANGES REQUESTED`, corrige puis refais un `checkpoint`. `checkpoint` ou `ask` en erreur (ex. « upstream request failed ») : une seule question dans le chat à la place, sans réessayer en boucle.
 - Question bloquante : `ask` (options courtes, recommandée en premier).
 - **Plan et tâches, tenus en continu** : chaque projet a un plan (`docs/plan.md`, ou sa feuille de route existante
   que `docs/plan.md` désigne) et, sur le dashboard, une tâche par élément du plan. Toute demande nouvelle

@@ -5,6 +5,10 @@ description: Composer l'équipe de sous-agents d'un projet (4 à 7 rôles) à pa
 
 # Composer l'équipe d'un projet
 
+**Équipe déjà en place** (`.claude/agents/` rempli, rubrique « Équipe ») : ne la recompose pas. Pour une demande
+nouvelle, ajoute seulement le rôle qui manque (étapes 2 à 4 pour ce rôle) ; recompose tout seulement si le travail
+change de nature (ex. une app web qui devient un jeu ou une app mobile).
+
 ## 1. Rôles nécessaires
 À partir de `docs/brief.md`, `docs/memory/stack.md` et `docs/plan.md`, choisis **4 à 7 rôles**, jamais tous. Base :
 
