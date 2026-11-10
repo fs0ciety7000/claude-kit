@@ -15,7 +15,7 @@ AJOUTER FACILEMENT
         ex. kit add-skill vercel-labs/agent-skills --skill vercel-react-best-practices --profile web
   kit add-agent <url|gh:owner/repo/chemin.md|fichier.md> [--project] [--force]
         télécharge un agent, vérifie son en-tête, l'installe (global par défaut)
-  kit new-agent <nom> "<description>" [--tools "Read, Glob, Grep"] [--model haiku|sonnet|opus|inherit]
+  kit new-agent <nom> "<description>" [--tools "Read, Glob, Grep"] [--model haiku|sonnet|opus|fable|inherit] [--effort low|medium|high|xhigh|max]
   kit new-skill <nom> "<description>"
 
 SKILLS PAR PROFIL
@@ -291,18 +291,20 @@ cmd_add_agent() {
 }
 
 cmd_new_agent() {
-  local name=${1:-} desc=${2:-} tools="Read, Glob, Grep" model=sonnet
+  local name=${1:-} desc=${2:-} tools="Read, Glob, Grep" model=sonnet effort=medium
   shift 2 2>/dev/null || true
   while (($#)); do
     case $1 in
       --tools) tools=${2:?"liste d'outils manquante"}; shift ;;
-      --model) model=${2:?"modèle manquant (haiku, sonnet, opus, inherit)"}; shift ;;
+      --model) model=${2:?"modèle manquant (haiku, sonnet, opus, fable, inherit)"}; shift ;;
+      --effort) effort=${2:?"effort manquant (low, medium, high, xhigh, max)"}; shift ;;
       *) die "option inconnue : $1" ;;
     esac
     shift
   done
-  [[ $name =~ ^[a-z0-9][a-z0-9-]*$ && -n $desc ]] || die 'usage : kit new-agent <nom-en-minuscules> "<description>" [--tools "Read, Glob, Grep"] [--model haiku|sonnet|opus|inherit]'
-  [[ $model =~ ^(haiku|sonnet|opus|inherit)$ ]] || die "modèle invalide : $model (haiku, sonnet, opus, inherit)"
+  [[ $name =~ ^[a-z0-9][a-z0-9-]*$ && -n $desc ]] || die 'usage : kit new-agent <nom-en-minuscules> "<description>" [--tools "Read, Glob, Grep"] [--model haiku|sonnet|opus|fable|inherit] [--effort low|medium|high|xhigh|max]'
+  [[ $model =~ ^(haiku|sonnet|opus|fable|inherit)$ ]] || die "modèle invalide : $model (haiku, sonnet, opus, fable, inherit)"
+  [[ $effort =~ ^(low|medium|high|xhigh|max)$ ]] || die "effort invalide : $effort (low, medium, high, xhigh, max)"
   local dest="$KIT_HOME/global/agents/$name.md"
   [[ ! -e $dest ]] || die "$dest existe déjà"
   cat >"$dest" <<EOF
@@ -311,6 +313,7 @@ name: $name
 description: $desc
 tools: $tools
 model: $model
+effort: $effort
 ---
 
 Tu es $name.
