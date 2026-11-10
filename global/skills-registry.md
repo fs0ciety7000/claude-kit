@@ -54,5 +54,5 @@ Le modèle de chaque agent est fixé dans son en-tête (`model:`) : opus pour la
 1. **Toujours actifs** : `writing-for-agents` dès qu'on écrit un fichier destiné à un agent ; Superpowers pour le workflow.
 2. **Combiner** quand le projet mélange plusieurs types (ex. Shopify + backend Go : profils `shopify` + `go`).
 3. **Ne pas tout charger** : un skill par besoin réel.
-4. **Skill ou agent manquant** (domaine métier, stack absente) : `kit equip search <mots-clés>`, sélection relue, validation (`equip` de kit-control), installation au niveau du projet. Stack nouvelle : `kit registry propose <fichier.json>` ouvre la PR qui ajoute sa ligne ici.
+4. **Skill ou agent manquant** (domaine métier, stack absente) : `kit equip search <mots-clés>` (skills.sh + index local de 12 collections, `global/agent-sources.txt`), sélection relue, validation (`equip` de kit-control), installation au niveau du projet. Stack nouvelle : `kit registry propose <fichier.json>` ouvre la PR qui ajoute sa ligne ici.
 5. **Noms de skills** : vérifiés en novembre 2026 avec `npx skills add <source> -l`, sauf `compose-pro` (dépôt non clonable lors du test). Les dépôts évoluent : si une installation échoue, relance `-l`, corrige la ligne du profil et `kit registry`.

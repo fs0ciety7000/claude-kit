@@ -53,6 +53,7 @@ category() {
 
 entries="$WORK/entries.jsonl"
 : >"$entries"
+: >"$WORK/sources.jsonl"
 while read -r repo prefix _; do
   [[ -z ${repo:-} || $repo == \#* ]] && continue
   [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "skip invalid source: $repo" >&2; continue; }
@@ -66,12 +67,29 @@ while read -r repo prefix _; do
   for l in LICENSE LICENSE.md LICENSE.txt license; do
     [[ -f $dir/$l ]] && { license=$(head -3 "$dir/$l" | tr -s ' \n' ' ' | cut -c1-60); break; }
   done
+  # Folders holding a SKILL.md: any other Markdown file below them is a resource of that skill, not an agent.
+  skilldirs="$WORK/skilldirs"
+  find "$dir" -name SKILL.md -type f -printf '%h\n' | sed "s|^$dir/||" | sort -u >"$skilldirs"
   n=0
   while IFS= read -r -d '' f; do
     rel=${f#"$dir"/}
+    base=$(basename "$rel")
+    case "/$rel" in
+      */assets/*|*/references/*|*/rules/*|*/resources/*|*/prompts/*) continue ;;
+    esac
+    case $base in TEMPLATE.md|template.md|SKILL.*.md) continue ;; esac
+    if [[ $base != SKILL.md ]]; then
+      d=$(dirname "$rel") inside=0
+      while [[ $d != . ]]; do
+        grep -qxF "$d" "$skilldirs" && { inside=1; break; }
+        d=$(dirname "$d")
+      done
+      ((inside)) && continue
+    fi
     [[ -n ${prefix:-} && $rel != "$prefix"* ]] && continue
     case "/$rel" in
-      */commands/*|*/hooks/*|*/templates/*|*/docs/*|*/examples/*|*/.github/*) continue ;;
+      */commands/*|*/hooks/*|*/templates/*|*/docs/*|*/examples/*|*/.github/*|*/scripts/*|*/integrations/*) continue ;;
+      */.codex/*|*/.gemini/*|*/.cursor/*|*/node_modules/*) continue ;;
     esac
     [[ $(head -c 3 "$f") == "---" ]] || continue
     h=$(header "$f")
@@ -87,18 +105,20 @@ while read -r repo prefix _; do
     fi
     jq -nc --arg kind "$kind" --arg source "$repo" --arg path "$rel" --arg name "$name" \
       --arg desc "${desc:0:300}" --arg tools "$(field tools "$h")" --arg model "$(field model "$h")" \
-      --arg category "$cat" --arg commit "$commit" --arg license "$license" '
+      --arg category "$cat" --arg commit "$commit" '
       {kind: $kind, source: $source, path: $path, name: $name, description: $desc, tools: $tools, model: $model,
-       category: $category, updated: $commit, license: $license,
+       category: $category, updated: $commit,
        install: (if $kind == "skill" then "kit add-skill " + $source + " --skill " + $name
                  else "kit add-agent gh:" + $source + "/" + $path end)}' >>"$entries"
     n=$((n + 1))
   done < <(find "$dir" -name '*.md' -type f -print0)
+  jq -nc --arg source "$repo" --arg license "$license" --arg updated "$commit" --argjson count "$n" \
+    '{source: $source, license: $license, updated: $updated, count: $count}' >>"$WORK/sources.jsonl"
   echo "$repo: $n entries ($commit)" >&2
   rm -rf "$dir/.git"
 done <"$SOURCES"
 
-jq -s --arg built "$(date -u +%Y-%m-%d)" \
-  '{built: $built, count: length, entries: (unique_by(.source + "/" + .path) | sort_by(.kind, .source, .name))}' \
-  "$entries" >"$OUT"
+jq -n --arg built "$(date -u +%Y-%m-%d)" --slurpfile e "$entries" --slurpfile s "$WORK/sources.jsonl" \
+  '{built: $built, count: ($e | length), sources: $s,
+    entries: ($e | unique_by(.source + "/" + .path) | sort_by(.kind, .source, .name))}' >"$OUT"
 echo "index: $(jq .count "$OUT") entries -> ${OUT#"$KIT_HOME"/}" >&2

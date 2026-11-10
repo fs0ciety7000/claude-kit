@@ -255,7 +255,16 @@ cmd_add_agent() {
   name=$(fm_get "$TMP_FILE" name)
   desc=$(fm_get "$TMP_FILE" description)
   tools=$(fm_get "$TMP_FILE" tools)
-  [[ $name =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "Nom d'agent invalide ou absent dans l'en-tête : « $name »"
+  if [[ ! $name =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    # Some collections use a display name ("Application Security Engineer"): fall back to the file name.
+    local slug
+    slug=$(basename "${url%%\?*}" .md | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+    [[ $slug =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "Nom d'agent invalide ou absent dans l'en-tête : « $name »"
+    warn "nom « $name » non conforme : l'agent est installé sous « $slug » (nom réécrit dans l'en-tête)"
+    awk -v s="$slug" 'NR > 1 && !done && /^name:/ { print "name: " s; done = 1; next } { print }' "$TMP_FILE" >"$TMP_FILE.n" &&
+      mv "$TMP_FILE.n" "$TMP_FILE"
+    name=$slug
+  fi
   [[ -n $desc ]] || die "Description absente dans l'en-tête."
   if ((project)); then dest_dir="$PWD/.claude/agents"; else dest_dir="$KIT_HOME/global/agents"; fi
   dest="$dest_dir/$name.md"
