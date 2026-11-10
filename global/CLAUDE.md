@@ -87,7 +87,8 @@ Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le trav
   - **Règle de projet, sans demander** : une action de routine bloquée (permission ou classifieur) que le projet
     refera → `kit perms allow "<règle précise>" --reason "<pourquoi>"`. Le script écrit dans le
     `.claude/settings.json` **du projet**, journalise dans `docs/memory/permissions.md` et refuse ce qui sort du
-    périmètre accordé : lecture, build, test, lint, format, outils de la stack, `git` non destructif, `kit api … GET`,
+    périmètre accordé : commandes précises de lecture, build, test, lint, format (`Bash(npm run test *)`, `*` seulement
+    en fin après une espace), chemins du projet, `git` non destructif, `kit api … GET`,
     écritures `kit api` POST/PUT/PATCH sur un chemin précis, outils MCP nommés. Annonce la règle en une ligne, puis
     commite le réglage avec le travail.
   - **Toujours refusé** (le script le bloque, ne le contourne pas) : règle large (`Bash(*)`, `Bash(npm *)`…),

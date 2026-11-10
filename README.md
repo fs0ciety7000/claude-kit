@@ -115,12 +115,12 @@ kit index                                 # régénère l'index (3 min environ)
 Claude ajoute lui-même les règles `allow` **précises** dont un projet a besoin. Le script les vérifie, les écrit dans le `.claude/settings.json` du projet (jamais dans le global) et les journalise dans `docs/memory/permissions.md` :
 
 ```bash
-kit perms check "Bash(npm run test*)"                         # dit si la règle est acceptée, et pourquoi
-kit perms allow "Bash(npm run test*)" --reason "suite de tests"
+kit perms check "Bash(npm run test *)"                        # dit si la règle est acceptée, et pourquoi
+kit perms allow "Bash(npm run test *)" --reason "suite de tests"
 kit perms list
 ```
 
-Règles acceptées : lecture, build, test, lint, format, outils de la stack, `git` non destructif, `kit api … GET`, écritures `kit api` POST, PUT ou PATCH sur un chemin précis, outils MCP nommés.
+Règles acceptées : commandes précises de lecture, build, test, lint et format (au moins deux mots fixes, `*` seulement en fin après une espace : `Bash(npm run test *)`, `Bash(go test ./...)`), chemins du projet (`Read(src/**)`), `git` non destructif, `kit api … GET`, écritures `kit api` POST, PUT ou PATCH sur un chemin précis, outils MCP nommés sans verbe dangereux. Refusés aussi : jokers en milieu de mot (`?`, `[…]`, `test*`), chemins absolus ou `..`, interpréteurs et lanceurs de code (`node`, `python`, `make`, `go run`, `npx` hors prettier/eslint/tsc/vitest/playwright), écriture dans les fichiers à point, manifestes et scripts exécutés (`.claude/`, `.github/`, `package.json`, `Makefile`…).
 
 Règles refusées par le script :
 - les règles larges (`Bash(*)`, `Bash(npm *)`, `mcp__x__*`) ;
