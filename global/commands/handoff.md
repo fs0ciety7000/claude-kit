@@ -17,7 +17,7 @@ Prépare la prochaine session de ce projet. Note de l'utilisateur à transmettre
    décision durable prise cette session (date, décision, raison).
 4. **`docs/plan.md`** : coche ce qui est fini, ajoute ce qui a été découvert.
 5. **Engram** : si la session a produit une leçon, une décision réutilisable ou une recherche utile au-delà de ce
-   projet, applique le skill `engram` s'il est installé.
+   projet, applique le skill `engram`.
 6. **Visibilité du dépôt** : vérifie-la (outil GitHub, ou `gh repo view --json visibility` si disponible) ; inconnue
    = publique. Dépôt public : relis le diff avant de pousser, sans aucune donnée identifiante (IP, hôte interne,
    UUID, utilisateur, e-mail).
