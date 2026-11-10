@@ -202,6 +202,27 @@ git add -A && git commit && git push
 - Le VPS a **sa propre clé age** et ses propres jetons. Ne copie jamais `keys.txt` d'une machine à l'autre, et ne copie pas ta session Claude : connecte-toi avec `claude` sur le VPS lui-même.
 - Garde la session vivante avec `tmux`. `claude remote-control` (forfait Pro/Max/Team/Enterprise requis) permet de la retrouver depuis l'app Claude ou claude.ai/code sans ouvrir de port ; voir la doc officielle pour les limites.
 
+## Mode auto (presque sans interruption)
+
+Le kit met Claude Code en mode **`auto`** : un classifieur juge chaque action au lieu de te la demander. Le bloc
+`autoMode` de `global/settings.json` lui décrit ton infra de confiance, en phrases :
+
+- `environment` : tes dépôts (`fs0ciety7000/*`, claude-kit public), tes domaines, Coolify, Cloudflare, Tailscale, le
+  dashboard, la gestion des secrets, les registres de paquets ;
+- `allow` : installer les dépendances et lancer les scripts d'un projet, les outils de build (Quartz…), cloner un dépôt
+  public pour le lire, `kit api` en création, modification et déploiement, branches `claude/*` et PR ;
+- `soft_deny` : pas de `tofu apply` (c'est toi qui l'appliques), pas de modification de ses propres permissions ;
+- `hard_deny` : jamais la valeur d'un secret, nulle part.
+
+`kit sync` le fusionne dans `~/.claude/settings.json` (machines et sessions cloud) : le mode vient du kit, et les
+listes s'additionnent avec tes propres entrées. Le classifieur **ignore** `autoMode` dans le `.claude/settings.json`
+d'un projet (un dépôt ne peut pas s'autoriser lui-même).
+
+**Quand Claude est bloqué à répétition** sur une action de routine, il ne change pas ses réglages : il ouvre une PR
+sur claude-kit avec la règle proposée et la raison. Tu la fusionnes, puis `kit update`. Commandes utiles :
+`claude auto-mode config` (règles effectives), `claude auto-mode critique` (avis sur tes règles), `/permissions` →
+onglet « Recently blocked » pour relancer une action refusée.
+
 ## Garde-fous et leurs limites
 
 - **Permissions** (`settings.json`) : lecture des fichiers de secrets refusée, `sudo`, `printenv`, `sops -d` refusés, actions destructrices en confirmation.

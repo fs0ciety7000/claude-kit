@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
-    "defaultMode": "acceptEdits",
+    "defaultMode": "auto",
     "allow": [
       "Read",
       "Glob",
@@ -293,6 +293,37 @@
           }
         ]
       }
+    ]
+  },
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "Organization: solo developer (fs0ciety). Primary use: software development and infrastructure automation of a self-hosted infrastructure (Coolify on two VPS, Cloudflare, Tailscale).",
+      "Source control: github.com/fs0ciety7000 and all repositories under it. Repository visibility: all private except fs0ciety7000/claude-kit, which is public (never commit identifying data or secrets there).",
+      "Trusted internal domains: *.fs0ciety.org (including *.in.fs0ciety.org on the tailnet), dessenius.be, tandem-agenda.app, cardormedia.com and their subdomains: the user's own sites and services.",
+      "Key internal services: the user's Coolify API (coolify.fs0ciety.org), the user's Cloudflare account (api.cloudflare.com), the user's Tailscale tailnet (api.tailscale.com) and the kit dashboard (kit.fs0ciety.org), reached through `kit api` or the kit tools. HTTP DELETE is blocked by permissions: deletions are done by the user.",
+      "Secrets management: locally, sops + age through `kit secrets run` (values never printed); in cloud sessions, API tokens are network secrets injected by the agent proxy, so the container holds no token and a placeholder value in a header is expected.",
+      "Host containment: cloud sessions run in an ephemeral container with an egress allow-list (package registries, GitHub, the user's API hosts); local sessions run on the user's own machines.",
+      "Public package registries (npm, PyPI, Go proxy, crates.io, Docker Hub, ghcr.io) and public GitHub repositories are trusted sources to read from and install from, after the dependency is checked (skill dependency-hygiene).",
+      "Sensitive remote targets: the production applications on the user's Coolify servers; changes go through pull requests and the deploy webhook, with the user's go for anything that cuts a service.",
+      "Protected IaC scopes: fs0ciety-ops/infra (OpenTofu for Cloudflare and Tailscale): `plan` is fine, `apply` is run by the user only."
+    ],
+    "allow": [
+      "$defaults",
+      "Installing a project's dependencies from public registries (npm ci, npm install, pnpm install, pip/uv install in a virtual environment, go mod download, cargo fetch) and running the project's own build, test, lint, format and dev scripts is routine.",
+      "Running a project's build tool or static site generator and its official plugin installer inside the working repository (for example npx quartz plugin install, npx quartz build) is routine.",
+      "Shallow-cloning a public GitHub repository into a temporary or scratchpad folder to read its files (license, layout, headers) is routine, as long as nothing from it is executed.",
+      "Creating, updating, starting, stopping and deploying applications, variables and domains on the user's Coolify, and creating or updating DNS records, tunnels and Access applications on the user's Cloudflare account through `kit api`, is authorized by the user (announced in one line, then verified).",
+      "Pushing to claude/* branches and opening pull requests on fs0ciety7000 repositories is routine; merging one is allowed when the user asked for that merge in the conversation."
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Never run `tofu apply` or `terraform apply` on fs0ciety-ops/infra: the user applies.",
+      "Never change Claude Code settings, permission rules or autoMode entries to grant the agent more rights: propose the rule in a pull request on fs0ciety7000/claude-kit (global/settings.json) and let the user merge it."
+    ],
+    "hard_deny": [
+      "$defaults",
+      "Never print, copy, log or send the value of a secret (API token, private key, password, environment file, network secret) anywhere, including commits, pull requests, issues and chat."
     ]
   }
 }
