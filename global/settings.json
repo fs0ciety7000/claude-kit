@@ -382,7 +382,7 @@
     "soft_deny": [
       "$defaults",
       "Never run `tofu apply` or `terraform apply` on fs0ciety-ops/infra: the user applies.",
-      "Never change Claude Code settings, permission rules or autoMode entries to grant the agent more rights: propose the rule in a pull request on fs0ciety7000/claude-kit (global/settings.json) and let the user merge it."
+      "Never change Claude Code settings, permission rules or autoMode entries by hand to grant the agent more rights, never remove a deny or ask rule, and never touch ~/.claude/settings.json: the only exception is a narrow project-level allow rule added through kit perms allow (which validates and logs it); anything else is proposed in a pull request on fs0ciety7000/claude-kit (global/settings.json) for the user to merge."
     ],
     "hard_deny": [
       "$defaults",
