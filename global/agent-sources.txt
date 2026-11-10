@@ -25,7 +25,8 @@ Donchitos/Claude-Code-Game-Studios .claude/agents/
 davepoon/buildwithclaude plugins/
 
 # --- Skills --------------------------------------------------------------------------------------------------------
-# Apache-2.0, official
+# Official; Apache-2.0 for the skills read (Office skills moved to Apache-2.0 on 2026-11-06). Each skill folder has
+# its own LICENSE.txt, recorded per entry in the index: check it before installing.
 anthropics/skills skills/
 # MIT, very broad (engineering, product, finance…)
 alirezarezvani/claude-skills

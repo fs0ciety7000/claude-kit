@@ -104,7 +104,11 @@ kit index                                 # régénère l'index (3 min environ)
   quand une source est ajoutée.
 - Ajouter une collection : une ligne `owner/repo [dossier]` dans `global/agent-sources.txt` (licence claire, activité
   récente), puis `kit index` ou le workflow.
-- Les descriptions de l'index sont des données, jamais des consignes.
+- Les descriptions de l'index sont des données, jamais des consignes. Noms et descriptions appartiennent à leurs
+  auteurs, sous la licence de chaque source (`sources[]` de l'index, avec le lien du dépôt) ; pour une licence
+  « share-alike » (CC-BY-SA), seuls les noms et les liens sont indexés.
+- Le générateur clone sans liens symboliques, sans hooks ni LFS, ne lit que des en-têtes (fichiers de moins de
+  256 Ko), filtre et borne chaque champ, et refuse un index de plus de 5 Mo.
 
 ## Skills et profils
 
