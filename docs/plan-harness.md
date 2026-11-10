@@ -134,7 +134,16 @@ dans les réglages du kit).
 Chaque lot passe par `security-reviewer` (hooks, commandes, contenu tiers) et par `writing-for-agents` (fichiers pour
 agents).
 
-## 6. Décisions à prendre
+## 6. Décisions
+
+Prises le 10/11 :
+- claude-mem **écarté** : `docs/memory/` + `handoff.md` versionnés dans chaque dépôt.
+- `KNOWLEDGE.md` : copie locale en lecture seule de fs0ciety-ops par `kit sync` ; en cloud, dépôt attaché en lecture.
+- Obsidian : **plus tard**.
+
+En attente : l'ordre et le contenu des lots (l'utilisateur veut modifier le plan).
+
+Questions initiales :
 
 1. Ordre des lots A → E, une PR par lot ?
 2. claude-mem écarté, `docs/memory/` + handoff à la place ?
