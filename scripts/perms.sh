@@ -15,98 +15,79 @@ SELF=$(readlink -f "${BASH_SOURCE[0]}")
 source "$(dirname "$SELF")/lib.sh"
 
 # ---------------------------------------------------------------------------------------------------------
-# Règles de validation, en données pour être relues facilement.
-# Format des entrées : "libellé@@regex ERE". Elles sont testées sur la spécification en minuscules.
+# Validation par LISTE BLANCHE : une règle n'est acceptée que si elle appartient à une famille connue et sûre.
+# Les listes noires sont contournables (jokers, guillemets, options inattendues) ; ici, tout ce qui n'est pas listé
+# est refusé. Pour étendre : ajouter une ligne aux tableaux ci-dessous par PR sur claude-kit (relue par l'utilisateur).
 # ---------------------------------------------------------------------------------------------------------
 
-# Frontières de mot : ni alphanumérique, ni _ . - (donc « .env », « age-keygen », « usage » ne déclenchent pas « env », « age »).
-L='(^|[^[:alnum:]_.-])'
-R='($|[^[:alnum:]_.-])'
+# --- Bash -------------------------------------------------------------------------------------------------
 
-# Outils acceptés (en plus de mcp__<serveur>__<outil>).
-ALLOWED_TOOLS_RE='^(Bash|Read|Edit|Write|Glob|Grep|WebFetch)$'
+# Caractères admis dans une spécification Bash (donc ni \ ' " $ ` ; & | < > ( ) { } [ ] ? ~, ni tabulation, ni retour ligne).
+# « * » n'est admis que comme dernier caractère, derrière un espace ou un « / » (contrôlé à part).
+BASH_SPEC_CHARS_RE='^[A-Za-z0-9 _./:=%,*-]+$'
 
-# Outils qui ne peuvent jamais être accordés sans spécification (trop larges).
-BARE_REFUSED=(Bash Read Edit Write WebFetch)
-
-# Jokers : ? [ ] { } sont refusés partout. « * » n'est admis que de façon structurée (voir check_bash_spec, check_file_spec,
-# check_kit_api_path) : les tests de mots-clés par sous-chaîne sont contournables par un joker au milieu d'un mot.
-GLOB_FORBIDDEN_RE='[][?{}]'
-
-# Premier mot d'une règle Bash refusé : shells et interpréteurs, élévation, réseau brut, lanceurs de code arbitraire.
-# (Un premier mot contenant « / » ou « = » est refusé aussi : binaire désigné par chemin, ou variable d'environnement.)
-BASH_FIRST_REFUSED_RE='^(bash|sh|zsh|dash|ksh|fish|csh|tcsh|python[0-9.]*|perl|ruby|php[0-9.]*|node|nodejs|deno|bun|lua[0-9.]*|osascript|su|doas|sudo|env|exec|xargs|curl|wget|nc|ncat|telnet|ftp|make|gmake|just|eval|source|\.|command|builtin|time|timeout|nice|nohup|watch|setsid|stdbuf|busybox|bunx|uvx|pipx)$'
-# Premier + deuxième mot refusés : exécuteurs de paquets, installations, cibles destructrices de git et gh.
-BASH_PAIR_REFUSED_RE='^(pnpm (dlx|exec|x)|yarn (dlx|exec)|npm (exec|x)|pip[0-9.]* install|cargo (run|install)|go (run|install)|gh (workflow|pr merge)|git (config|rebase|restore|filter-.*|stash drop|stash clear))$'
-# npx : seulement ces outils fixes (le mot suivant doit être fixe) ; playwright seulement avec « test ».
-NPX_ALLOWED_RE='^(prettier|eslint|tsc|vitest|playwright)$'
-# Options globales de git qui déplacent le dépôt ou changent la configuration.
-GIT_OPTS_REFUSED_RE='^(-C|-c|--git-dir(=.*)?|--work-tree(=.*)?|--exec-path(=.*)?)$'
-
-# Chaînage, redirection, substitution : une règle Bash ne doit désigner qu'UNE commande (couvre aussi « | sh »).
-BASH_METACHAR_GLOB='*[;&|<>`]*'
-
-# Mots dangereux n'importe où dans une règle Bash (suppression, élévation, secrets, accès distant, conteneurs…).
-DANGEROUS_BASH=(
-  "rm@@${L}rm${R}"
-  "sudo@@${L}sudo${R}"
-  "--force@@--force"
-  "push -f@@${L}push${R}.*[[:space:]]-f($|[[:space:]])"
-  "reset --hard@@reset[[:space:]]+--hard"
-  "clean@@${L}clean${R}"
-  "branch -D@@branch[[:space:]]+-d"
-  "--delete / -delete@@(^|[[:space:]])--?delete"
-  "-exec@@(^|[[:space:]])-exec"
-  "chmod / chown / chgrp@@${L}(chmod|chown|chgrp)${R}"
-  "dd@@${L}dd${R}"
-  "mkfs@@mkfs"
-  "eval@@${L}eval${R}"
-  "printenv@@${L}printenv${R}"
-  "env@@^env${R}"
-  "sops@@${L}sops${R}"
-  "age@@${L}age(-keygen)?${R}"
-  "kit secrets / kit perms@@kit[[:space:]]+(secrets|perms)"
-  "ssh / scp / sftp@@${L}(ssh|scp|sftp)"
-  "docker run|exec|push|rm@@${L}docker[[:space:]]+(run|exec|push|rm|rmi|login|system|volume)${R}"
-  "kubectl / helm@@${L}(kubectl|helm)${R}"
-  "terraform / tofu apply@@${L}(terraform|tofu)[[:space:]]+(apply|destroy)"
-  "gh api / auth / secret@@${L}gh[[:space:]]+(api|auth|secret)${R}"
-  "kill / shutdown@@${L}(kill|pkill|killall|shutdown|reboot)${R}"
-  "réseau brut (utilise WebFetch(domain:…) ou kit api)@@^(curl|wget|nc|ncat|telnet|ftp)${R}"
+# Débuts de commande admis (mots entiers : le préfixe est la règle entière, ou suivi d'un espace). Lecture, build, test,
+# lint, format de la pile, git non destructif, kit api en lecture seule, utilitaires de lecture. Rien qui écrive hors
+# du projet, installe globalement, lance un interpréteur, un exécuteur de paquets ou un déploiement.
+BASH_ALLOW_PREFIXES=(
+  # Node : tests et outils de la pile (les scripts « npm run <script> » sont traités à part, voir BASH_RUN_PREFIXES)
+  "npm test" "pnpm test" "yarn test" "bun test"
+  "npx prettier" "npx eslint" "npx tsc" "npx vitest" "npx playwright test"
+  "node --test"
+  "tsc" "eslint" "prettier"
+  # Go
+  "go test" "go build" "go vet" "gofmt -l" "go fmt" "go mod tidy" "go mod download"
+  # Rust
+  "cargo test" "cargo build" "cargo check" "cargo clippy" "cargo fmt"
+  # Python
+  "pytest" "python -m pytest" "ruff check" "ruff format" "mypy"
+  # git en lecture (les options dangereuses et « push » sont refusées plus bas)
+  "git status" "git log" "git diff" "git show" "git fetch" "git rev-parse" "git ls-files" "git blame"
+  # kit : API en lecture seule (chemin exigé) et commandes de diagnostic
+  "kit api coolify GET" "kit api cloudflare GET" "kit api github GET"
+  "kit detect" "kit doctor" "kit equip search"
+  # Utilitaires de lecture (find : -exec/-delete/-ok… refusés plus bas)
+  "ls" "cat" "head" "tail" "wc" "grep" "rg" "find" "jq" "tree" "du" "df" "which" "file" "stat"
 )
+# Commandes admises telles quelles, sans argument ni joker.
+BASH_ALLOW_EXACT=("git branch --list" "git branch --show-current" "git remote -v" "git stash list")
+# Lanceurs de scripts du projet : « <lanceur> <script> », le script étant un nom simple hors BASH_SCRIPT_DENY_RE.
+BASH_RUN_PREFIXES=("npm run" "pnpm run" "yarn run" "bun run")
+BASH_SCRIPT_RE='^[a-z0-9][a-z0-9:_-]*$'
+# Scripts qui déploient, publient, installent ou migrent (sous-chaîne du nom).
+BASH_SCRIPT_DENY_RE='deploy|publish|release|install|prepare|pack|version|push|migrate|prod|upload|ship|rollout'
 
-# Secrets, sur toute spécification (tous outils). « .env.example » est retiré avant le test de « .env ».
+# Options refusées dans n'importe quel mot après le début de commande (exécution, suppression, écriture hors projet,
+# déplacement du dépôt git, push…). Comparées mot entier, casse respectée.
+BASH_DANGEROUS_OPTS_RE='^(--exec(=.*)?|-exec|-execdir|-ok|-okdir|-delete|--delete(=.*)?|-fprint0?|-fprintf|-fls|--output(=.*)?|--pre(=.*)?|--pre-glob(=.*)?|--config-env(=.*)?|--git-dir(=.*)?|--work-tree(=.*)?|--exec-path(=.*)?|--upload-pack(=.*)?|--receive-pack(=.*)?|--ext-diff|--textconv|--force(=.*)?|--hard|--no-verify|--in-place|push|-D)$'
+# Pour git seulement : -c / -C changent la configuration ou le dossier ; un « : » désigne un refspec (écrase des branches).
+GIT_DANGEROUS_OPTS_RE='^(-c|-C)$'
+
+# kit api (lecture) : chemin concret commençant par « / », sans mot d'action (Coolify : start/stop/restart sont des GET).
+KIT_API_PATH_DANGER_RE='merge|deploy|start|stop|restart|trigger|delete'
+
+# --- Fichiers ---------------------------------------------------------------------------------------------
+
+# Read/Glob/Grep : chemin relatif ancré (au moins un « / »), premier segment fixe, segments fixes ou « * » / « ** » entiers.
+FILE_FIRST_SEGMENT_RE='^[A-Za-z0-9_][A-Za-z0-9_-]*$'
+FILE_SEGMENT_RE='^[A-Za-z0-9_][A-Za-z0-9_.-]*$'
+
+# --- MCP --------------------------------------------------------------------------------------------------
+
+# Outils MCP de lecture seulement : nom en lecture ET aucun verbe d'écriture n'importe où dans le nom.
+MCP_READ_RE='^((get|list|search|read|fetch|query|describe|view)_[a-z0-9_]+|[a-z0-9_]+_(read|get|list|search))$'
+MCP_DANGER_RE='delete|remove|destroy|drop|truncate|merge|deploy|publish|release|trigger|push|force|execute|exec|run|shell|sql|migration|apply|write|reset|pause|restore|rebase|revoke|rotate|archive|disable|cancel|kill|stop|restart|create|update|add|set|upload|send'
+
+# --- WebFetch ---------------------------------------------------------------------------------------------
+
+WEBFETCH_HOST_RE='^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$'
+
+# --- Secrets (toute spécification, tous outils) ----------------------------------------------------------
+# « .env.example » est retiré avant le test de « .env ». « secret » couvre aussi « __SECRET:NOM__ ».
 SECRET_WORDS=(
   ".env" ".pem" ".key" ".p12" ".pfx" "id_rsa" "id_ed25519" ".ssh" ".gnupg" ".aws" ".kube" ".netrc" ".npmrc"
   ".pgpass" "secret" "keys.txt" "token" "password" "credential"
 )
-
-# Suppression / production : sur toute règle Bash et sur les outils MCP qui écrivent.
-DELETE_PROD_BASH=(
-  "DELETE@@delete"
-  "TRIGGER@@trigger"
-  "deploy@@deploy"
-  "publish@@publish"
-  "release@@release"
-  "merge@@merge"
-  "wrangler@@wrangler"
-  "git push (les push restent gouvernés par les réglages globaux)@@git[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push"
-)
-# Outils MCP : verbes d'écriture dangereuse, interdits n'importe où dans le nom de l'outil. Les préfixes get_/list_/read_ n'y
-# échappent pas (« get_latest_release » est refusé : il est déjà dans les réglages globaux). Les create_*/update_*/add_*
-# ordinaires restent permis.
-MCP_DANGER_RE='delete|remove|destroy|drop|truncate|merge|deploy|publish|release|trigger|push|force|execute|exec|run|shell|sql|migration|apply|write|create_or_update|update_file'
-
-# Services de « kit api » ; GET libre, POST/PUT/PATCH sur chemin concret seulement.
-KIT_API_SERVICES_RE='^(coolify|cloudflare|github)$'
-# Chemins « kit api » qui déclenchent une action ou détruisent (start/stop/restart/deploy… sont des GET chez Coolify) : refusés.
-KIT_API_PATH_DANGER_RE='merge|deploy|start|stop|restart|delete'
-# Segments fixes minimaux avant un « /* » final : 3 pour POST/PUT/PATCH, 1 pour GET.
-KIT_API_WRITE_MIN_SEGMENTS=3
-
-# Edit/Write : fichiers ou dossiers exécutés par la CI ou par un build, refusés (comparés en minuscules).
-# Tout segment commençant par « . » est refusé aussi (.claude, .git, .github, .husky, .vscode, .mcp.json, fichiers d'environnement).
-WRITE_PROTECTED_NAMES_RE='^(package(-lock)?\.json|npm-shrinkwrap\.json|makefile|gnumakefile|justfile|dockerfile.*|docker-compose.*|compose\.ya?ml|.*\.lock|bun\.lockb|pnpm-lock\.yaml|go\.sum|cargo\.toml|build\.rs|setup\.py|pyproject\.toml|rakefile|gemfile|scripts|hooks|bin|ci)$'
 
 # ---------------------------------------------------------------------------------------------------------
 
@@ -118,18 +99,16 @@ usage() {
 usage : kit perms allow "<règle>" --reason "<pourquoi>" [--dir <projet>]
         kit perms list [--dir <projet>]
         kit perms check "<règle>"
-Ajoute une règle permissions.allow ÉTROITE au .claude/settings.json du projet et la journalise dans
-docs/memory/permissions.md. Refus : règle large, secrets, suppression, déploiement, push.
+Ajoute une règle permissions.allow de la LISTE BLANCHE (lecture, build, test, lint, git en lecture, kit api GET,
+outils MCP de lecture) au .claude/settings.json du projet et la journalise dans docs/memory/permissions.md.
+Tout le reste (Edit/Write, écritures, déploiement, push, jokers) est refusé : accord de l'utilisateur ou PR.
 EOF
 }
 
-# fixed_prefix <spec> : partie fixe avant le premier joker (« :* » hérité compris).
+# fixed_prefix <spec> : partie fixe avant le premier joker.
 fixed_prefix() {
   local p=$1
-  if [[ $p == *'*'* ]]; then
-    p=${p%%\**}
-    p=${p%:}
-  fi
+  if [[ $p == *'*'* ]]; then p=${p%%\**}; fi
   printf '%s' "$p"
 }
 
@@ -142,7 +121,7 @@ load_restricted() {
     || { bad "global/settings.json illisible"; return 1; }
 }
 
-# check_overlap <tool> <spec> <rule> : refuse ce qui recouvre une règle deny/ask du kit.
+# check_overlap <tool> <spec> <rule> : refuse ce qui recouvre une règle deny/ask du kit (filet en plus de la liste blanche).
 check_overlap() {
   local tool=$1 spec=$2 rule=$3 p ptool pspec rp pp
   load_restricted || return 1
@@ -170,219 +149,157 @@ check_overlap() {
   done
 }
 
+# secret_words_in <texte> : refuse si le texte (minuscules) mentionne un secret.
+secret_words_in() {
+  local s w
+  s=$(tr 'A-Z' 'a-z' <<<"$1")
+  s=${s//.env.example/}
+  for w in "${SECRET_WORDS[@]}"; do
+    if [[ $s == *"$w"* ]]; then bad "mentionne un secret ou un fichier sensible (« $w »)"; return 1; fi
+  done
+}
+
 check_mcp() { # rule
-  local rule=$1 name low
+  local rule=$1 name
   [[ $rule != *'*'* && $rule != *'('* ]] || { bad "joker ou spécification interdits sur un outil MCP : écris exactement mcp__<serveur>__<outil>"; return 1; }
   [[ $rule =~ ^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$ ]] || { bad "format attendu : mcp__<serveur>__<outil> (un seul outil nommé)"; return 1; }
   name=${rule#mcp__*__}
-  low=$(tr 'A-Z' 'a-z' <<<"$name")
-  if [[ $low =~ $MCP_DANGER_RE ]]; then
-    bad "outil MCP dont le nom évoque une suppression, fusion, publication, push, exécution ou écriture brute (« $name »)"
+  [[ $name =~ $MCP_READ_RE ]] || { bad "« $name » n'est pas un outil MCP de lecture (get_/list_/search_/read_…) : un outil MCP qui écrit demande l'accord de l'utilisateur ou une PR"; return 1; }
+  if [[ $name =~ $MCP_DANGER_RE ]]; then
+    bad "le nom « $name » évoque une écriture, une suppression, un déploiement ou une exécution : accord de l'utilisateur ou PR"
     return 1
   fi
   check_overlap mcp "$rule" "$rule"
 }
 
-
-# Chemins Read/Glob/Grep/Edit/Write : relatifs au projet, premier segment fixe et sans point initial, « * » ou « ** » seulement
-# comme segment entier. Edit/Write : aucun segment commençant par « . », aucun fichier de build/CI (WRITE_PROTECTED_NAMES_RE).
-check_file_spec() { # tool spec
-  local tool=$1 spec=$2 segs=() seg lseg i
+# Read/Glob/Grep : chemin relatif ancré (« src/** », « docs/* », « lib/parser.ts »).
+check_file_spec() { # spec
+  local spec=$1 segs=() seg i
   [[ -n $spec ]] || { bad "spécification vide"; return 1; }
-  [[ $spec != /* && $spec != '~'* ]] || { bad "chemin absolu ou ~ : seuls les chemins relatifs au projet sont acceptés"; return 1; }
+  [[ $spec == */* ]] || { bad "chemin non ancré : écris un dossier fixe suivi d'un « / » (ex. src/**)"; return 1; }
   [[ $spec != */ && $spec != *//* ]] || { bad "segment de chemin vide"; return 1; }
   IFS=/ read -ra segs <<<"$spec"
   for i in "${!segs[@]}"; do
     seg=${segs[$i]}
-    lseg=$(tr 'A-Z' 'a-z' <<<"$seg")
-    if [[ -z $seg || $seg == . || $seg == .. ]]; then bad "segment « $seg » interdit (le chemin doit rester dans le projet)"; return 1; fi
-    if [[ $seg == *'*'* ]]; then
-      if ((i == 0)); then bad "le premier segment doit être un dossier ou fichier fixe (pas de joker : $spec)"; return 1; fi
-      if [[ $seg != '*' && $seg != '**' ]]; then bad "« * » et « ** » ne sont admis que comme segment entier (pas dans « $seg »)"; return 1; fi
-    fi
-    if ((i == 0)) && [[ $seg == .* ]]; then bad "le premier segment ne peut pas commencer par « . » ($seg)"; return 1; fi
-    if [[ $tool == Edit || $tool == Write ]]; then
-      if [[ $seg == .* ]]; then bad "écriture dans un chemin caché ($seg : .claude, .git, .github, .husky…) : réservée à l'utilisateur"; return 1; fi
-      if [[ $lseg =~ $WRITE_PROTECTED_NAMES_RE ]]; then
-        bad "écriture dans un fichier ou dossier de build/CI/scripts ($seg) : réservée à l'utilisateur"
-        return 1
-      fi
+    if ((i == 0)); then
+      [[ $seg =~ $FILE_FIRST_SEGMENT_RE ]] || { bad "premier segment « $seg » : un nom de dossier fixe (lettres, chiffres, _ -), sans point initial ni joker"; return 1; }
+    elif [[ $seg != '*' && $seg != '**' ]] && ! [[ $seg =~ $FILE_SEGMENT_RE ]]; then
+      bad "segment « $seg » : un nom fixe (lettres, chiffres, _ . -, sans point initial) ou « * » / « ** » entier"
+      return 1
     fi
   done
 }
 
-# check_kit_api_path <méthode> <mot-chemin> : chemin concret ; un « * » unique et final, juste après « / ».
+# check_kit_api_path <chemin> : lecture seulement, chemin concret.
 check_kit_api_path() {
-  local method=$1 path=$2 base segs=() s n lp
-  path=${path#[\"\']}; path=${path%[\"\']}
+  local path=$1 lp
   [[ $path == /* ]] || { bad "kit api : le chemin doit commencer par /"; return 1; }
   [[ $path != *..* ]] || { bad "kit api : « .. » interdit dans le chemin"; return 1; }
+  [[ ${path#/} =~ [A-Za-z0-9] ]] || { bad "kit api : chemin trop large (/)"; return 1; }
   lp=$(tr 'A-Z' 'a-z' <<<"$path")
   if [[ $lp =~ $KIT_API_PATH_DANGER_RE ]]; then
-    bad "kit api : le chemin évoque une action (merge, deploy, start, stop, restart, delete)"
+    bad "kit api : le chemin évoque une action (merge, deploy, start, stop, restart, trigger, delete)"
     return 1
   fi
-  base=$path
-  n=1
-  if [[ $path == *'*'* ]]; then
-    [[ $path == */\* && ${path%\*} != *'*'* ]] || { bad "kit api : un seul « * », en toute fin du chemin, juste après « / »"; return 1; }
-    base=${path%/\*}
-    case $method in POST | PUT | PATCH) n=$KIT_API_WRITE_MIN_SEGMENTS ;; esac
-  fi
-  IFS=/ read -ra segs <<<"${base#/}"
-  if ((${#segs[@]} < n)); then
-    bad "kit api $method : au moins $n segments fixes avant « /* »"
-    return 1
-  fi
-  for s in "${segs[@]}"; do
-    [[ $s =~ ^[A-Za-z0-9_.:-]+$ ]] || { bad "kit api : segment de chemin non concret (« $s »)"; return 1; }
-  done
 }
 
-check_bash_spec() { # spec  (casse d'origine)
-  local spec=$1 core before low entry label re c=() wf=() first second i word pair p
+check_bash_spec() { # spec
+  local spec=$1 before core c=() p word first i matched=0 exact=0 run=0 script
   [[ -n $spec ]] || { bad "Bash() vide"; return 1; }
+  [[ $spec =~ $BASH_SPEC_CHARS_RE ]] || { bad "caractère interdit dans une règle Bash (seuls lettres, chiffres, espace et _ . / : = % , - sont admis ; pas de guillemet, \\, \$, ~, jokers ? [ ] { }, chaînage ou redirection)"; return 1; }
+  [[ $spec != ' '* && $spec != *'  '* ]] || { bad "espaces en tête ou doublés"; return 1; }
 
-  # A. « * » : un seul, en toute fin, derrière un espace ou un « / » ; jamais en tête.
+  # « * » : un seul, dernier caractère, derrière un espace ou un « / ».
   core=$spec
   if [[ $spec == *'*'* ]]; then
     before=${spec%\*}
     [[ $spec == *'*' && $before != *'*'* ]] || { bad "un seul joker « * » est admis, en toute fin de règle"; return 1; }
-    [[ -n $before ]] || { bad "commande trop large (joker en tête)"; return 1; }
-    [[ $before == *' ' || $before == */ ]] || { bad "le « * » final doit suivre un espace ou un « / » (ex. Bash(npm run test *)) : collé à un mot, il le prolongerait en n'importe quoi"; return 1; }
-    core=$before
+    [[ -n $before && ( $before == *' ' || $before == */ ) ]] || { bad "le « * » final doit suivre un espace ou un « / » (ex. Bash(npm run test *))"; return 1; }
+    core=${before% }
   fi
+  [[ -n $core && $core != *' ' ]] || { bad "commande vide"; return 1; }
   read -ra c <<<"$core"
-  read -ra wf <<<"$spec"
-  if [[ $spec == *'*'* ]] && ((${#c[@]} < 2)); then
-    bad "joker après un seul mot fixe : il faut au moins deux mots fixes avant le joker (ex. Bash(npm run test *))"
-    return 1
-  fi
-  ((${#c[@]} >= 1)) || { bad "commande vide"; return 1; }
-  low=$(tr 'A-Z' 'a-z' <<<"$core")
-
-  # Chaînage, redirection, substitution.
-  # shellcheck disable=SC2053
-  if [[ $spec == $BASH_METACHAR_GLOB || $spec == *'$('* || $spec == *'${'* ]]; then
-    bad "chaînage, redirection ou substitution (; & | < > \` \$( ) : une règle ne doit désigner qu'une commande"
-    return 1
-  fi
-
-  # B. Premier mot.
   first=${c[0]}
-  second=${c[1]:-}
-  [[ $first != */* ]] || { bad "binaire désigné par un chemin ($first)"; return 1; }
-  [[ $first != *=* ]] || { bad "variable d'environnement avant la commande ($first)"; return 1; }
-  if [[ $first =~ $BASH_FIRST_REFUSED_RE ]]; then
-    bad "« $first » (shell, interpréteur, élévation, réseau brut ou lanceur de code) : à valider par l'utilisateur"
-    return 1
-  fi
-  pair="$first $second"
-  if [[ $pair =~ $BASH_PAIR_REFUSED_RE ]]; then bad "« $pair » : exécute du code arbitraire ou modifie l'historique/la configuration"; return 1; fi
-  if [[ $first == npx ]]; then
-    [[ $second =~ $NPX_ALLOWED_RE ]] || { bad "npx : seuls prettier, eslint, tsc, vitest et playwright test sont acceptés, avec un nom d'outil fixe"; return 1; }
-    [[ $second != playwright || ${c[2]:-} == test ]] || { bad "npx playwright : seulement « npx playwright test »"; return 1; }
-  fi
-  if [[ $first == npm || $first == pnpm || $first == yarn ]]; then
-    for word in "${c[@]}"; do
-      [[ $word != -g && $word != --global && $word != --location=global ]] || { bad "installation globale ($first … $word)"; return 1; }
+
+  # Début de commande : liste blanche.
+  for p in "${BASH_ALLOW_EXACT[@]}"; do
+    if [[ $core == "$p" ]]; then exact=1; matched=1; fi
+  done
+  if ((exact)) && [[ $spec == *'*'* ]]; then bad "« $core » est admis sans argument ni joker"; return 1; fi
+  if ((!matched)); then
+    for p in "${BASH_RUN_PREFIXES[@]}"; do
+      if [[ $core == "$p" || $core == "$p "* ]]; then run=1; matched=1; fi
     done
   fi
+  if ((run)); then
+    script=${c[2]:-}
+    [[ $script =~ $BASH_SCRIPT_RE ]] || { bad "« ${c[0]} run » exige un nom de script simple (minuscules, chiffres, : _ -), pas d'option"; return 1; }
+    if [[ $script =~ $BASH_SCRIPT_DENY_RE ]]; then bad "script « $script » : déploiement, publication, installation ou migration"; return 1; fi
+  fi
+  if ((!matched)); then
+    for p in "${BASH_ALLOW_PREFIXES[@]}"; do
+      if [[ $core == "$p" || $core == "$p "* ]]; then matched=1; break; fi
+    done
+  fi
+  ((matched)) || { bad "commande hors de la liste blanche (BASH_ALLOW_PREFIXES dans scripts/perms.sh) : lecture, build, test, lint, git en lecture, kit api GET"; return 1; }
 
-  # C. Arguments : jamais de chemin absolu, de ~ ni de « .. » (sauf le chemin d'un « kit api », validé à part).
+  # Mots suivants : jamais de chemin absolu ni de « .. », jamais d'option dangereuse.
   for i in "${!c[@]}"; do
     ((i >= 1)) || continue
     word=${c[$i]}
     if [[ $first == kit && ${c[1]} == api && $i -eq 4 ]]; then continue; fi
-    if [[ $word =~ (^|=)[\"\']?[/~] ]]; then bad "argument sur un chemin absolu ou ~ (« $word ») : seuls les chemins relatifs au projet sont acceptés"; return 1; fi
+    if [[ $word == /* || $word == *=/* ]]; then bad "argument sur un chemin absolu (« $word ») : seuls les chemins relatifs au projet sont acceptés"; return 1; fi
     if [[ $word =~ (^|/)\.\.($|/) ]]; then bad "argument avec « .. » (« $word ») : le chemin sort du projet"; return 1; fi
-  done
-  if [[ $first == git ]]; then
-    for word in "${c[@]:1}"; do
-      if [[ $word =~ $GIT_OPTS_REFUSED_RE ]]; then bad "option git globale ($word) : déplace le dépôt ou change la configuration"; return 1; fi
-      if [[ $word == push ]]; then bad "git push : les push restent gouvernés par les réglages globaux"; return 1; fi
-    done
-    if [[ $second == checkout ]]; then
-      for word in "${c[@]:2}"; do
-        [[ $word != -- && $word != . ]] || { bad "git checkout -- / . : écrase le travail en cours"; return 1; }
-      done
+    if [[ $word =~ $BASH_DANGEROUS_OPTS_RE ]]; then bad "option ou mot refusé (« $word »)"; return 1; fi
+    if [[ $first == git ]]; then
+      if [[ $word =~ $GIT_DANGEROUS_OPTS_RE ]]; then bad "option git globale (« $word ») : change la configuration ou le dossier"; return 1; fi
+      if [[ $word == *:* ]]; then bad "git avec « : » (refspec) : peut écraser des branches"; return 1; fi
     fi
-  fi
-
-  # Secrets (« .env.example » retiré avant le test de « .env »).
-  local s2=${low//.env.example/}
-  for p in "${SECRET_WORDS[@]}"; do
-    if [[ $s2 == *"$p"* ]]; then bad "mentionne un secret ou un fichier sensible (« $p »)"; return 1; fi
-  done
-  # Suppression / production.
-  for entry in "${DELETE_PROD_BASH[@]}"; do
-    label=${entry%%@@*}; re=${entry#*@@}
-    if [[ $low =~ $re ]]; then bad "suppression, fusion ou déploiement : $label"; return 1; fi
-  done
-  # Mots dangereux.
-  for entry in "${DANGEROUS_BASH[@]}"; do
-    label=${entry%%@@*}; re=${entry#*@@}
-    if [[ $low =~ $re ]]; then bad "contient une commande dangereuse : $label"; return 1; fi
+    if [[ $first == tree && $word == -o ]]; then bad "tree -o écrit un fichier"; return 1; fi
   done
 
-  # F. kit api.
-  if [[ $first == kit && $second == api ]]; then
-    local svc=${wf[2]:-} method=${wf[3]:-} path=${wf[4]:-}
-    [[ $svc =~ $KIT_API_SERVICES_RE ]] || { bad "kit api : service attendu coolify, cloudflare ou github"; return 1; }
-    case $method in
-      GET) ;;
-      POST | PUT | PATCH)
-        [[ -n $path && $path != '*' ]] || { bad "kit api $method : chemin précis exigé"; return 1; }
-        ;;
-      *) bad "kit api : seuls GET, et POST/PUT/PATCH sur un chemin précis, sont acceptés (méthode explicite requise)"; return 1 ;;
-    esac
-    if [[ -n $path && $path != '*' ]]; then check_kit_api_path "$method" "$path" || return 1; fi
+  # kit api GET : chemin exigé et contrôlé.
+  if [[ $first == kit && ${c[1]} == api ]]; then
+    [[ -n ${c[4]:-} ]] || { bad "kit api GET : chemin précis exigé (ex. Bash(kit api coolify GET /applications/*))"; return 1; }
+    check_kit_api_path "${c[4]}" || return 1
   fi
+  secret_words_in "$core" || return 1
   check_overlap Bash "$spec" "Bash($spec)"
 }
 
 # validate_rule <règle> : 0 si acceptable ; sinon 1 et $REASON expliqué.
 validate_rule() {
-  local rule=$1 tool spec p low s2
+  local rule=$1 tool spec host
   REASON=""
   [[ -n $rule ]] || { bad "règle vide"; return 1; }
   ((${#rule} <= 300)) || { bad "règle trop longue"; return 1; }
   if [[ $rule =~ [[:cntrl:]] || $rule == *'`'* ]]; then bad "caractère de contrôle ou accent grave interdits"; return 1; fi
   if [[ $rule == mcp__* ]]; then check_mcp "$rule"; return; fi
-  if [[ $rule =~ ^([A-Za-z0-9_-]+)(\((.*)\))?$ ]]; then
-    tool=${BASH_REMATCH[1]}
-    spec=${BASH_REMATCH[3]}
-    if [[ -z ${BASH_REMATCH[2]} ]]; then
-      for p in "${BARE_REFUSED[@]}"; do
-        if [[ $tool == "$p" ]]; then bad "« $tool » seul est trop large : précise une spécification étroite"; return 1; fi
-      done
-      [[ $tool =~ $ALLOWED_TOOLS_RE ]] || { bad "outil non pris en charge ($tool)"; return 1; }
-      return 0  # Glob / Grep nus : lecture seule, déjà autorisés globalement
-    fi
-  else
-    bad "syntaxe attendue : Outil ou Outil(spécification)"; return 1
+  [[ $rule =~ ^([A-Za-z0-9_-]+)(\((.*)\))?$ ]] || { bad "syntaxe attendue : Outil ou Outil(spécification)"; return 1; }
+  tool=${BASH_REMATCH[1]}
+  spec=${BASH_REMATCH[3]}
+  if [[ $tool == Edit || $tool == Write ]]; then
+    bad "Edit/Write : les éditions dans le projet sont déjà gérées par le mode de la session ; toute règle Edit/Write demande l'accord de l'utilisateur ou une PR"
+    return 1
   fi
-  [[ $tool =~ $ALLOWED_TOOLS_RE ]] || { bad "outil non pris en charge ($tool) : Bash, Read, Edit, Write, Glob, Grep, WebFetch ou mcp__serveur__outil"; return 1; }
-
-  # A. Jokers ? [ ] { } refusés pour tous les outils ; « * » est encadré outil par outil.
-  if [[ $spec =~ $GLOB_FORBIDDEN_RE ]]; then bad "jokers ? [ ] { } interdits : seul un « * » structuré est admis"; return 1; fi
-
+  if [[ -z ${BASH_REMATCH[2]} ]]; then
+    bad "« $tool » sans spécification : trop large, ou déjà autorisé globalement"
+    return 1
+  fi
   case $tool in
     Bash) check_bash_spec "$spec" ;;
-    WebFetch)
-      [[ $spec =~ ^domain:([A-Za-z0-9-]+\.)+[A-Za-z0-9-]+$ ]] || { bad "WebFetch exige domain:<hôte> précis, sans joker (ex. WebFetch(domain:docs.example.com))"; return 1; }
-      [[ ! $spec =~ ^domain:[0-9.]+$ ]] || { bad "WebFetch : adresse IP refusée"; return 1; }
-      check_overlap WebFetch "$spec" "$rule"
-      ;;
-    *)
-      check_file_spec "$tool" "$spec" || return 1
-      low=$(tr 'A-Z' 'a-z' <<<"$spec")
-      s2=${low//.env.example/}
-      for p in "${SECRET_WORDS[@]}"; do
-        if [[ $s2 == *"$p"* ]]; then bad "mentionne un secret ou un fichier sensible (« $p »)"; return 1; fi
-      done
+    Read | Glob | Grep)
+      check_file_spec "$spec" || return 1
+      secret_words_in "$spec" || return 1
       check_overlap "$tool" "$spec" "$rule"
       ;;
+    WebFetch)
+      [[ $spec == domain:* ]] || { bad "WebFetch exige domain:<hôte> précis (ex. WebFetch(domain:docs.example.com))"; return 1; }
+      host=${spec#domain:}
+      [[ $host =~ $WEBFETCH_HOST_RE ]] || { bad "WebFetch : hôte invalide ou joker (« $host »)"; return 1; }
+      check_overlap WebFetch "$spec" "$rule"
+      ;;
+    *) bad "outil non pris en charge ($tool) : Bash, Read, Glob, Grep, WebFetch ou mcp__serveur__outil (lecture)"; return 1 ;;
   esac
 }
 

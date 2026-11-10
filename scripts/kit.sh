@@ -78,9 +78,10 @@ INFOS & MAINTENANCE
 
 PERMISSIONS (règles que Claude s'accorde, niveau projet uniquement, journalisées)
   kit perms allow "<règle>" --reason "<pourquoi>" [--dir projet]
-        ajoute une règle permissions.allow ÉTROITE au .claude/settings.json du projet et une ligne dans
-        docs/memory/permissions.md ; refuse les règles larges, les secrets, DELETE/TRIGGER, déploiements et push
-        ex. kit perms allow "Bash(npm run test*)" --reason "tests du projet"
+        ajoute une règle permissions.allow de la LISTE BLANCHE (lecture, build, test, lint, git en lecture, kit api GET,
+        outils MCP de lecture) au .claude/settings.json du projet et une ligne dans
+        docs/memory/permissions.md ; tout le reste (Edit/Write, écritures, déploiement, push, jokers) est refusé
+        ex. kit perms allow "Bash(npm run test *)" --reason "tests du projet"
   kit perms list [--dir projet]           règles du projet et journal
   kit perms check "<règle>"               valide seulement (code 0 = acceptable, 1 = refusée avec la raison)
 EOF
