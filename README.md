@@ -202,6 +202,23 @@ git add -A && git commit && git push
 - Le VPS a **sa propre clé age** et ses propres jetons. Ne copie jamais `keys.txt` d'une machine à l'autre, et ne copie pas ta session Claude : connecte-toi avec `claude` sur le VPS lui-même.
 - Garde la session vivante avec `tmux`. `claude remote-control` (forfait Pro/Max/Team/Enterprise requis) permet de la retrouver depuis l'app Claude ou claude.ai/code sans ouvrir de port ; voir la doc officielle pour les limites.
 
+## Harness : démarrer, reprendre, passer le relais
+
+| Commande | Quand |
+|---|---|
+| `/new-project <brief>` | nouveau projet : cadrage, stack, équipement, **plan** (agent `architect`) et **équipe** (skill `team-builder`), gabarit, design, déploiement, puis exécution orchestrée lot par lot |
+| `/adopt` | projet existant (Tandem, CSM…) : ajoute mémoire, relais, plan, équipe et hook de démarrage, sans rien écraser, en PR |
+| `/resume` | début de session : relit relais, état, plan, tâches, vérifie le dépôt, propose la suite |
+| `/handoff` | fin de session : écrit `docs/memory/handoff.md`, met à jour état et plan, commite et pousse |
+
+- **Équipe** : 4 à 7 agents par projet, copiés et adaptés dans `.claude/agents/` (commandes et règles réelles du
+  projet, `model` et `effort`), listés dans la rubrique « Équipe » de `CLAUDE.md`. La session principale orchestre.
+- **Hook de démarrage** du gabarit (`.claude/settings.json`) : affiche `handoff.md` et `state.md` en tête de session.
+- **Contexte d'infra** (skill `infra-context`) : `KNOWLEDGE.md` de fs0ciety-ops, lu dans `~/.kit/context/fs0ciety-ops`
+  (copie en lecture seule tenue par `kit sync`, liste dans `global/context-repos.txt`) ou, en cloud, dans le dépôt
+  attaché à la session.
+- **Workflow** : profil `workflow` (Superpowers) installé en global avec `meta`.
+
 ## Mode auto (presque sans interruption)
 
 Le kit met Claude Code en mode **`auto`** : un classifieur juge chaque action au lieu de te la demander. Le bloc

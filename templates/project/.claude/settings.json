@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || exit 0; for f in docs/memory/handoff.md docs/memory/state.md; do [ -f \"$f\" ] && { echo \"=== $f\"; head -c 4000 \"$f\"; echo; }; done; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

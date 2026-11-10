@@ -35,6 +35,14 @@ Toujours, même si le type est connu : le registre couvre la stack, pas le domai
 6. **Rechargement** : un skill installé n'est chargé qu'à la session suivante. Avec kit-control sur le worker : `restart_session` (« reprends /new-project à la phase 3 »), puis termine ton tour proprement. Sinon, dis à l'utilisateur de relancer la session.
 7. **Apprentissage** : si la stack n'avait pas de ligne dans `~/.claude/skills-registry.md`, propose-la au kit (fichier JSON dans un dossier temporaire, puis `kit registry propose <fichier.json>`) : la PR ajoute type, détection, profil de skills et agents ; l'utilisateur la fusionne et le projet suivant en profite.
 
+## Phase 2 ter — Plan et équipe
+1. **Plan** : délègue à l'agent `architect` (brief, stack, contraintes) un plan en lots ; écris-le dans `docs/plan.md`
+   (lots, tâches cochables, agent responsable, critère de fin, ce qui peut avancer en parallèle).
+2. **Équipe** : applique le skill `team-builder` (4 à 7 rôles, agents du kit, des collections relues ou écrits pour le
+   projet, adaptés au projet dans `.claude/agents/`, avec `model` et `effort`). Rubrique « Équipe » dans `CLAUDE.md`.
+3. Avec kit-control : une tâche par élément du plan (`task_create`) et un `checkpoint` (plan + équipe). Sans : une
+   question récapitulative. Rien n'est construit avant validation.
+
 ## Phase 3 — Gabarit et instructions
 1. Dossier vide ou sans `CLAUDE.md` : `kit project init .` (ne remplace rien d'existant).
 2. Remplis les sections « Projet courant » de `CLAUDE.md` et `AGENTS.md` (nom, type, stack, commandes réelles, structure réelle) et la section « Spécifique à ce projet » (uniquement ce qui ne se déduit pas du code). Ne modifie pas le reste.
@@ -75,9 +83,20 @@ Liste dans `.env.example` les noms de variables (valeurs factices). Puis :
 - en local : lance `kit secrets check` ; pour chaque nom manquant, indique à l'utilisateur de lancer lui-même `kit secrets add NOM`. Sépare dev et prod (`-e prod`) ;
 - en session cloud : indique-lui les noms à ajouter dans les variables de l'environnement cloud (jetons de dev, portée minimale). `kit api` les y lit directement.
 
+## Phase 6 bis — Exécution orchestrée (si l'utilisateur demande d'enchaîner)
+Tu orchestres, tu ne codes pas tout toi-même :
+- chaque tâche du plan est confiée à son agent, avec un brief complet (objectif, fichiers, contraintes, critère de
+  fin, ce qui a été écarté) ; tâches indépendantes en parallèle, liées à la suite ;
+- après chaque lot : PR, `code-reviewer` (et `security-reviewer` si auth, secrets, exposition, dépendances ou
+  déploiement), `qa-tester` ; vérifie toi-même le diff et les résultats, jamais sur la seule foi d'un rapport ;
+- coche le plan, mets à jour le dashboard (`task_update`) et la mémoire ; validation de l'utilisateur à chaque lot ;
+- action de routine bloquée deux fois par le mode auto : propose la règle par PR sur claude-kit, ne modifie jamais
+  tes propres réglages.
+
 ## Phase 7 — Workflow et suite
 1. Remplis `docs/memory/state.md` (fait, prochaines étapes) et `decisions.md` (choix de stack, d'hébergement). Le dashboard les affiche.
 2. Fais un premier commit propre (petits commits, un sujet par commit) et pousse-le (indispensable en session cloud).
-3. Avec kit-control : crée le plan comme tâches (`task_create`, une par étape, dans l'ordre) et valide-le par un `checkpoint`.
+3. Avec kit-control : vérifie que les tâches du plan existent (`task_list`) et marque celles qui sont faites.
+4. Termine par `/handoff` : relais écrit (`docs/memory/handoff.md`), poussé, pour que la prochaine session reprenne par `/resume`.
 4. Propose le plan de travail : si Superpowers est installé, `writing-plans` à partir de `docs/brief.md`, puis exécution et revue par fonctionnalité.
 5. Termine par un résumé de 6 lignes maximum : type, stack, fichiers créés (`CLAUDE.md`, `AGENTS.md`, `DESIGN.md`, `DEPLOY.md`, `docs/brief.md`), profils et agents à utiliser, secrets à ajouter, prochaine étape.

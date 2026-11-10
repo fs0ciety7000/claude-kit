@@ -829,7 +829,32 @@ cmd_sync() {
   link_global
   apply_settings
   regen_registry
+  sync_context
   ok "liens et réglages à jour"
+}
+
+# Read-only copies of the private repositories listed in global/context-repos.txt (KNOWLEDGE.md…), in
+# ~/.kit/context/<name>. Local machines only: a cloud session attaches the repository instead. Never fatal.
+sync_context() {
+  local list="$KIT_HOME/global/context-repos.txt" dir="$HOME/.kit/context" repo name
+  [[ -f $list ]] || return 0
+  if [[ ${CLAUDE_CODE_REMOTE:-} == true || "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then return 0; fi
+  command -v git >/dev/null 2>&1 || return 0
+  mkdir -p "$dir"
+  while read -r repo _; do
+    [[ -z ${repo:-} || $repo == \#* ]] && continue
+    [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || continue
+    name=${repo#*/}
+    if [[ -d $dir/$name/.git ]]; then
+      GIT_TERMINAL_PROMPT=0 git -C "$dir/$name" pull -q --ff-only 2>/dev/null \
+        && ok "contexte à jour : ~/.kit/context/$name" || warn "contexte non mis à jour : $repo (accès, réseau ?)"
+    elif GIT_TERMINAL_PROMPT=0 git clone -q --depth 1 "https://github.com/$repo" "$dir/$name" 2>/dev/null \
+      || GIT_TERMINAL_PROMPT=0 git clone -q --depth 1 "git@github.com:$repo.git" "$dir/$name" 2>/dev/null; then
+      ok "contexte cloné : ~/.kit/context/$name"
+    else
+      warn "contexte non cloné : $repo (dépôt privé : identifiants git de cette machine ?)"
+    fi
+  done <"$list"
 }
 
 cmd_update() {

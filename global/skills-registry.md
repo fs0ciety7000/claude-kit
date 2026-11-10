@@ -40,6 +40,10 @@ Source de vérité du routage. Lis la ligne qui correspond au projet ; ne charge
 | `copywriter` | textes de pages, microcopie UX, FR/EN | lecture + écriture | sonnet |
 | `devops` | Coolify, Cloudflare, Docker, CI, diagnostics de déploiement | lecture + écriture + shell | sonnet |
 | `security-reviewer` | secrets, auth, dépendances, injection, permissions | lecture + shell | opus |
+| `architect` | concevoir avant de coder : découpage, choix argumentés, plan d'un lot | lecture + web | opus |
+| `sysop` | exploiter l'infra : santé, journaux, DNS/Access, bascules (charge `infra-context`, `opsec`) | lecture + shell | sonnet |
+| `data-engineer` | schémas, migrations, requêtes, import/export, intégrité des données | lecture + écriture + shell | sonnet |
+| `code-reviewer` | relire chaque PR : correction, tests, simplicité, cohérence | lecture + shell | sonnet |
 | `researcher` | recherche web sourcée, comparaisons | lecture + web | haiku |
 
 Le modèle de chaque agent est fixé dans son en-tête (`model:`) : opus pour la conception et la sécurité, sonnet pour le code, les tests et les textes, haiku pour la recherche. Il s'applique quel que soit le modèle de la session.
@@ -48,6 +52,19 @@ Le modèle de chaque agent est fixé dans son en-tête (`model:`) : opus pour la
 
 <!-- kit:profiles:start -->
 <!-- kit:profiles:end -->
+
+## Harness (toujours disponibles)
+
+| Élément | Rôle |
+|---|---|
+| `/new-project` | démarrer : cadrage, stack, équipement, **plan et équipe**, gabarit, design, déploiement, exécution orchestrée, relais |
+| `/adopt` | équiper un projet existant (mémoire, relais, plan, équipe, hook de démarrage) sans rien écraser |
+| `/resume` | reprendre : relais, état, plan, tâches, dépôt, puis proposer la suite |
+| `/handoff` | passer le relais : `docs/memory/handoff.md`, état, plan, commit et push |
+| skill `team-builder` | composer l'équipe d'agents d'un projet |
+| skill `infra-context` | lire `KNOWLEDGE.md` (copie locale ou dépôt attaché en cloud) avant de toucher à l'hébergement |
+| skill `opsec` | règles de sécurité opérationnelle communes |
+| profil `workflow` | Superpowers : brainstorming, plans, exécution par sous-agents, revue, débogage, TDD, vérification |
 
 ## Règles
 
