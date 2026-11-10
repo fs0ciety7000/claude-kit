@@ -27,7 +27,9 @@ if [[ ${1:-} == --inner ]]; then
   svc=$1 method=$2 path=$3 filter=$4 body=$5
   # Cloud session with network secrets: the agent proxy injects the real token into the Authorization header of
   # requests to the host, so the container never holds it. A missing token is then replaced by a placeholder.
-  proxy_token() { [[ ${CLAUDE_CODE_REMOTE:-} == true ]] && echo "injected-by-proxy"; }
+  # Must succeed outside the cloud too: under set -e a failing $(...) in an assignment exits silently,
+  # hiding the "missing token" message below.
+  proxy_token() { if [[ ${CLAUDE_CODE_REMOTE:-} == true ]]; then echo "injected-by-proxy"; fi; }
   case $svc in
     coolify)
       COOLIFY_BASE_URL=${COOLIFY_BASE_URL:-${COOLIFY_API_URL:-}}
