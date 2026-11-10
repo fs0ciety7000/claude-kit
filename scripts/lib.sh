@@ -130,6 +130,13 @@ merge_settings() {
     | .permissions.allow = ((($cur.permissions.allow // []) + ($kit.permissions.allow // [])) | unique)
     | .permissions.ask   = ((($cur.permissions.ask   // []) + ($kit.permissions.ask   // [])) | unique)
     | .permissions.deny  = ((($cur.permissions.deny  // []) + ($kit.permissions.deny  // [])) | unique)
+    # The kit decides the permission mode (auto); the autoMode lists are unions, kit entries first, order kept.
+    | (if $kit.permissions.defaultMode then .permissions.defaultMode = $kit.permissions.defaultMode else . end)
+    | reduce ("environment", "allow", "soft_deny", "hard_deny") as $k (.;
+        if ($cur.autoMode[$k] // $kit.autoMode[$k]) == null then .
+        else .autoMode[$k] = ((($kit.autoMode[$k] // []) + ($cur.autoMode[$k] // []))
+                              | reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end))
+        end)
     | reduce ((($cur.hooks // {}) + ($kit.hooks // {})) | keys[]) as $e (.;
         .hooks[$e] = ((($cur.hooks[$e] // []) + ($kit.hooks[$e] // [])) | unique))
   ' "$base" "$kit"); then
