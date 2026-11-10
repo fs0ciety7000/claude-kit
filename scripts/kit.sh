@@ -832,7 +832,40 @@ cmd_sync() {
   link_global
   apply_settings
   regen_registry
+  sync_context
   ok "liens et réglages à jour"
+}
+
+# Read-only copies of the private repositories listed in global/context-repos.txt (KNOWLEDGE.md…), in
+# ~/.kit/context/<name>. Local machines only: a cloud session attaches the repository instead. Never fatal.
+sync_context() {
+  local list="$KIT_HOME/global/context-repos.txt" dir="$HOME/.kit/context" repo name
+  [[ -f $list ]] || return 0
+  if [[ ${CLAUDE_CODE_REMOTE:-} == true || "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then return 0; fi
+  command -v git >/dev/null 2>&1 || return 0
+  mkdir -p "$dir"
+  # Never interactive: no password prompt, no SSH passphrase or host-key question (the sync must not hang).
+  local -x GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes"
+  local origin
+  while read -r repo _; do
+    [[ -z ${repo:-} || $repo == \#* ]] && continue
+    [[ $repo =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || continue
+    name=${repo#*/}
+    if [[ -d $dir/$name/.git ]]; then
+      origin=$(git -C "$dir/$name" remote get-url origin 2>/dev/null || true)
+      case $origin in
+        "https://github.com/$repo" | "https://github.com/$repo.git" | "git@github.com:$repo.git") ;;
+        *) warn "contexte ignoré : ~/.kit/context/$name ne pointe pas vers $repo"; continue ;;
+      esac
+      git -C "$dir/$name" pull -q --ff-only </dev/null 2>/dev/null \
+        && ok "contexte à jour : ~/.kit/context/$name" || warn "contexte non mis à jour : $repo (accès, réseau ?)"
+    elif git clone -q --depth 1 "https://github.com/$repo" "$dir/$name" </dev/null 2>/dev/null \
+      || git clone -q --depth 1 "git@github.com:$repo.git" "$dir/$name" </dev/null 2>/dev/null; then
+      ok "contexte cloné : ~/.kit/context/$name"
+    else
+      warn "contexte non cloné : $repo (dépôt privé : identifiants git de cette machine ?)"
+    fi
+  done <"$list"
 }
 
 cmd_update() {

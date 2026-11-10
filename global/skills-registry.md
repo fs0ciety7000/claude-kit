@@ -40,6 +40,10 @@ Source de vérité du routage. Lis la ligne qui correspond au projet ; ne charge
 | `copywriter` | textes de pages, microcopie UX, FR/EN | lecture + écriture | sonnet | medium |
 | `devops` | Coolify, Cloudflare, Docker, CI, diagnostics de déploiement | lecture + écriture + shell | sonnet | high |
 | `security-reviewer` | secrets, auth, dépendances, injection, permissions | lecture + shell | opus | xhigh |
+| `architect` | concevoir avant de coder : découpage, choix argumentés, plan d'un lot | lecture + web | opus | high |
+| `sysop` | exploiter l'infra : santé, journaux, DNS/Access, bascules (charge `infra-context`, `opsec`) | lecture + shell | sonnet | high |
+| `data-engineer` | schémas, migrations, requêtes, import/export, intégrité des données | lecture + écriture + shell | sonnet | high |
+| `code-reviewer` | relire chaque PR : correction, tests, simplicité, cohérence | lecture + shell | sonnet | high |
 | `researcher` | recherche web sourcée, comparaisons | lecture + web | sonnet | medium |
 
 Le modèle et l'effort de chaque agent sont fixés dans son en-tête (`model:`, `effort:`) : opus pour la conception (design, marque, jeu) et la sécurité, sonnet pour le code, les tests, les textes et la recherche ; effort `high` pour le design, l'infra et la conception, `xhigh` pour la sécurité, `medium` ailleurs. Ils s'appliquent quel que soit le modèle de la session (`CLAUDE_CODE_EFFORT_LEVEL`, s'il est défini, prime sur `effort`). Agent d'une collection sans `model:` : il prend le modèle de la session ; en l'installant, ajoute `model:` et `effort:` selon ce barème.
@@ -48,6 +52,19 @@ Le modèle et l'effort de chaque agent sont fixés dans son en-tête (`model:`, 
 
 <!-- kit:profiles:start -->
 <!-- kit:profiles:end -->
+
+## Harness (toujours disponibles)
+
+| Élément | Rôle |
+|---|---|
+| `/new-project` | démarrer : cadrage, stack, équipement, **plan et équipe**, gabarit, design, déploiement, exécution orchestrée, relais |
+| `/adopt` | équiper un projet existant (mémoire, relais, plan, équipe, hook de démarrage) sans rien écraser |
+| `/resume` | reprendre : relais, état, plan, tâches, dépôt, puis proposer la suite |
+| `/handoff` | passer le relais : `docs/memory/handoff.md`, état, plan, commit et push |
+| skill `team-builder` | composer l'équipe d'agents d'un projet |
+| skill `infra-context` | lire `KNOWLEDGE.md` (copie locale ou dépôt attaché en cloud) avant de toucher à l'hébergement |
+| skill `opsec` | règles de sécurité opérationnelle communes |
+| workflow (Superpowers) | 11 skills copiés dans le kit à un commit relu (`vendor/superpowers/`) : brainstorming, plans, exécution par sous-agents, revue, débogage, TDD, vérification, fin de branche |
 
 ## Règles
 
