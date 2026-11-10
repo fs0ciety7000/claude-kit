@@ -54,9 +54,9 @@ API COOLIFY / CLOUDFLARE / GITHUB (jeton jamais visible dans `ps`)
         cherche des skills (npx skills find, skills.sh) et, dans l'index local des collections
         (global/collections-index.json), des agents et des skills pour chaque mot-clé (domaine : finance, compta… ;
         stack : laravel, php…) ; sortie JSON : skills (popularité), agents et collection_skills (pertinence)
+        installer ensuite : kit add-skill <owner/repo> --skill <nom> --project ; kit add-agent gh:<owner/repo/chemin.md> --project
   kit index [--out fichier]
         régénère l'index des collections (clones superficiels des dépôts de global/agent-sources.txt, sans API GitHub)
-        installer ensuite : kit add-skill <owner/repo> --skill <nom> --project ; kit add-agent gh:<owner/repo/chemin.md> --project
   kit registry propose <fichier.json>
         ouvre une PR sur claude-kit qui ajoute une stack au registre (ligne de routage, profil de skills, détection)
         JSON : {"type","detection","profile","skills":[{"source","skill"}],"load":[...],"agents":[...],"detect":[{"kind":"file|pkg","pattern"}]}

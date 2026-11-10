@@ -25,16 +25,20 @@ ACTION_RE='/(deploy|start|stop|restart|validate|cancel)(/|\?|$)'
 if [[ ${1:-} == --inner ]]; then
   shift
   svc=$1 method=$2 path=$3 filter=$4 body=$5
+  # Cloud session with network secrets: the agent proxy injects the real token into the Authorization header of
+  # requests to the host, so the container never holds it. A missing token is then replaced by a placeholder.
+  proxy_token() { [[ ${CLAUDE_CODE_REMOTE:-} == true ]] && echo "injected-by-proxy"; }
   case $svc in
     coolify)
       COOLIFY_BASE_URL=${COOLIFY_BASE_URL:-${COOLIFY_API_URL:-}}
-      COOLIFY_ACCESS_TOKEN=${COOLIFY_ACCESS_TOKEN:-${COOLIFY_API_TOKEN:-}}
+      COOLIFY_ACCESS_TOKEN=${COOLIFY_ACCESS_TOKEN:-${COOLIFY_API_TOKEN:-$(proxy_token)}}
       : "${COOLIFY_BASE_URL:?COOLIFY_BASE_URL manquant (kit secrets add COOLIFY_BASE_URL -g)}"
       : "${COOLIFY_ACCESS_TOKEN:?COOLIFY_ACCESS_TOKEN manquant (kit secrets add COOLIFY_ACCESS_TOKEN -g)}"
       base="${COOLIFY_BASE_URL%/}/api/v1"
       token=$COOLIFY_ACCESS_TOKEN
       ;;
     cloudflare)
+      CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-$(proxy_token)}
       : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN manquant (kit secrets add CLOUDFLARE_API_TOKEN -g)}"
       base="https://api.cloudflare.com/client/v4"
       token=$CLOUDFLARE_API_TOKEN

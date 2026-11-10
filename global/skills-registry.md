@@ -51,7 +51,7 @@ Le modèle de chaque agent est fixé dans son en-tête (`model:`) : opus pour la
 
 ## Règles
 
-1. **Toujours actifs** : `writing-for-agents` dès qu'on écrit un fichier destiné à un agent ; Superpowers pour le workflow.
+1. **Toujours actifs** : `writing-for-agents` dès qu'on écrit un fichier destiné à un agent ; `dependency-hygiene` dès qu'on ajoute, met à jour ou épingle une dépendance ; Superpowers pour le workflow.
 2. **Combiner** quand le projet mélange plusieurs types (ex. Shopify + backend Go : profils `shopify` + `go`).
 3. **Ne pas tout charger** : un skill par besoin réel.
 4. **Skill ou agent manquant** (domaine métier, stack absente) : `kit equip search <mots-clés>` (skills.sh + index local de 12 collections, `global/agent-sources.txt`), sélection relue, validation (`equip` de kit-control), installation au niveau du projet. Stack nouvelle : `kit registry propose <fichier.json>` ouvre la PR qui ajoute sa ligne ici.
