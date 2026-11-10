@@ -27,7 +27,7 @@ Source de vérité du routage. Lis la ligne qui correspond au projet ; ne charge
 
 | Agent | Quand le déléguer | Accès | Modèle |
 |---|---|---|---|
-| `ui-designer` | concevoir/refondre des écrans, tokens, hiérarchie | lecture + écriture | opus |
+| `ui-designer` | concevoir/refondre des écrans, tokens, hiérarchie (après `brand-identity` pour une interface ou une marque nouvelle) | lecture + écriture | opus |
 | `design-critic` | relire une UI (hiérarchie, contraste, cohérence, états) | lecture seule | sonnet |
 | `android-ui-reviewer` | relire du Compose / Material 3 | lecture seule | sonnet |
 | `frontend-dev` | implémenter React/Next/Tailwind | lecture + écriture + shell | sonnet |

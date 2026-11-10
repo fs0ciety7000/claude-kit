@@ -42,8 +42,9 @@ Toujours, même si le type est connu : le registre couvre la stack, pas le domai
 
 ## Phase 4 — Design (seulement si le projet a une interface, un jeu ou une marque)
 1. Écris `DESIGN.md` : couleurs et rôles, typographie, espacements, rayons, ombres, composants, clair/sombre, principes d'accessibilité. Pars du gabarit `DESIGN.md` du dossier.
-2. Web : charge `web-design-system` (plugin website-design) s'il est installé ; délègue la direction visuelle à l'agent `ui-designer`. Android : `android-ui-reviewer` pour la revue. Marque : agent `brand-identity` et skill `logo-design`. Jeu : agent `game-designer`.
-3. Propose 2 directions visuelles courtes avant d'écrire `DESIGN.md`, et attends le choix.
+2. **Identité d'abord, toujours** (web, Android, marque) : délègue à l'agent `brand-identity` (skill `logo-design` s'il est installé) deux identités complètes : logo et favicon en SVG, palette clair et sombre avec contrastes, typographies sous licence libre, ton, maquette HTML de l'accueil et d'une page. Présente-les et attends le choix de l'utilisateur.
+3. Ensuite seulement, l'interface à partir de l'identité choisie : web, charge `web-design-system` (plugin website-design) s'il est installé et délègue à `ui-designer` ; Android, `android-ui-reviewer` pour la revue. Jeu : agent `game-designer` (avant `brand-identity` pour la direction artistique).
+4. `DESIGN.md` est écrit par `ui-designer` à partir de l'identité validée, puis relu par `design-critic`.
 
 ## Phase 5 — Déploiement (Coolify + sous-domaine Cloudflare)
 Si le projet ne se déploie pas (bibliothèque, outil local, prototype), saute cette phase. Sinon, remplis `DEPLOY.md` en suivant le skill `deploy-coolify-cloudflare`.

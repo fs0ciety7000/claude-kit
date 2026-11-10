@@ -14,7 +14,12 @@ Pour toute tâche non triviale :
 
 1. Lis `~/.claude/skills-registry.md` et identifie le type de projet.
 2. Charge **seulement** les skills de ce type (outil Skill). Pas tous : moins de contexte, meilleures réponses.
-3. Délègue aux sous-agents adaptés (table « Agents » du registre) plutôt que de tout faire toi-même.
+3. Délègue aux sous-agents adaptés (table « Agents » du registre) plutôt que de tout faire toi-même. Le code
+   (application, scripts, Dockerfile, CI) est écrit par les agents (`frontend-dev`, `backend-dev`, `devops`…) ;
+   toi, tu cadres, tu donnes un brief précis, tu vérifies leurs résultats et tu fais valider. Une vérification de
+   quelques commandes reste la tienne.
+   Interface ou marque nouvelle : `brand-identity` crée d'abord l'identité (logo, palette, typographies,
+   maquettes) ; `ui-designer` ne commence qu'après le choix de l'utilisateur, en partant de cette identité.
 4. Domaine métier ou stack non couverts par le registre : `kit equip search <mots-clés>` (domaine + stack), sélectionne, fais valider (`equip` de kit-control, sinon une question), installe au niveau du projet (`kit add-skill … --project`, `kit add-agent … --project`). Nouvelle stack : `kit registry propose` pour l'ajouter au kit.
 5. Fonctionnalité nouvelle : brainstorming → plan → exécution → revue (skills Superpowers si installés).
 
