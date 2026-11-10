@@ -20,7 +20,10 @@ n'écrases rien, tu ne réécris pas ce qui existe : tu ajoutes seulement ce qui
      `.claude/settings.json` existant (jamais remplacé) ;
    - une **équipe** (skill `team-builder`) adaptée au travail prévu, et une rubrique « Équipe » dans `CLAUDE.md` ;
    - les profils de skills du type de projet (`kit project add <type>`), après accord ;
-   - `renovate.json` s'il manque (skill `dependency-hygiene`).
+   - `renovate.json` s'il manque (skill `dependency-hygiene`) ;
+   - la **fiche Engram** `content/projects/<dépôt>.md` (skill `engram`, section « Fiche projet ») : créée si
+     absente, complétée sinon, dans une PR sur Engram ; plus les leçons et pratiques réutilisables repérées en
+     lisant le projet.
 4. **Validation** : `checkpoint` si kit-control est là, sinon une question récapitulative. Rien n'est écrit avant.
 5. **Applique** sur une branche `claude/adopt-<date>`, un commit par sujet, puis PR (titre et corps dans la langue du
    dépôt), et réponds par le lien et la liste de ce qui a été ajouté. Dépôt public (visibilité vérifiée ; inconnue =
