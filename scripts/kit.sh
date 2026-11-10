@@ -841,15 +841,23 @@ sync_context() {
   if [[ ${CLAUDE_CODE_REMOTE:-} == true || "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then return 0; fi
   command -v git >/dev/null 2>&1 || return 0
   mkdir -p "$dir"
+  # Never interactive: no password prompt, no SSH passphrase or host-key question (the sync must not hang).
+  local -x GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes"
+  local origin
   while read -r repo _; do
     [[ -z ${repo:-} || $repo == \#* ]] && continue
-    [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || continue
+    [[ $repo =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || continue
     name=${repo#*/}
     if [[ -d $dir/$name/.git ]]; then
-      GIT_TERMINAL_PROMPT=0 git -C "$dir/$name" pull -q --ff-only 2>/dev/null \
+      origin=$(git -C "$dir/$name" remote get-url origin 2>/dev/null || true)
+      case $origin in
+        "https://github.com/$repo" | "https://github.com/$repo.git" | "git@github.com:$repo.git") ;;
+        *) warn "contexte ignoré : ~/.kit/context/$name ne pointe pas vers $repo"; continue ;;
+      esac
+      git -C "$dir/$name" pull -q --ff-only </dev/null 2>/dev/null \
         && ok "contexte à jour : ~/.kit/context/$name" || warn "contexte non mis à jour : $repo (accès, réseau ?)"
-    elif GIT_TERMINAL_PROMPT=0 git clone -q --depth 1 "https://github.com/$repo" "$dir/$name" 2>/dev/null \
-      || GIT_TERMINAL_PROMPT=0 git clone -q --depth 1 "git@github.com:$repo.git" "$dir/$name" 2>/dev/null; then
+    elif git clone -q --depth 1 "https://github.com/$repo" "$dir/$name" </dev/null 2>/dev/null \
+      || git clone -q --depth 1 "git@github.com:$repo.git" "$dir/$name" </dev/null 2>/dev/null; then
       ok "contexte cloné : ~/.kit/context/$name"
     else
       warn "contexte non cloné : $repo (dépôt privé : identifiants git de cette machine ?)"

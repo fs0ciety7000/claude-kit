@@ -217,7 +217,8 @@ git add -A && git commit && git push
 - **Contexte d'infra** (skill `infra-context`) : `KNOWLEDGE.md` de fs0ciety-ops, lu dans `~/.kit/context/fs0ciety-ops`
   (copie en lecture seule tenue par `kit sync`, liste dans `global/context-repos.txt`) ou, en cloud, dans le dépôt
   attaché à la session.
-- **Workflow** : profil `workflow` (Superpowers) installé en global avec `meta`.
+- **Workflow** : 11 skills de Superpowers copiés dans `global/skills/` à un commit relu (`vendor/superpowers/`),
+  donc épinglés : pas de mise à jour automatique depuis le dépôt amont.
 
 ## Mode auto (presque sans interruption)
 

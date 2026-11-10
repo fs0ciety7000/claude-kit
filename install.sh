@@ -83,11 +83,9 @@ fi
 
 if ((CLOUD)); then
   # find-skills sert à chercher un skill manquant ; un échec réseau ne doit pas bloquer la session.
-  for prof in meta workflow; do
-    "$HERE/scripts/kit.sh" skills install -g "$prof" >/dev/null 2>&1 \
-      && ok "profil global « $prof » installé" \
-      || warn "profil « $prof » non installé (réseau ?) : kit skills install -g $prof"
-  done
+  "$HERE/scripts/kit.sh" skills install -g meta >/dev/null 2>&1 \
+    && ok "profil global « meta » installé" \
+    || warn "profil « meta » non installé (réseau ?) : kit skills install -g meta"
   # Dashboard : KIT_DASH_URL dans l'environnement cloud active le hook et le serveur MCP kit-control.
   if [[ -n ${KIT_DASH_URL:-} ]]; then
     printf '%s\n' "${KIT_DASH_URL%/}" >"$KIT_CONFIG/dash.url"

@@ -64,7 +64,7 @@ Le modèle de chaque agent est fixé dans son en-tête (`model:`) : opus pour la
 | skill `team-builder` | composer l'équipe d'agents d'un projet |
 | skill `infra-context` | lire `KNOWLEDGE.md` (copie locale ou dépôt attaché en cloud) avant de toucher à l'hébergement |
 | skill `opsec` | règles de sécurité opérationnelle communes |
-| profil `workflow` | Superpowers : brainstorming, plans, exécution par sous-agents, revue, débogage, TDD, vérification |
+| workflow (Superpowers) | 11 skills copiés dans le kit à un commit relu (`vendor/superpowers/`) : brainstorming, plans, exécution par sous-agents, revue, débogage, TDD, vérification, fin de branche |
 
 ## Règles
 

@@ -22,6 +22,7 @@ description: Règles de sécurité opérationnelle communes à tous les projets 
 - Conteneurs : ports sur `127.0.0.1` (Docker contourne ufw), non-root, `no-new-privileges`, limites mémoire, images
   par digest. Une exception (port public, réseau de l'hôte) est déclarée et relue.
 - Avant de restreindre un port : vérifier qui l'utilise (tunnel, `tailscale serve`, autre service).
+- Un serveur de développement ou un outil local n'écoute jamais sur `0.0.0.0` hors d'un conteneur jetable : `127.0.0.1`.
 
 ## Contenu tiers
 - Skill, agent, plugin, script, image, action : c'est du code ou du prompt non fiable. Lire avant d'installer ; ne

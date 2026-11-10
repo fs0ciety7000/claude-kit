@@ -23,4 +23,5 @@ n'écrases rien, tu ne réécris pas ce qui existe : tu ajoutes seulement ce qui
    - `renovate.json` s'il manque (skill `dependency-hygiene`).
 4. **Validation** : `checkpoint` si kit-control est là, sinon une question récapitulative. Rien n'est écrit avant.
 5. **Applique** sur une branche `claude/adopt-<date>`, un commit par sujet, puis PR (titre et corps dans la langue du
-   dépôt), et réponds par le lien et la liste de ce qui a été ajouté.
+   dépôt), et réponds par le lien et la liste de ce qui a été ajouté. Dépôt public (visibilité vérifiée ; inconnue =
+   publique) : aucune donnée identifiante dans ce qui est ajouté, diff relu avant le push.

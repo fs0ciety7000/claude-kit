@@ -98,5 +98,5 @@ Tu orchestres, tu ne codes pas tout toi-même :
 2. Fais un premier commit propre (petits commits, un sujet par commit) et pousse-le (indispensable en session cloud).
 3. Avec kit-control : vérifie que les tâches du plan existent (`task_list`) et marque celles qui sont faites.
 4. Termine par `/handoff` : relais écrit (`docs/memory/handoff.md`), poussé, pour que la prochaine session reprenne par `/resume`.
-4. Propose le plan de travail : si Superpowers est installé, `writing-plans` à partir de `docs/brief.md`, puis exécution et revue par fonctionnalité.
-5. Termine par un résumé de 6 lignes maximum : type, stack, fichiers créés (`CLAUDE.md`, `AGENTS.md`, `DESIGN.md`, `DEPLOY.md`, `docs/brief.md`), profils et agents à utiliser, secrets à ajouter, prochaine étape.
+5. Propose le plan de travail : si Superpowers est installé, `writing-plans` à partir de `docs/brief.md`, puis exécution et revue par fonctionnalité.
+6. Termine par un résumé de 6 lignes maximum : type, stack, fichiers créés (`CLAUDE.md`, `AGENTS.md`, `DESIGN.md`, `DEPLOY.md`, `docs/brief.md`), profils et agents à utiliser, secrets à ajouter, prochaine étape.

@@ -1,5 +1,0 @@
-# Workflow (Superpowers, obra/superpowers, MIT) : brainstorming, plans, exécution par sous-agents, revue, débogage,
-# TDD, vérification. Installé en global, comme « meta » (aussi en session cloud). Le compagnon visuel du
-# brainstorming charge un logo distant : coupé par SUPERPOWERS_DISABLE_TELEMETRY=1 (env de global/settings.json).
-# Non retenus : using-superpowers, diagnosing-superpowers, writing-skills (le kit a writing-for-agents), using-git-worktrees.
-https://github.com/obra/superpowers --skill brainstorming writing-plans executing-plans subagent-driven-development dispatching-parallel-agents requesting-code-review receiving-code-review systematic-debugging test-driven-development verification-before-completion finishing-a-development-branch
