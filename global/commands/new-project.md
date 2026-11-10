@@ -5,10 +5,15 @@ argument-hint: "<description courte du projet> [--rapide]"
 
 Démarre un nouveau projet à partir de cette description : $ARGUMENTS
 
-Mode : **guidé** par défaut (une phase à la fois, validation de l'utilisateur entre les phases). Si l'argument contient `--rapide`, enchaîne les phases en prenant les choix par défaut et résume les hypothèses à la fin.
+Mode : **guidé** par défaut, avec **quatre validations** seulement, là où un choix coûte cher à refaire :
+**V1** cadrage + stack (fin de la phase 2), **V2** plan + équipe + équipement (phase 2 ter, l'équipement de la
+phase 2 bis passe par `equip` au même moment), **V3** identité visuelle (phase 4, s'il y a une interface),
+**V4** `DEPLOY.md` avant toute création de ressource (phase 5). Les autres phases (gabarit, secrets, workflow)
+s'enchaînent sans demander et sont résumées dans la validation suivante. Si l'argument contient `--rapide`, seules
+V2 et V4 restent ; les autres choix prennent la valeur par défaut, résumée à la fin.
 
 Règles de conduite :
-- Avant chaque phase, annonce-la en une ligne. À la fin, demande « valide / modifie ? » en une seule question. **Si les outils `mcp__kit-control__*` sont disponibles** (dashboard), la validation passe par `checkpoint` (phase + résumé en Markdown) et les questions par `ask` : l'utilisateur répond depuis le dashboard. Attends la réponse (`wait_for_answer` tant que `PENDING`), n'avance jamais sur une validation en attente.
+- Avant chaque phase, annonce-la en une ligne. Aux validations, une seule question « valide / modifie ? ». **Si les outils `mcp__kit-control__*` sont disponibles** (dashboard), la validation passe par `checkpoint` (phase + résumé en Markdown) et les questions par `ask` : l'utilisateur répond depuis le dashboard. Attends la réponse (`wait_for_answer` tant que `PENDING`), n'avance jamais sur une validation en attente.
 - Pose les questions d'une phase en une seule fois, 4 maximum. Ne demande pas ce qui se déduit de la description ou de `~/.claude/skills-registry.md`.
 - N'installe, ne crée et ne déploie rien sans accord. Jamais de lecture de `.env*`. Une valeur secrète n'est jamais demandée dans le chat : `kit secrets add NOM` est lancé par l'utilisateur.
 - Si le dossier courant contient déjà du code, lis-le d'abord et n'écrase rien.
@@ -21,6 +26,8 @@ Objectif, public, fonctionnalités indispensables (3 à 5), ce qui est hors pér
 1. Lance `kit detect --json` (indices tirés des fichiers et des dépendances), puis classe le projet avec la table de routage de `~/.claude/skills-registry.md` en t'appuyant sur ce résultat et sur la description (plusieurs types possibles ; dossier vide : la description seule décide). Sans correspondance : `find-skills`.
 2. Propose **deux options de stack** (une recommandée, une alternative), chacune avec : composants (front, back, base, auth, stockage), avantages, coût de maintenance, risque principal. Par défaut, privilégie la stack que l'utilisateur utilise déjà (Go, Rust, Next.js, React, PocketBase, Godot, Three.js, Shopify) plutôt qu'une nouveauté.
 3. Écris le choix validé dans `docs/memory/stack.md` (types, stack, profils, agents).
+   Crée la **fiche Engram** du projet (`content/projects/<dépôt>.md`, skill `engram`, section « Fiche projet ») :
+   résumé, stack, état « en construction », PR sur Engram. Lis aussi les notes Engram de la stack choisie.
 4. Après choix, liste les profils de skills et agents recommandés, puis après accord : `kit project add <type>...`. La commande copie les agents et skills maison du type dans `.claude/` du projet (commitable, donc retrouvés à chaque session, y compris en cloud) et installe ses profils de skills au niveau projet. Si `.claude/agents/` est déjà rempli (projet créé par `kit project new <dossier> <type>...`), ne la relance que pour un type en plus.
 
 ## Phase 2 bis — Équipement (skills et agents selon le domaine et la stack)
@@ -83,18 +90,21 @@ Liste dans `.env.example` les noms de variables (valeurs factices). Puis :
 - en local : lance `kit secrets check` ; pour chaque nom manquant, indique à l'utilisateur de lancer lui-même `kit secrets add NOM`. Sépare dev et prod (`-e prod`) ;
 - en session cloud : indique-lui les noms à ajouter dans les variables de l'environnement cloud (jetons de dev, portée minimale). `kit api` les y lit directement.
 
-## Phase 6 bis — Exécution orchestrée (si l'utilisateur demande d'enchaîner)
-Tu orchestres, tu ne codes pas tout toi-même :
+## Phase 6 bis — Exécution orchestrée (plan validé en V2)
+Le plan validé vaut feu vert pour l'exécuter lot par lot ; demande seulement si l'utilisateur a dit de s'arrêter
+après la mise en place. Tu orchestres, tu ne codes pas tout toi-même :
 - chaque tâche du plan est confiée à son agent, avec un brief complet (objectif, fichiers, contraintes, critère de
   fin, ce qui a été écarté) ; tâches indépendantes en parallèle, liées à la suite ;
 - après chaque lot : PR, `code-reviewer` (et `security-reviewer` si auth, secrets, exposition, dépendances ou
   déploiement), `qa-tester` ; vérifie toi-même le diff et les résultats, jamais sur la seule foi d'un rapport ;
-- coche le plan, mets à jour le dashboard (`task_update`) et la mémoire ; validation de l'utilisateur à chaque lot ;
-- action de routine bloquée deux fois par le mode auto : propose la règle par PR sur claude-kit, ne modifie jamais
-  tes propres réglages.
+- coche le plan, mets à jour le dashboard (`task_update`), la mémoire et la fiche Engram ; passe au lot suivant
+  sans redemander. Validation seulement pour : fusion sur `main`, déploiement en prod, suppression, écart au plan,
+  échec répété ;
+- action de routine bloquée deux fois : règle de projet par `kit perms allow` (voir `~/.claude/CLAUDE.md`,
+  « Permissions ») ; hors de son périmètre, PR sur claude-kit.
 
 ## Phase 7 — Workflow et suite
-1. Remplis `docs/memory/state.md` (fait, prochaines étapes) et `decisions.md` (choix de stack, d'hébergement). Le dashboard les affiche.
+1. Remplis `docs/memory/state.md` (fait, prochaines étapes) et `decisions.md` (choix de stack, d'hébergement). Le dashboard les affiche. Mets à jour la fiche Engram (stack définitive, hébergement par rôle, état) et verse les décisions réutilisables.
 2. Fais un premier commit propre (petits commits, un sujet par commit) et pousse-le (indispensable en session cloud).
 3. Avec kit-control : vérifie que les tâches du plan existent (`task_list`) et marque celles qui sont faites.
 4. Termine par `/handoff` : relais écrit (`docs/memory/handoff.md`), poussé, pour que la prochaine session reprenne par `/resume`.

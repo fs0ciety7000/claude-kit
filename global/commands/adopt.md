@@ -15,12 +15,16 @@ n'écrases rien, tu ne réécris pas ce qui existe : tu ajoutes seulement ce qui
 3. **Propose** une liste d'ajouts, chacun avec son fichier et son contenu en une ligne, parmi :
    - `docs/memory/` (`state.md`, `decisions.md`, `stack.md`, `handoff.md`) : seulement ceux qui manquent, en
      reprenant ce qui existe ailleurs (une roadmap existante reste la référence : le plan y renvoie) ;
-   - `docs/plan.md` s'il n'y a ni plan ni roadmap ;
+   - `docs/plan.md` : le plan s'il n'y a ni plan ni roadmap, sinon un lien vers la roadmap et les tâches en cours ;
+     avec kit-control, une tâche dashboard par élément ouvert (`task_create`, après validation) ;
    - le hook de démarrage (`.claude/settings.json` du gabarit du kit) qui affiche relais et état, fusionné avec un
      `.claude/settings.json` existant (jamais remplacé) ;
    - une **équipe** (skill `team-builder`) adaptée au travail prévu, et une rubrique « Équipe » dans `CLAUDE.md` ;
    - les profils de skills du type de projet (`kit project add <type>`), après accord ;
-   - `renovate.json` s'il manque (skill `dependency-hygiene`).
+   - `renovate.json` s'il manque (skill `dependency-hygiene`) ;
+   - la **fiche Engram** `content/projects/<dépôt>.md` (skill `engram`, section « Fiche projet ») : créée si
+     absente, complétée sinon, dans une PR sur Engram ; plus les leçons et pratiques réutilisables repérées en
+     lisant le projet.
 4. **Validation** : `checkpoint` si kit-control est là, sinon une question récapitulative. Rien n'est écrit avant.
 5. **Applique** sur une branche `claude/adopt-<date>`, un commit par sujet, puis PR (titre et corps dans la langue du
    dépôt), et réponds par le lien et la liste de ce qui a été ajouté. Dépôt public (visibilité vérifiée ; inconnue =

@@ -1,6 +1,6 @@
 ---
 name: engram
-description: Lire et enrichir Engram, le coffre de connaissances privé de l'utilisateur (leçons, pratiques, décisions, recherches, idées). À utiliser avant une tâche non triviale, pour partir de ce qui est déjà su, et dès qu'une session produit un savoir durable : piège résolu, décision, pratique ou extrait réutilisable, recherche sourcée, idée.
+description: Lire et enrichir Engram, le coffre de connaissances privé de l'utilisateur (leçons, pratiques, décisions, recherches, idées). À utiliser avant une tâche non triviale, pour partir de ce qui est déjà su ; pour créer ou tenir à jour la fiche du projet (obligatoire : /new-project, /adopt, chaque avancée notable, /handoff) ; et dès qu'une session produit un savoir durable : piège résolu, décision, pratique ou extrait réutilisable, ressource, recherche sourcée, idée.
 ---
 
 # Engram
@@ -15,9 +15,33 @@ dossier par type. Ce qu'un projet a appris sert aux suivants : lis avant, écris
 | Poste local | `~/.kit/context/engram` : copie superficielle tenue par `kit sync`, laissée intacte | un clone de travail à part : `git clone git@github.com:fs0ciety7000/engram.git "$(mktemp -d)/engram"` |
 | Session cloud (`CLAUDE_CODE_REMOTE=true`) | le dépôt attaché (en général `/home/user/engram`) | le même dépôt, sur une branche |
 
-En cloud, dépôt absent : attache-le avec l'outil `add_repo` (`owner: fs0ciety7000`, `repo: engram`, `access: push`
-pour écrire), lance la commande de clone qu'il renvoie, puis `register_repo_root`. Refusé ou introuvable : dis-le
-et continue sans Engram.
+En cloud, dépôt absent : attache-le **sans demander** avec l'outil `add_repo` (`owner: fs0ciety7000`,
+`repo: engram`, `access: push`), lance la commande de clone qu'il renvoie, puis `register_repo_root`. Refusé ou
+introuvable : dis-le, note dans `docs/memory/handoff.md` (« Engram à mettre à jour : … ») ce qui n'a pas pu être
+versé, et continue.
+
+## Fiche projet, obligatoire
+
+Chaque projet a sa fiche `content/projects/<dépôt>.md` (`<dépôt>` = nom du dépôt GitHub, sans le propriétaire),
+note vivante tenue à jour par les sessions du projet.
+
+| Moment | Action sur la fiche |
+|---|---|
+| `/new-project` (après la stack validée) ou `/adopt` | **créer** depuis `content/templates/Projet.md` si elle n'existe pas ; sinon la compléter |
+| avancée notable : fonctionnalité livrée, lot terminé, changement de stack, d'hébergement ou d'état | **mettre à jour** `## État`, `## Stack`, `## Dernière activité` (une ligne datée en tête), `updated` |
+| `/handoff` | **vérifier** que la fiche reflète la session ; sinon la mettre à jour |
+
+Contenu : `## Résumé` (ce que fait le projet, pour qui, en généralisant), `## Stack`, `## État`, `## Hébergement`
+(rôle, jamais d'hôte ni d'identifiant), `## Conventions` (ce qui vaut d'être repris ailleurs), `## Décisions et
+leçons liées`, `## Dernière activité`. En-tête : `type: project`, `repo`, `stack`, `status`, `maturity`,
+`author: agent`, `source` (fichiers du dépôt lus). Le détail propre au projet (tâches, état fin) reste dans son
+`docs/memory/` : la fiche résume et renvoie.
+
+Pour chaque avancée, demande-toi aussi ce qui servirait à un **autre** projet (piège, décision, pratique, extrait,
+ressource évaluée) et verse-le dans sa propre note (tableau ci-dessous), liée à la fiche par `projects:`.
+
+Terminé quand : la fiche existe, `updated` est la date du jour, la PR Engram est ouverte avec `npm run check` vert, et
+son lien est cité dans la PR ou le relais du projet.
 
 ## Lire avant une tâche non triviale
 
@@ -56,8 +80,9 @@ Autres types (ressource, prompt, terme, inspiration), statuts et champs par type
 4. **Tags** pris dans `schema/tags.yaml`. Aucun ne convient : ajoute le tag à ce fichier dans la même PR.
 5. **Deux liens `[[…]]` au moins** : une carte (`maps/`), la fiche projet, une note voisine.
 6. Pressé : une note `inbox` de quelques lignes suffit, la revue hebdomadaire la classe.
-7. **Branche** `claude/engram-<sujet>`, commit, **PR vers `main`** ; `main` ne reçoit que des PR. `npm run check`
-   passe avant la PR, et son résultat réel va dans la description.
+7. **Branche** `claude/engram-<sujet>` (ou `claude/engram-<dépôt>-<date>` pour la fiche et les notes d'une
+   session), commit, **PR vers `main`** ; `main` ne reçoit que des PR. `npm run check` passe avant la PR, et son
+   résultat réel va dans la description. Une PR Engram déjà ouverte par la session : ajoute-y tes commits.
 
 ## Confidentialité, stricte
 
