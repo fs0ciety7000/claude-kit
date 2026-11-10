@@ -217,6 +217,11 @@ git add -A && git commit && git push
 - **Contexte d'infra** (skill `infra-context`) : `KNOWLEDGE.md` de fs0ciety-ops, lu dans `~/.kit/context/fs0ciety-ops`
   (copie en lecture seule tenue par `kit sync`, liste dans `global/context-repos.txt`) ou, en cloud, dans le dépôt
   attaché à la session.
+- **Engram** (skill `engram`) : le coffre de connaissances privé, lu avant une tâche non triviale et enrichi par PR
+  (leçons, décisions, pratiques). `kit sync` (donc `kit update`) en tient une copie en lecture seule dans
+  `~/.kit/context/engram`, comme pour fs0ciety-ops : clone superficiel s'il manque (HTTPS puis SSH, avec les
+  identifiants git de la machine, aucun jeton dans l'URL), sinon `git pull --ff-only` ; un échec n'est qu'un
+  avertissement. Rien n'est cloné en profil cloud : la session attache le dépôt `fs0ciety7000/engram`.
 - **Workflow** : 11 skills de Superpowers copiés dans `global/skills/` à un commit relu (`vendor/superpowers/`),
   donc épinglés : pas de mise à jour automatique depuis le dépôt amont.
 
