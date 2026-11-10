@@ -147,13 +147,23 @@ merge_settings() {
   if ((created)); then
     rm -f "$base"
     mkdir -p "$(dirname "$cur")"
-    printf '%s\n' "$out" >"$cur"
+    write_atomic "$cur" "$out"
     ok "réglages créés : $cur"
   elif [[ "$out" != "$(cat "$cur")" ]]; then
     cp "$cur" "$cur.pre-kit.$(date +%Y%m%d%H%M%S)"
-    printf '%s\n' "$out" >"$cur"
+    write_atomic "$cur" "$out"
     ok "réglages mis à jour : $cur"
   fi
+}
+
+# write_atomic <fichier> <contenu> : écrit dans un fichier temporaire du même dossier puis mv (jamais de fichier tronqué
+# si le processus est interrompu). Suit un lien symbolique (réglages versionnés ailleurs) et garde les droits existants.
+write_atomic() {
+  local target=$1 content=$2 real tmp mode=644
+  real=$(readlink -f "$target" 2>/dev/null || echo "$target")
+  [[ -f $real ]] && mode=$(file_mode "$real")
+  tmp=$(mktemp "$(dirname "$real")/.$(basename "$real").XXXXXX") || die "écriture impossible : $(dirname "$real")"
+  printf '%s\n' "$content" >"$tmp" && chmod "$mode" "$tmp" && mv "$tmp" "$real" || { rm -f "$tmp"; die "écriture de $real échouée"; }
 }
 
 apply_settings() {

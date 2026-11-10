@@ -272,7 +272,7 @@
           {
             "type": "command",
             "command": "$HOME/.config/claude-kit/hooks/kit-autoupdate.sh",
-            "timeout": 20
+            "timeout": 30
           }
         ]
       }

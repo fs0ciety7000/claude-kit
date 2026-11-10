@@ -314,12 +314,23 @@ section "link_global, merge_settings, usage"
 )
 [[ -L $KIT_CONFIG/hooks/kit-autoupdate.sh && $(readlink "$KIT_CONFIG/hooks/kit-autoupdate.sh") == "$ROOT/scripts/hooks/kit-autoupdate.sh" ]] \
   && ok_ "link_global lie kit-autoupdate.sh" || ko_ "link_global lie kit-autoupdate.sh"
-jq -e '.hooks.SessionStart | length == 2 and any(.matcher == "startup|resume" and .hooks[0].timeout == 20)' "$TMP/merged.json" >/dev/null 2>&1 \
-  && ok_ "SessionStart : kit-emit conservé + autoupdate (startup|resume, timeout 20)" || ko_ "SessionStart : kit-emit conservé + autoupdate"
+jq -e '.hooks.SessionStart | length == 2 and any(.matcher == "startup|resume" and .hooks[0].timeout == 30)' "$TMP/merged.json" >/dev/null 2>&1 \
+  && ok_ "SessionStart : kit-emit conservé + autoupdate (startup|resume, timeout 30)" || ko_ "SessionStart : kit-emit conservé + autoupdate"
 jq -e '.permissions.allow | index("Bash(kit perms allow *)") != null and index("mcp__claude-code-remote__add_repo") != null' "$TMP/merged.json" >/dev/null 2>&1 \
   && ok_ "allow : kit perms et add_repo présents" || ko_ "allow : kit perms et add_repo présents"
 "$ROOT/scripts/kit.sh" help 2>&1 | grep -q 'kit perms allow' && ok_ "usage : section PERMISSIONS" || ko_ "usage : section PERMISSIONS"
 "$ROOT/scripts/kit.sh" help 2>&1 | grep -q 'KIT_AUTOUPDATE=0' && ok_ "usage : KIT_AUTOUPDATE=0" || ko_ "usage : KIT_AUTOUPDATE=0"
+rm -rf "$HOME/.claude" "$KIT_CONFIG"
+# I. merge_settings écrit de façon atomique et suit un lien symbolique (réglages versionnés ailleurs).
+mkdir -p "$HOME/.claude"
+echo '{"model":"sonnet","hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo bye"}]}]}}' >"$TMP/real-settings.json"
+chmod 600 "$TMP/real-settings.json"
+ln -s "$TMP/real-settings.json" "$HOME/.claude/settings.json"
+( source "$ROOT/scripts/lib.sh"; merge_settings "$HOME/.claude/settings.json" "$ROOT/global/settings.json" current >/dev/null 2>&1 )
+[[ -L $HOME/.claude/settings.json ]] && jq -e '.model == "sonnet" and (.hooks.Stop | length == 2) and (.hooks.SessionStart | length == 2)' "$TMP/real-settings.json" >/dev/null 2>&1 \
+  && ok_ "merge_settings : lien conservé, cible fusionnée" || ko_ "merge_settings : lien conservé, cible fusionnée"
+[[ $(stat -c %a "$TMP/real-settings.json" 2>/dev/null || stat -f %Lp "$TMP/real-settings.json") == 600 ]] && ok_ "merge_settings : droits conservés" || ko_ "merge_settings : droits conservés"
+[[ -z $(find "$TMP" -maxdepth 1 -name '.real-settings.json.*') ]] && ok_ "merge_settings : aucun fichier temporaire résiduel" || ko_ "merge_settings : fichier temporaire résiduel"
 rm -rf "$HOME/.claude" "$KIT_CONFIG"
 
 # ---------------------------------------------------------------------------
@@ -375,20 +386,37 @@ run_hook A=1
 # 3. Tampon expiré -> mise à jour + message + sync.
 echo $(($(date +%s) - 30000)) >"$KIT_CONFIG/autoupdate.stamp"
 run_hook A=1
-[[ $RC == 0 && $OUT == "kit mis à jour : "*" (1 commits) — les réglages s'appliquent tout de suite, CLAUDE.md et les commandes au prochain démarrage de session." ]] \
+[[ $RC == 0 && $OUT == "kit mis à jour : "*" (1 commits) — kit sync tourne en arrière-plan "*"CLAUDE.md et les commandes au prochain démarrage de session." ]] \
   && ok_ "nouveau commit : mise à jour et message" || ko_ "nouveau commit : mise à jour et message" "code $RC, sortie : $OUT"
 [[ $(head_of) == "$(git -C "$ORIGIN" rev-parse main)" ]] && ok_ "HEAD aligné sur origin/main" || ko_ "HEAD aligné sur origin/main"
-[[ $(cat "$MARK" 2>/dev/null) == "sync" ]] && ok_ "kit sync lancé une fois" || ko_ "kit sync lancé une fois" "$(cat "$MARK" 2>/dev/null)"
+for _ in $(seq 1 50); do [[ -s $MARK ]] && break; sleep 0.1; done
+[[ $(cat "$MARK" 2>/dev/null) == "sync" ]] && ok_ "kit sync lancé une fois (en arrière-plan)" || ko_ "kit sync lancé une fois" "$(cat "$MARK" 2>/dev/null)"
+grep -q 'kit sync après' "$KIT_CONFIG/autoupdate.log" 2>/dev/null && ok_ "journal autoupdate.log écrit" || ko_ "journal autoupdate.log écrit"
 [[ $(wc -l <<<"$OUT") == 1 ]] && ok_ "une seule ligne de sortie" || ko_ "une seule ligne de sortie"
 
 # 4. Arbre sale : ignoré, code 0.
 push_commit v3
 echo dirty >>"$KITCLONE/VERSION"
+# 4a. Profil local : la ligne « ignorée » n'apparaît qu'une fois par 6 h.
+rm -f "$KIT_CONFIG/autoupdate.stamp" "$KIT_CONFIG/autoupdate.skip.stamp"
+run_hook A=1
+[[ $RC == 0 && $OUT == *"ignorée"* ]] && ok_ "local, arbre modifié : une ligne la première fois" || ko_ "local, arbre modifié : une ligne" "code $RC, sortie : $OUT"
+run_hook A=1
+[[ $RC == 0 && -z $OUT ]] && ok_ "local, arbre modifié : silencieux ensuite (6 h)" || ko_ "local, arbre modifié : silencieux ensuite" "code $RC, sortie : $OUT"
+[[ ! -f $KIT_CONFIG/autoupdate.stamp ]] && ok_ "tampon de fetch non écrit sans fetch" || ko_ "tampon de fetch non écrit sans fetch"
 before=$(head_of)
 run_hook CLAUDE_CODE_REMOTE=true
 [[ $RC == 0 && $OUT == *"ignorée"*"modifications locales"* && $(head_of) == "$before" ]] \
   && ok_ "arbre modifié : ignoré avec une ligne, code 0" || ko_ "arbre modifié : ignoré" "code $RC, sortie : $OUT"
 git -C "$KITCLONE" checkout -q -- VERSION
+
+# 4b. Verrou git : message distinct de « divergent ».
+touch "$KITCLONE/.git/index.lock"
+before=$(head_of)
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"verrou git présent"* && $(head_of) == "$before" ]] \
+  && ok_ "index.lock : message « verrou git présent », code 0" || ko_ "index.lock : message verrou" "code $RC, sortie : $OUT"
+rm -f "$KITCLONE/.git/index.lock"
 
 # 5. Hors main : ignoré.
 git -C "$KITCLONE" checkout -q -b feature
@@ -418,7 +446,14 @@ git -C "$KITCLONE" remote set-url origin "http://10.255.255.1/none.git"
 SECONDS=0
 run_hook CLAUDE_CODE_REMOTE=true
 [[ $RC == 0 && $SECONDS -le 14 && -z $OUT ]] && ok_ "origine injoignable : code 0, silencieux, en ${SECONDS}s" || ko_ "origine injoignable" "code $RC, ${SECONDS}s, sortie : $OUT"
+# 8b. Profil local : un fetch en échec n'écrit pas le tampon (retenté à la session suivante).
+rm -f "$KIT_CONFIG/autoupdate.stamp"
+run_hook A=1
+[[ $RC == 0 && -z $OUT && ! -f $KIT_CONFIG/autoupdate.stamp ]] && ok_ "fetch en échec : pas de tampon, code 0" || ko_ "fetch en échec : pas de tampon" "code $RC, sortie : $OUT"
+push_commit v5
 git -C "$KITCLONE" remote set-url origin "$ORIGIN"
+run_hook A=1
+[[ $RC == 0 && $OUT == "kit mis à jour : "* && -f $KIT_CONFIG/autoupdate.stamp ]] && ok_ "session suivante : retenté, mise à jour, tampon écrit" || ko_ "session suivante : retenté" "code $RC, sortie : $OUT"
 
 # 9. Sans dépôt git : code 0.
 NOGIT="$AU/nogit"; mkdir -p "$NOGIT/scripts/hooks"
