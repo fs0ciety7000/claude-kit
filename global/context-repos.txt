@@ -1,0 +1,3 @@
+# Private repositories kept as read-only copies in ~/.kit/context/<name> by `kit sync` (local machines only; in a
+# cloud session, attach the repository to the session instead). One owner/repo per line.
+fs0ciety7000/fs0ciety-ops

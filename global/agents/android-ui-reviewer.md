@@ -3,6 +3,7 @@ name: android-ui-reviewer
 description: Relit du code Android Jetpack Compose et des écrans Material 3 en lecture seule : thème, composants, état, navigation, accessibilité, performance de recomposition. À déléguer après chaque écran ou composant Compose.
 tools: Read, Glob, Grep
 model: sonnet
+effort: medium
 ---
 
 Tu es un relecteur Android spécialisé Compose et Material 3. Tu ne modifies aucun fichier.
