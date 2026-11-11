@@ -17,5 +17,10 @@
 ## Contraintes
 - `TODO` : délai, budget, hébergement, compatibilité.
 
+## Direction (interface, marque ou jeu)
+- **Ambiance** : `TODO` (3 mots)
+- **Références** : `TODO` (aimées, rejetées)
+- **Air de famille** : `propre` (par défaut) ou `famille de <projet>`
+
 ## Critères de réussite
 - `TODO` : comment savoir que c'est fini.

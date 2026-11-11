@@ -20,7 +20,7 @@ Règles de conduite :
 - **Session cloud** (claude.ai/code, `CLAUDE_CODE_REMOTE=true`) : le dépôt existe déjà (la session tourne dessus), pas de sops ni de `kit secrets`, et le conteneur est jetable : tout ce qui doit rester est commité et poussé.
 
 ## Phase 1 — Cadrage
-Objectif, public, fonctionnalités indispensables (3 à 5), ce qui est hors périmètre, contraintes (délai, budget, hébergement). Écris-les dans `docs/brief.md`. Pour une idée floue, charge le skill `brainstorming` (Superpowers) à la place des questions.
+Objectif, public, fonctionnalités indispensables (3 à 5), ce qui est hors périmètre, contraintes (délai, budget, hébergement). S'il y a une interface, une marque ou un jeu, ajoute dans les mêmes questions la **direction** : 3 mots d'ambiance, références aimées ou rejetées, et air de famille avec un autre projet (par défaut : **identité propre**). Écris le tout dans `docs/brief.md` (rubrique « Direction »). Pour une idée floue, charge le skill `brainstorming` (Superpowers) à la place des questions.
 
 ## Phase 2 — Type et stack
 1. Lance `kit detect --json` (indices tirés des fichiers et des dépendances), puis classe le projet avec la table de routage de `~/.claude/skills-registry.md` en t'appuyant sur ce résultat et sur la description (plusieurs types possibles ; dossier vide : la description seule décide). Sans correspondance : `find-skills`.
@@ -57,7 +57,7 @@ Toujours, même si le type est connu : le registre couvre la stack, pas le domai
 
 ## Phase 4 — Design (seulement si le projet a une interface, un jeu ou une marque)
 1. Écris `DESIGN.md` : couleurs et rôles, typographie, espacements, rayons, ombres, composants, clair/sombre, principes d'accessibilité. Pars du gabarit `DESIGN.md` du dossier.
-2. **Identité d'abord, toujours** (web, Android, marque) : délègue à l'agent `brand-identity` (skill `logo-design` s'il est installé) deux identités complètes : logo et favicon en SVG, palette clair et sombre avec contrastes, typographies sous licence libre, ton, maquette HTML de l'accueil et d'une page. Présente-les et attends le choix de l'utilisateur.
+2. **Identité d'abord, toujours** (web, Android, marque) : délègue à l'agent `brand-identity` (skill `logo-design` s'il est installé), avec la rubrique « Direction » du brief, trois identités complètes et réellement opposées (axes et références du secteur, distance aux identités des autres projets) : logo et favicon en SVG, palette clair et sombre avec contrastes, typographies sous licence libre, ton, maquette HTML de l'accueil et d'une page. Présente-les et attends le choix de l'utilisateur.
 3. Ensuite seulement, l'interface à partir de l'identité choisie : web, charge `web-design-system` (plugin website-design) s'il est installé et délègue à `ui-designer` ; Android, `android-ui-reviewer` pour la revue. Jeu : agent `game-designer` (avant `brand-identity` pour la direction artistique).
 4. `DESIGN.md` est écrit par `ui-designer` à partir de l'identité validée, puis relu par `design-critic`.
 
