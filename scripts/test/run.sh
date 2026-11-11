@@ -405,6 +405,14 @@ section "link_global, merge_settings, usage"
 )
 [[ -L $KIT_CONFIG/hooks/kit-autoupdate.sh && $(readlink "$KIT_CONFIG/hooks/kit-autoupdate.sh") == "$ROOT/scripts/hooks/kit-autoupdate.sh" ]] \
   && ok_ "link_global lie kit-autoupdate.sh" || ko_ "link_global lie kit-autoupdate.sh"
+[[ -L $KIT_CONFIG/hooks/kit-dockerd.sh && $(readlink "$KIT_CONFIG/hooks/kit-dockerd.sh") == "$ROOT/scripts/hooks/kit-dockerd.sh" ]] \
+  && ok_ "link_global lie kit-dockerd.sh" || ko_ "link_global lie kit-dockerd.sh"
+jq -e '[.hooks.SessionStart[] | select(.matcher == "startup|resume") | .hooks[].command] | any(endswith("kit-dockerd.sh"))' "$TMP/merged.json" >/dev/null 2>&1 \
+  && ok_ "SessionStart : kit-dockerd (startup|resume)" || ko_ "SessionStart : kit-dockerd"
+out=$(KIT_DOCKERD=0 CLAUDE_CODE_REMOTE=true bash "$ROOT/scripts/hooks/kit-dockerd.sh" </dev/null); rc=$?
+[[ $rc == 0 && -z $out ]] && ok_ "kit-dockerd : KIT_DOCKERD=0 ne fait rien" || ko_ "kit-dockerd : KIT_DOCKERD=0"
+out=$(env -u CLAUDE_CODE_REMOTE -u KIT_DOCKERD bash "$ROOT/scripts/hooks/kit-dockerd.sh" </dev/null); rc=$?
+[[ $rc == 0 && -z $out ]] && ok_ "kit-dockerd : hors cloud, ne fait rien" || ko_ "kit-dockerd : hors cloud"
 jq -e '.hooks.SessionStart | length == 2 and any(.matcher == "startup|resume" and .hooks[0].timeout == 30)' "$TMP/merged.json" >/dev/null 2>&1 \
   && ok_ "SessionStart : kit-emit conservé + autoupdate (startup|resume, timeout 30)" || ko_ "SessionStart : kit-emit conservé + autoupdate"
 jq -e '.permissions.allow | index("Bash(kit perms allow *)") != null and index("mcp__claude-code-remote__add_repo") != null' "$TMP/merged.json" >/dev/null 2>&1 \
