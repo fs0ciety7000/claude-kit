@@ -273,6 +273,11 @@
             "type": "command",
             "command": "$HOME/.config/claude-kit/hooks/kit-autoupdate.sh",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-dockerd.sh",
+            "timeout": 25
           }
         ]
       }

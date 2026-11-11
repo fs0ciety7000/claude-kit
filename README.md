@@ -131,6 +131,8 @@ Tout le reste est refusé : `Edit`/`Write`, écritures `kit api`, outils MCP qui
 ## Mise à jour automatique
 
 Un hook `SessionStart` (démarrage et reprise de session) lance `kit-autoupdate`. Il fait un `git pull --ff-only` du kit, avec un délai de 10 s et sans invite, puis `kit sync` si la révision a changé. Il n'échoue jamais.
+
+En session cloud (`CLAUDE_CODE_REMOTE=true`), un second hook `SessionStart`, `kit-dockerd`, démarre le démon Docker s'il est installé mais arrêté : il le lance détaché (hors des tâches de fond de Claude, donc sans leur limite de durée) et le relance après un redémarrage du conteneur. `KIT_DOCKERD=0` le désactive, `KIT_DOCKERD=1` le force hors cloud ; journal dans `~/.config/claude-kit/dockerd.log`.
 - En session cloud, il tourne à chaque démarrage ; en local ou sur le VPS, au plus une fois toutes les 6 h.
 - Il ne fait rien si le dépôt du kit a des modifications locales ou n'est pas sur `main`.
 - `KIT_AUTOUPDATE=0` le désactive.
