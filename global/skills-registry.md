@@ -21,6 +21,7 @@ Source de vérité du routage. Lis la ligne qui correspond au projet ; ne charge
 | `brand` | logo, identité visuelle, charte | `brand` | `logo-design` | brand-identity, copywriter, ui-designer |
 | `content` | scripts, posts, vidéos, newsletters | `media` | (selon le besoin) | creative-content, copywriter, researcher |
 | `meta-agents` | écrire CLAUDE.md, SKILL.md, prompts | `meta` | `writing-for-agents` | (toi) |
+| `astro-static` | `astro.config.*`, dépendance `astro`, fichiers `.astro` | `astro` | `astro`, `frontend-design` | frontend-dev, ui-designer, design-critic, qa-tester, devops |
 | `autre` | rien ne correspond | | `find-skills`, puis proposer | researcher |
 
 ## Agents (sous-agents maison)

@@ -14,3 +14,5 @@ backend-rust	file	Cargo.toml
 pocketbase	file	pb_migrations|pb_hooks|pb_data
 pocketbase	pkg	^pocketbase$
 deploy	file	Dockerfile|docker-compose.yml|docker-compose.yaml|compose.yaml|DEPLOY.md
+astro-static	file	astro.config.*
+astro-static	pkg	astro
