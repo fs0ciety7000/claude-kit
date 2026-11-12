@@ -65,14 +65,10 @@ Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le trav
 - Si le projet a `docs/memory/` : lis `state.md` et `decisions.md` au début de la tâche.
 - Reprise d'un projet : `/resume` (relais, état, plan, tâches). Fin de session : `/handoff` (relais écrit et poussé).
 - Projet existant sans ce harness : `/adopt`. Hébergement, DNS, Access, Coolify : skill `infra-context` d'abord.
-- **Engram**, le savoir commun à tous les projets (skill `engram`), **obligatoire pour chaque projet** :
-  - avant une tâche non triviale, lis la fiche `content/projects/<dépôt>.md` et les notes du sujet ;
-  - chaque projet a sa fiche : `/new-project` et `/adopt` la créent ; tout projet qui n'en a pas en reçoit une à la
-    première avancée notable ;
-  - après une avancée, un ajout ou une modification notable (fonctionnalité livrée, stack, hébergement, état),
-    mets à jour la fiche (État, Stack, Dernière activité) et verse les leçons, décisions, pratiques et ressources
-    réutilisables ailleurs. Une PR vers `main` d'Engram, `npm run check` vert ; règles de confidentialité du skill ;
-  - en cloud, dépôt `engram` absent : `add_repo` (`access: push`) puis clone, sans demander.
+- **Engram**, le savoir commun à tous les projets (skill `engram`) : **seulement à la demande**. Tu ne le lis et ne
+  l'écris (fiche projet, leçons, PR) que si l'utilisateur le demande ; tu peux le proposer en une ligne à la fin
+  d'un travail qui a produit un savoir réutilisable. En cloud, quand il est demandé et absent : `add_repo`
+  (`access: push`) puis clone.
 - À la fin d'une tâche, réécris `state.md` (fait, en cours, bloquant, 3 prochaines étapes) et ajoute dans `decisions.md` toute décision durable. Court : ces fichiers sont relus à chaque session et affichés dans le dashboard.
 - Projet sans `docs/memory/` : `kit project init .` le crée (n'écrase rien).
 - Ancien projet avec `.claude/memory/` : déplace-le (`git mv .claude/memory docs/memory`). `.claude/` est protégé par Claude Code (réglages, hooks, agents) : la mémoire n'y a pas sa place.

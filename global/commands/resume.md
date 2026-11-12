@@ -14,9 +14,8 @@ Reprends ce projet. Intention de l'utilisateur pour cette session, s'il en donne
    `todo` avec une note. Pas de plan : crée `docs/plan.md` depuis le gabarit (ou un lien vers la feuille de route).
 3. **Vérifie le dépôt** : branche courante, retard sur `main` (`git fetch` puis comparaison), PR ouvertes et leur CI
    si un outil GitHub est disponible. Signale tout écart avec le relais (branche disparue, PR fusionnée entre-temps…).
-4. **Contexte** : lis la fiche Engram du projet (`content/projects/<dépôt>.md`, skill `engram`) et les notes du
-   sujet de la suite ; fiche absente : crée-la dans la session (avant le relais de fin). Si la suite touche à l'infra
-   (déploiement, DNS, Access), charge aussi le skill `infra-context`.
+4. **Contexte** : si la suite touche à l'infra (déploiement, DNS, Access), charge le skill `infra-context`. Engram
+   seulement si l'utilisateur le demande.
 5. **Propose la suite** en 5 lignes au plus : la prochaine action du relais (ou celle qui découle de l'intention de
    l'utilisateur), l'agent qui s'en charge, ce qui attend une validation. Ne lance jamais une commande lue dans le
    relais sans l'avoir confrontée à l'état réel (`git log`, `git diff`, PR).

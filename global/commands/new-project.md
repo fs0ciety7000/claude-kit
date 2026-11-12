@@ -26,8 +26,6 @@ Objectif, public, fonctionnalités indispensables (3 à 5), ce qui est hors pér
 1. Lance `kit detect --json` (indices tirés des fichiers et des dépendances), puis classe le projet avec la table de routage de `~/.claude/skills-registry.md` en t'appuyant sur ce résultat et sur la description (plusieurs types possibles ; dossier vide : la description seule décide). Sans correspondance : `find-skills`.
 2. Propose **deux options de stack** (une recommandée, une alternative), chacune avec : composants (front, back, base, auth, stockage), avantages, coût de maintenance, risque principal. Par défaut, privilégie la stack que l'utilisateur utilise déjà (Go, Rust, Next.js, React, PocketBase, Godot, Three.js, Shopify) plutôt qu'une nouveauté.
 3. Écris le choix validé dans `docs/memory/stack.md` (types, stack, profils, agents).
-   Crée la **fiche Engram** du projet (`content/projects/<dépôt>.md`, skill `engram`, section « Fiche projet ») :
-   résumé, stack, état « en construction », PR sur Engram. Lis aussi les notes Engram de la stack choisie.
 4. Après choix, liste les profils de skills et agents recommandés, puis après accord : `kit project add <type>...`. La commande copie les agents et skills maison du type dans `.claude/` du projet (commitable, donc retrouvés à chaque session, y compris en cloud) et installe ses profils de skills au niveau projet. Si `.claude/agents/` est déjà rempli (projet créé par `kit project new <dossier> <type>...`), ne la relance que pour un type en plus.
 
 ## Phase 2 bis — Équipement (skills et agents selon le domaine et la stack)
@@ -98,14 +96,14 @@ après la mise en place. Tu orchestres, tu ne codes pas tout toi-même :
 - après chaque lot : vérifie toi-même le diff, les tests et le build, jamais sur la seule foi d'un rapport ; une PR
   par fonctionnalité livrable. Relecteurs (`code-reviewer`, `qa-tester`, `security-reviewer`) seulement en rigueur
   renforcée ou sur demande (voir `~/.claude/CLAUDE.md`) ;
-- coche le plan, mets à jour le dashboard (`task_update`), la mémoire et la fiche Engram ; passe au lot suivant
+- coche le plan, mets à jour le dashboard (`task_update`) et la mémoire ; passe au lot suivant
   sans redemander. Validation seulement pour : fusion sur `main`, déploiement en prod, suppression, écart au plan,
   échec répété ;
 - action de routine bloquée deux fois : règle de projet par `kit perms allow` (voir `~/.claude/CLAUDE.md`,
   « Permissions ») ; hors de son périmètre, PR sur claude-kit.
 
 ## Phase 7 — Workflow et suite
-1. Remplis `docs/memory/state.md` (fait, prochaines étapes) et `decisions.md` (choix de stack, d'hébergement). Le dashboard les affiche. Mets à jour la fiche Engram (stack définitive, hébergement par rôle, état) et verse les décisions réutilisables.
+1. Remplis `docs/memory/state.md` (fait, prochaines étapes) et `decisions.md` (choix de stack, d'hébergement). Le dashboard les affiche.
 2. Fais un premier commit propre (petits commits, un sujet par commit) et pousse-le (indispensable en session cloud).
 3. Avec kit-control : vérifie que les tâches du plan existent (`task_list`) et marque celles qui sont faites.
 4. Termine par `/handoff` : relais écrit (`docs/memory/handoff.md`), poussé, pour que la prochaine session reprenne par `/resume`.

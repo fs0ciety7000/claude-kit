@@ -18,12 +18,8 @@ Prépare la prochaine session de ce projet. Note de l'utilisateur à transmettre
 4. **`docs/plan.md` et tâches** : coche ce qui est fini, ajoute ce qui a été découvert ou demandé ; le dashboard
    suit à l'identique (`task_create` pour le nouveau, `task_update` `done`/`blocked` + note). Aucune tâche ne reste
    `doing` sans travail en cours.
-5. **Engram, vérification obligatoire** (skill `engram`) :
-   - la fiche `content/projects/<dépôt>.md` existe et reflète la session (État, Stack, Dernière activité,
-     `updated`) ; sinon, crée-la ou mets-la à jour ;
-   - chaque leçon, décision, pratique ou ressource réutilisable ailleurs a sa note ;
-   - PR Engram ouverte, `npm run check` vert ; son lien va dans `handoff.md`. Engram inaccessible : écris dans
-     `handoff.md` ce qui reste à y verser.
+5. **Engram** : seulement si l'utilisateur l'a demandé (skill `engram`). Sinon, si la session a produit un savoir
+   réutilisable ailleurs, propose-le en une ligne dans ta réponse.
 6. **Visibilité du dépôt** : vérifie-la (outil GitHub, ou `gh repo view --json visibility` si disponible) ; inconnue
    = publique. Dépôt public : relis le diff avant de pousser, sans aucune donnée identifiante (IP, hôte interne,
    UUID, utilisateur, e-mail).
