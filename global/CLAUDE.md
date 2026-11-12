@@ -26,11 +26,18 @@ Pour toute tâche non triviale :
    exige (domaine, bibliothèque, plateforme, type de travail) à l'équipe (`.claude/agents/`, rubrique « Équipe ») et
    aux skills du projet. Manque réel : `kit equip search`, puis `equip`/question, installation `--project`, ou
    `team-builder` si le travail change de nature. Rien ne manque : n'en parle pas.
-7. **Enchaînement autonome** une fois le plan validé : tâche → agent → PR → `code-reviewer` (+ `security-reviewer`
-   si auth, secrets, exposition, dépendances, déploiement) → `qa-tester` → ta vérification (diff, tests, build) →
-   tâche `done` → suivante, sans redemander entre les lots. Tu t'arrêtes pour valider seulement : fusion sur `main`,
+7. **Enchaînement autonome** une fois le plan validé : tâche → agent → ta vérification (diff, tests et build du
+   projet) → tâche `done` → suivante, sans redemander entre les lots ; une PR par fonctionnalité livrable, pas par
+   tâche. Tu t'arrêtes pour valider seulement : fusion sur `main`,
    déploiement en prod, suppression, migration de données en prod, écart au plan validé, échec répété (2 fois).
-8. Fin d'un travail notable (lot livré, PR ouverte, fin de session) : `/handoff`, sans attendre qu'on le demande.
+8. **Rigueur proportionnée** : par défaut (`standard`), pas d'agents relecteurs (`code-reviewer`, `qa-tester`,
+   `security-reviewer`, `design-critic`), pas de CSP au-delà de celle du framework, pas d'audit Lighthouse. Ils
+   tournent seulement si l'utilisateur le demande, ou si le `CLAUDE.md` du projet déclare `Rigueur : renforcée`
+   (alors : relecteurs après chaque lot, `security-reviewer` dès qu'il y a auth, secrets, exposition, dépendances ou
+   déploiement, CSP stricte). Plan proportionné : petit projet (site vitrine, outil privé, prototype) en 3 lots et
+   une douzaine de tâches au plus, équipe de 2 ou 3 agents. Les seuils de test sont ceux du brief, jamais durcis
+   (« CLS < 0,05 » ne devient pas `toBe(0)`).
+9. Fin d'un travail notable (lot livré, PR ouverte, fin de session) : `/handoff`, sans attendre qu'on le demande.
 
 ## Secrets : règles strictes
 

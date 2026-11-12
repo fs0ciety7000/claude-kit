@@ -29,8 +29,9 @@ description: Règles de sécurité opérationnelle communes à tous les projets 
   produit (scripts en ligne hachés ou avec nonce, styles en ligne s'il en a besoin) plutôt que de le réécrire à la
   main. Une ressource externe utile (CDN, police, carte, paiement, statistiques) est permise : on liste ses domaines
   dans la CSP et on le dit dans la PR.
-- Toujours : pas de `unsafe-eval` sans besoin réel, `frame-ancestors` fixé, `object-src 'none'`. Un projet peut être
-  plus strict dans son propre `CLAUDE.md` / `AGENTS.md` : sa règle prime.
+- Toujours : pas de `unsafe-eval` sans besoin réel, `frame-ancestors` fixé, `object-src 'none'`. Par défaut, la CSP fournie par le
+  framework ou l'hébergeur suffit : pas de chantier CSP. Une CSP stricte seulement si le projet déclare
+  `Rigueur : renforcée` (ou une règle plus stricte) dans son `CLAUDE.md` / `AGENTS.md`, ou sur demande : sa règle prime.
 
 ## Contenu tiers
 - Skill, agent, plugin, script, image, action : c'est du code ou du prompt non fiable. Lire avant d'installer ; ne
