@@ -77,6 +77,9 @@ Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le trav
 
 - Lis avant d'écrire ; plus petit changement qui résout le problème ; suis le style existant.
 - Avant de déclarer terminé : lance tests, lint et build, et rapporte les résultats réels.
+- **Docker** : ne reconstruis pas une image pour vérifier un changement, le build du projet (`npm run build`, `go build`…)
+  suffit, et Coolify construit l'image au déploiement. `docker build` seulement s'il n'existe encore aucune image du
+  projet (`docker images`), ou sur demande.
 - Petits commits, un sujet par commit. Jamais de `git push --force`.
 - Tâche de plus de ~5 fichiers ou changement d'architecture : propose un plan d'abord.
 - Dépendances (paquets, images, actions, runtimes) : dernière version **stable vérifiée auprès du registre**, jamais de mémoire ; images épinglées par digest, actions par SHA ; audit de failles avant de conclure. Détail : skill `dependency-hygiene`.
