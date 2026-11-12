@@ -1,6 +1,6 @@
 ---
 name: engram
-description: Lire et enrichir Engram, le coffre de connaissances privé de l'utilisateur (leçons, pratiques, décisions, recherches, idées). À utiliser avant une tâche non triviale, pour partir de ce qui est déjà su ; pour créer ou tenir à jour la fiche du projet (obligatoire : /new-project, /adopt, chaque avancée notable, /handoff) ; et dès qu'une session produit un savoir durable : piège résolu, décision, pratique ou extrait réutilisable, ressource, recherche sourcée, idée.
+description: Lire et enrichir Engram, le coffre de connaissances privé de l'utilisateur (fiches projet, leçons, pratiques, décisions, recherches, idées). À utiliser seulement quand l'utilisateur le demande : lire ce qui est déjà su sur un sujet, créer ou mettre à jour la fiche d'un projet, verser une leçon, une décision, une pratique, une ressource ou une recherche.
 ---
 
 # Engram
@@ -15,21 +15,21 @@ dossier par type. Ce qu'un projet a appris sert aux suivants : lis avant, écris
 | Poste local | `~/.kit/context/engram` : copie superficielle tenue par `kit sync`, laissée intacte | un clone de travail à part : `git clone git@github.com:fs0ciety7000/engram.git "$(mktemp -d)/engram"` |
 | Session cloud (`CLAUDE_CODE_REMOTE=true`) | le dépôt attaché (en général `/home/user/engram`) | le même dépôt, sur une branche |
 
-En cloud, dépôt absent : attache-le **sans demander** avec l'outil `add_repo` (`owner: fs0ciety7000`,
+En cloud, quand Engram est demandé et absent : attache-le avec l'outil `add_repo` (`owner: fs0ciety7000`,
 `repo: engram`, `access: push`), lance la commande de clone qu'il renvoie, puis `register_repo_root`. Refusé ou
 introuvable : dis-le, note dans `docs/memory/handoff.md` (« Engram à mettre à jour : … ») ce qui n'a pas pu être
 versé, et continue.
 
-## Fiche projet, obligatoire
+## Fiche projet (quand elle est demandée)
 
-Chaque projet a sa fiche `content/projects/<dépôt>.md` (`<dépôt>` = nom du dépôt GitHub, sans le propriétaire),
+Chaque projet peut avoir sa fiche `content/projects/<dépôt>.md` (`<dépôt>` = nom du dépôt GitHub, sans le propriétaire),
 note vivante tenue à jour par les sessions du projet.
 
 | Moment | Action sur la fiche |
 |---|---|
-| `/new-project` (après la stack validée) ou `/adopt` | **créer** depuis `content/templates/Projet.md` si elle n'existe pas ; sinon la compléter |
+| création demandée (souvent dans `/new-project` ou `/adopt`) | **créer** depuis `content/templates/Projet.md` si elle n'existe pas ; sinon la compléter |
 | avancée notable : fonctionnalité livrée, lot terminé, changement de stack, d'hébergement ou d'état | **mettre à jour** `## État`, `## Stack`, `## Dernière activité` (une ligne datée en tête), `updated` |
-| `/handoff` | **vérifier** que la fiche reflète la session ; sinon la mettre à jour |
+| `/handoff` d'un projet dont la fiche est suivie à la demande de l'utilisateur | **vérifier** que la fiche reflète la session |
 
 Contenu : `## Résumé` (ce que fait le projet, pour qui, en généralisant), `## Stack`, `## État`, `## Hébergement`
 (rôle, jamais d'hôte ni d'identifiant), `## Conventions` (ce qui vaut d'être repris ailleurs), `## Décisions et

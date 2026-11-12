@@ -10,6 +10,7 @@
 - **Stack** : `TODO`
 - **Commandes** : `TODO` (install, dev, test, lint, build)
 - **Déploiement** : `TODO` (Coolify, Cloudflare Workers, autre)
+- **Rigueur** : `standard` (par défaut : pas d'agents relecteurs ni de CSP stricte) ou `renforcée` (relecteurs après chaque lot, CSP stricte)
 
 > Remplis cette section avec `/new-project` ou à la main.
 

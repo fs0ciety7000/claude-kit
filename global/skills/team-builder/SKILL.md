@@ -1,6 +1,6 @@
 ---
 name: team-builder
-description: Composer l'équipe de sous-agents d'un projet (4 à 7 rôles) à partir du brief, de la stack et du plan, en réutilisant les agents du kit et des collections relues, ou en écrivant des agents propres au projet ; les installer dans .claude/agents/ avec le contexte réel du projet. À utiliser dans /new-project, /adopt, ou quand le travail change de nature.
+description: Composer l'équipe de sous-agents d'un projet (2 à 3 rôles pour un petit projet, 4 à 7 pour un gros) à partir du brief, de la stack et du plan, en réutilisant les agents du kit et des collections relues, ou en écrivant des agents propres au projet ; les installer dans .claude/agents/ avec le contexte réel du projet. À utiliser dans /new-project, /adopt, ou quand le travail change de nature.
 ---
 
 # Composer l'équipe d'un projet
@@ -10,7 +10,7 @@ nouvelle, ajoute seulement le rôle qui manque (étapes 2 à 4 pour ce rôle) ; 
 change de nature (ex. une app web qui devient un jeu ou une app mobile).
 
 ## 1. Rôles nécessaires
-À partir de `docs/brief.md`, `docs/memory/stack.md` et `docs/plan.md`, choisis **4 à 7 rôles**, jamais tous. Base :
+À partir de `docs/brief.md`, `docs/memory/stack.md` et `docs/plan.md`, choisis **2 à 3 rôles** pour un petit projet (site vitrine, outil privé, prototype), **4 à 7** pour un gros, jamais tous. Les relecteurs (`code-reviewer`, `qa-tester`, `security-reviewer`, `design-critic`) n'entrent dans l'équipe que si le projet déclare `Rigueur : renforcée` dans son `CLAUDE.md` ou si l'utilisateur le demande. Base :
 
 | Rôle | Quand |
 |---|---|
@@ -52,5 +52,5 @@ Copie l'agent dans `.claude/agents/<nom>.md` (jamais en global pour un besoin de
 - Tâches indépendantes : agents lancés en parallèle ; tâches liées : à la suite, avec le résultat de la précédente
   dans le brief de la suivante.
 - Brief d'un agent : objectif, fichiers concernés, contraintes, critère de fin, ce qui a déjà été écarté.
-- Après chaque lot : `code-reviewer` (et `security-reviewer` si concerné) sur la PR, puis `qa-tester`.
+- Après chaque lot : tes vérifications (diff, tests, build) ; les relecteurs seulement en rigueur renforcée ou sur demande.
 - Ne fais jamais confiance à un rapport sans vérifier le résultat (diff, tests, build).

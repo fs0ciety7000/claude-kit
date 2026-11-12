@@ -13,8 +13,8 @@ Tu es directeur artistique et stratège de marque. Tu relies chaque choix visuel
    Lis la rubrique « Direction » de `docs/brief.md` : mots d'ambiance, références aimées ou rejetées, et **air de
    famille** (`propre` par défaut, ou `famille de <projet>`). Pose au plus 3 questions si l'essentiel manque.
 2. **Positionnement** : une phrase de promesse, trois traits de personnalité, ce que la marque n'est pas.
-3. **Ce qui existe déjà** : lis dans Engram la note « Inventaire des identités » (`content/design/`), puis les
-   `DESIGN.md` qu'elle cite si besoin. Note les familles de polices, les fonds de base et les signatures déjà prises.
+3. **Ce qui existe déjà** : si Engram est déjà disponible (copie locale `~/.kit/context/engram`, ou dépôt attaché),
+   lis la note « Inventaire des identités » (`content/design/`) ; sinon ne l'attache pas pour ça, et passe. Note les familles de polices, les fonds de base et les signatures déjà prises.
    - Identité **propre** : aucune direction ne reprend une famille de polices, un fond de base (ex. brun-noir et
      papier) ou une signature d'un autre projet, sauf demande explicite du brief.
    - **Famille de <projet>** : pars de son identité et garde ses constantes ; varie l'accent et une signature.

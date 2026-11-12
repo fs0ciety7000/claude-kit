@@ -26,8 +26,6 @@ Objectif, public, fonctionnalités indispensables (3 à 5), ce qui est hors pér
 1. Lance `kit detect --json` (indices tirés des fichiers et des dépendances), puis classe le projet avec la table de routage de `~/.claude/skills-registry.md` en t'appuyant sur ce résultat et sur la description (plusieurs types possibles ; dossier vide : la description seule décide). Sans correspondance : `find-skills`.
 2. Propose **deux options de stack** (une recommandée, une alternative), chacune avec : composants (front, back, base, auth, stockage), avantages, coût de maintenance, risque principal. Par défaut, privilégie la stack que l'utilisateur utilise déjà (Go, Rust, Next.js, React, PocketBase, Godot, Three.js, Shopify) plutôt qu'une nouveauté.
 3. Écris le choix validé dans `docs/memory/stack.md` (types, stack, profils, agents).
-   Crée la **fiche Engram** du projet (`content/projects/<dépôt>.md`, skill `engram`, section « Fiche projet ») :
-   résumé, stack, état « en construction », PR sur Engram. Lis aussi les notes Engram de la stack choisie.
 4. Après choix, liste les profils de skills et agents recommandés, puis après accord : `kit project add <type>...`. La commande copie les agents et skills maison du type dans `.claude/` du projet (commitable, donc retrouvés à chaque session, y compris en cloud) et installe ses profils de skills au niveau projet. Si `.claude/agents/` est déjà rempli (projet créé par `kit project new <dossier> <type>...`), ne la relance que pour un type en plus.
 
 ## Phase 2 bis — Équipement (skills et agents selon le domaine et la stack)
@@ -43,7 +41,7 @@ Toujours, même si le type est connu : le registre couvre la stack, pas le domai
 7. **Apprentissage** : si la stack n'avait pas de ligne dans `~/.claude/skills-registry.md`, propose-la au kit (fichier JSON dans un dossier temporaire, puis `kit registry propose <fichier.json>`) : la PR ajoute type, détection, profil de skills et agents ; l'utilisateur la fusionne et le projet suivant en profite.
 
 ## Phase 2 ter — Plan et équipe
-1. **Plan** : délègue à l'agent `architect` (brief, stack, contraintes) un plan en lots ; écris-le dans `docs/plan.md`
+1. **Plan** : délègue à l'agent `architect` (brief, stack, contraintes) un plan en lots, proportionné au projet (petit projet : 3 lots, une douzaine de tâches au plus) ; écris-le dans `docs/plan.md`
    (lots, tâches cochables, agent responsable, critère de fin, ce qui peut avancer en parallèle).
 2. **Équipe** : applique le skill `team-builder` (4 à 7 rôles, agents du kit, des collections relues ou écrits pour le
    projet, adaptés au projet dans `.claude/agents/`, avec `model` et `effort`). Rubrique « Équipe » dans `CLAUDE.md`.
@@ -59,7 +57,7 @@ Toujours, même si le type est connu : le registre couvre la stack, pas le domai
 1. Écris `DESIGN.md` : couleurs et rôles, typographie, espacements, rayons, ombres, composants, clair/sombre, principes d'accessibilité. Pars du gabarit `DESIGN.md` du dossier.
 2. **Identité d'abord, toujours** (web, Android, marque) : délègue à l'agent `brand-identity` (skill `logo-design` s'il est installé), avec la rubrique « Direction » du brief, trois identités complètes et réellement opposées (axes et références du secteur, distance aux identités des autres projets) : logo et favicon en SVG, palette clair et sombre avec contrastes, typographies sous licence libre, ton, maquette HTML de l'accueil et d'une page. Présente-les et attends le choix de l'utilisateur.
 3. Ensuite seulement, l'interface à partir de l'identité choisie : web, charge `web-design-system` (plugin website-design) s'il est installé et délègue à `ui-designer` ; Android, `android-ui-reviewer` pour la revue. Jeu : agent `game-designer` (avant `brand-identity` pour la direction artistique).
-4. `DESIGN.md` est écrit par `ui-designer` à partir de l'identité validée, puis relu par `design-critic`.
+4. `DESIGN.md` est écrit par `ui-designer` à partir de l'identité validée (relu par `design-critic` seulement en rigueur renforcée ou sur demande).
 
 ## Phase 5 — Déploiement (Coolify + sous-domaine Cloudflare)
 Si le projet ne se déploie pas (bibliothèque, outil local, prototype), saute cette phase. Sinon, remplis `DEPLOY.md` en suivant le skill `deploy-coolify-cloudflare`.
@@ -95,16 +93,17 @@ Le plan validé vaut feu vert pour l'exécuter lot par lot ; demande seulement s
 après la mise en place. Tu orchestres, tu ne codes pas tout toi-même :
 - chaque tâche du plan est confiée à son agent, avec un brief complet (objectif, fichiers, contraintes, critère de
   fin, ce qui a été écarté) ; tâches indépendantes en parallèle, liées à la suite ;
-- après chaque lot : PR, `code-reviewer` (et `security-reviewer` si auth, secrets, exposition, dépendances ou
-  déploiement), `qa-tester` ; vérifie toi-même le diff et les résultats, jamais sur la seule foi d'un rapport ;
-- coche le plan, mets à jour le dashboard (`task_update`), la mémoire et la fiche Engram ; passe au lot suivant
+- après chaque lot : vérifie toi-même le diff, les tests et le build, jamais sur la seule foi d'un rapport ; une PR
+  par fonctionnalité livrable. Relecteurs (`code-reviewer`, `qa-tester`, `security-reviewer`) seulement en rigueur
+  renforcée ou sur demande (voir `~/.claude/CLAUDE.md`) ;
+- coche le plan, mets à jour le dashboard (`task_update`) et la mémoire ; passe au lot suivant
   sans redemander. Validation seulement pour : fusion sur `main`, déploiement en prod, suppression, écart au plan,
   échec répété ;
 - action de routine bloquée deux fois : règle de projet par `kit perms allow` (voir `~/.claude/CLAUDE.md`,
   « Permissions ») ; hors de son périmètre, PR sur claude-kit.
 
 ## Phase 7 — Workflow et suite
-1. Remplis `docs/memory/state.md` (fait, prochaines étapes) et `decisions.md` (choix de stack, d'hébergement). Le dashboard les affiche. Mets à jour la fiche Engram (stack définitive, hébergement par rôle, état) et verse les décisions réutilisables.
+1. Remplis `docs/memory/state.md` (fait, prochaines étapes) et `decisions.md` (choix de stack, d'hébergement). Le dashboard les affiche.
 2. Fais un premier commit propre (petits commits, un sujet par commit) et pousse-le (indispensable en session cloud).
 3. Avec kit-control : vérifie que les tâches du plan existent (`task_list`) et marque celles qui sont faites.
 4. Termine par `/handoff` : relais écrit (`docs/memory/handoff.md`), poussé, pour que la prochaine session reprenne par `/resume`.

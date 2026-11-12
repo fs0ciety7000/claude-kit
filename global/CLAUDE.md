@@ -26,11 +26,18 @@ Pour toute tâche non triviale :
    exige (domaine, bibliothèque, plateforme, type de travail) à l'équipe (`.claude/agents/`, rubrique « Équipe ») et
    aux skills du projet. Manque réel : `kit equip search`, puis `equip`/question, installation `--project`, ou
    `team-builder` si le travail change de nature. Rien ne manque : n'en parle pas.
-7. **Enchaînement autonome** une fois le plan validé : tâche → agent → PR → `code-reviewer` (+ `security-reviewer`
-   si auth, secrets, exposition, dépendances, déploiement) → `qa-tester` → ta vérification (diff, tests, build) →
-   tâche `done` → suivante, sans redemander entre les lots. Tu t'arrêtes pour valider seulement : fusion sur `main`,
+7. **Enchaînement autonome** une fois le plan validé : tâche → agent → ta vérification (diff, tests et build du
+   projet) → tâche `done` → suivante, sans redemander entre les lots ; une PR par fonctionnalité livrable, pas par
+   tâche. Tu t'arrêtes pour valider seulement : fusion sur `main`,
    déploiement en prod, suppression, migration de données en prod, écart au plan validé, échec répété (2 fois).
-8. Fin d'un travail notable (lot livré, PR ouverte, fin de session) : `/handoff`, sans attendre qu'on le demande.
+8. **Rigueur proportionnée** : par défaut (`standard`), pas d'agents relecteurs (`code-reviewer`, `qa-tester`,
+   `security-reviewer`, `design-critic`), pas de CSP au-delà de celle du framework, pas d'audit Lighthouse. Ils
+   tournent seulement si l'utilisateur le demande, ou si le `CLAUDE.md` du projet déclare `Rigueur : renforcée`
+   (alors : relecteurs après chaque lot, `security-reviewer` dès qu'il y a auth, secrets, exposition, dépendances ou
+   déploiement, CSP stricte). Plan proportionné : petit projet (site vitrine, outil privé, prototype) en 3 lots et
+   une douzaine de tâches au plus, équipe de 2 ou 3 agents. Les seuils de test sont ceux du brief, jamais durcis
+   (« CLS < 0,05 » ne devient pas `toBe(0)`).
+9. Fin d'un travail notable (lot livré, PR ouverte, fin de session) : `/handoff`, sans attendre qu'on le demande.
 
 ## Secrets : règles strictes
 
@@ -58,14 +65,10 @@ Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le trav
 - Si le projet a `docs/memory/` : lis `state.md` et `decisions.md` au début de la tâche.
 - Reprise d'un projet : `/resume` (relais, état, plan, tâches). Fin de session : `/handoff` (relais écrit et poussé).
 - Projet existant sans ce harness : `/adopt`. Hébergement, DNS, Access, Coolify : skill `infra-context` d'abord.
-- **Engram**, le savoir commun à tous les projets (skill `engram`), **obligatoire pour chaque projet** :
-  - avant une tâche non triviale, lis la fiche `content/projects/<dépôt>.md` et les notes du sujet ;
-  - chaque projet a sa fiche : `/new-project` et `/adopt` la créent ; tout projet qui n'en a pas en reçoit une à la
-    première avancée notable ;
-  - après une avancée, un ajout ou une modification notable (fonctionnalité livrée, stack, hébergement, état),
-    mets à jour la fiche (État, Stack, Dernière activité) et verse les leçons, décisions, pratiques et ressources
-    réutilisables ailleurs. Une PR vers `main` d'Engram, `npm run check` vert ; règles de confidentialité du skill ;
-  - en cloud, dépôt `engram` absent : `add_repo` (`access: push`) puis clone, sans demander.
+- **Engram**, le savoir commun à tous les projets (skill `engram`) : **seulement à la demande**. Tu ne le lis et ne
+  l'écris (fiche projet, leçons, PR) que si l'utilisateur le demande ; tu peux le proposer en une ligne à la fin
+  d'un travail qui a produit un savoir réutilisable. En cloud, quand il est demandé et absent : `add_repo`
+  (`access: push`) puis clone.
 - À la fin d'une tâche, réécris `state.md` (fait, en cours, bloquant, 3 prochaines étapes) et ajoute dans `decisions.md` toute décision durable. Court : ces fichiers sont relus à chaque session et affichés dans le dashboard.
 - Projet sans `docs/memory/` : `kit project init .` le crée (n'écrase rien).
 - Ancien projet avec `.claude/memory/` : déplace-le (`git mv .claude/memory docs/memory`). `.claude/` est protégé par Claude Code (réglages, hooks, agents) : la mémoire n'y a pas sa place.
@@ -74,6 +77,9 @@ Si les outils `mcp__kit-control__*` sont disponibles, l'utilisateur suit le trav
 
 - Lis avant d'écrire ; plus petit changement qui résout le problème ; suis le style existant.
 - Avant de déclarer terminé : lance tests, lint et build, et rapporte les résultats réels.
+- **Docker** : ne reconstruis pas une image pour vérifier un changement, le build du projet (`npm run build`, `go build`…)
+  suffit, et Coolify construit l'image au déploiement. `docker build` seulement s'il n'existe encore aucune image du
+  projet (`docker images`), ou sur demande.
 - Petits commits, un sujet par commit. Jamais de `git push --force`.
 - Tâche de plus de ~5 fichiers ou changement d'architecture : propose un plan d'abord.
 - Dépendances (paquets, images, actions, runtimes) : dernière version **stable vérifiée auprès du registre**, jamais de mémoire ; images épinglées par digest, actions par SHA ; audit de failles avant de conclure. Détail : skill `dependency-hygiene`.
