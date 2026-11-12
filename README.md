@@ -292,6 +292,7 @@ claude-kit/
 │   ├── kit.sh                  CLI kit
 │   ├── secrets.sh              sops + age
 │   ├── lib.sh                  fonctions communes
+│   ├── backup-v1.sh            sauvegarde d'un poste avant la v2 (docs/rollback-v1.md)
 │   └── hooks/guard-secrets.sh  hook PreToolUse
 ├── global/                     lié dans ~/.claude
 │   ├── CLAUDE.md, settings.json, settings.vps.json, skills-registry.md
