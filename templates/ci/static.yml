@@ -1,8 +1,8 @@
 # CI for a static site without a build step (HTML, CSS, JS served as-is, e.g. by nginx), on the self-hosted Forgejo
 # runner (`kit project ci`). A site with a package.json build uses vite or astro instead.
 # The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
-# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate bumps the
-# SHA from the version comment. No secret is used, and no dependency to audit.
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate (built-in
+# github-actions manager, forgejo-tags) bumps the SHA from the version comment. No secret is used, and no dependency to audit.
 # HTML validation: html-validate at a pinned version, with the project's .htmlvalidate.json when there is one,
 # otherwise the html-validate:standard preset (standard conformance only, no style rules).
 name: ci-static

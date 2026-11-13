@@ -2,8 +2,8 @@
 # The runner has neither macOS nor Windows: the .dmg and .exe/.msi packages are still built locally (`npx tauri
 # build` on each system). Here: frontend checks, Rust checks of src-tauri/, and an unbundled Linux release build.
 # The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
-# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate bumps the
-# SHA from the version comment. No secret is used (no updater signing key: nothing is signed or published).
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate (built-in
+# github-actions manager, forgejo-tags) bumps the SHA from the version comment. No secret is used (no updater signing key: nothing is signed or published).
 # Layout: package.json at the root with @tauri-apps/cli, Rust crate in src-tauri/ with its Cargo.lock committed.
 # Node version as in the web templates; Rust version: src-tauri/rust-toolchain.toml if present, else stable.
 name: ci-tauri

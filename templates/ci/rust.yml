@@ -1,7 +1,7 @@
 # CI for a Rust crate (CLI, TUI, library or service), on the self-hosted Forgejo runner (`kit project ci`).
 # The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
-# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate bumps the
-# SHA from the version comment. No secret is used. Cargo.lock must be committed (every cargo call is --locked).
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate (built-in
+# github-actions manager, forgejo-tags) bumps the SHA from the version comment. No secret is used. Cargo.lock must be committed (every cargo call is --locked).
 # Rust version, first found: rust-toolchain.toml (or rust-toolchain), the Dockerfile (FROM rust:<v>), else stable.
 # The default runner image (act) has gcc but no rustup: rustup-init is installed here, pinned by version and SHA-256
 # from static.rust-lang.org; build-essential comes from apt only on an image without a C compiler.

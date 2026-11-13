@@ -2,8 +2,8 @@
 # (pb_hooks/), on the self-hosted Forgejo runner (`kit project ci`). PocketBase embedded in Go: use go-web instead.
 # A frontend in the same repository gets its own workflow (`kit project ci pocketbase vite`).
 # The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
-# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate bumps the
-# SHA from the version comment. No secret is used; the data directory is a throwaway one in the runner's temp dir.
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate (built-in
+# github-actions manager, forgejo-tags) bumps the SHA from the version comment. No secret is used; the data directory is a throwaway one in the runner's temp dir.
 # PocketBase version: PB_VERSION below, and its SHA-256 (checksums.txt of the GitHub release). A Dockerfile with
 # `ARG PB_VERSION=<v>` must name the same version: the first step fails otherwise.
 name: ci-pocketbase

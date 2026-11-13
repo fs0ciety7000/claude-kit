@@ -2193,26 +2193,23 @@ PY
 else
   echo "  (python3 + PyYAML absents : analyse YAML stricte ignorée)"
 fi
-# Renovate: the project template carries the fragment, and the custom manager regex matches every uses: line.
-jqc --slurpfile f "$CID/renovate.json" '(.customManagers == $f[0].customManagers) and ($f[0].packageRules - .packageRules == [])' "$ROOT/templates/project/renovate.json" \
-  && ok_ "templates/project/renovate.json porte la règle Renovate de templates/ci/renovate.json" || ko_ "renovate.json du gabarit : règle absente ou divergente"
-jqc '.customManagers | length == 1 and (.[0].customType == "regex") and (.[0].datasourceTemplate == "github-tags") and (.[0].managerFilePatterns | length == 1)' "$CID/renovate.json" \
-  && ok_ "templates/ci/renovate.json : customManagers regex, datasource github-tags" || ko_ "templates/ci/renovate.json : forme"
-if command -v node >/dev/null 2>&1; then
-  rvout=$(node -e '
-    const fs = require("fs"), dir = process.argv[1];
-    const m = JSON.parse(fs.readFileSync(dir + "/renovate.json")).customManagers[0];
-    const path = new RegExp(m.managerFilePatterns[0].slice(1, -1));
-    if (!path.test(".forgejo/workflows/ci.yml") || path.test(".github/workflows/ci.yml")) console.log("managerFilePatterns");
-    for (const n of fs.readdirSync(dir).filter((x) => x.endsWith(".yml"))) {
-      const s = fs.readFileSync(dir + "/" + n, "utf8");
-      const hits = [...s.matchAll(new RegExp(m.matchStrings[0], "g"))];
-      const uses = (s.match(/^\s*(- )?uses:/gm) || []).length;
-      if (hits.length !== uses || hits.some((h) => !/^actions\//.test(h.groups.depName) || !/^[0-9a-f]{40}$/.test(h.groups.currentDigest))) console.log(n + ": " + hits.length + "/" + uses);
-    }' "$CID" 2>&1)
-  [[ -z $rvout ]] && ok_ "règle Renovate : la regex reconnaît chaque uses: des gabarits (depName, digest, version)" || ko_ "règle Renovate : regex" "$rvout"
+# Renovate: the built-in github-actions manager updates the data.forgejo.org actions (forgejo-tags datasource), so the
+# project template has no custom manager and nothing disables github-actions. Validator: opt-in (KIT_TEST_RENOVATE=1,
+# downloads renovate from npm).
+RENOVATE_VERSION=44.238.0
+jqc '(has("customManagers") or has("regexManagers") | not)
+     and ((.packageRules // []) | all((.matchManagers // []) | index("github-actions") == null))
+     and (.minimumReleaseAge == "3 days")' "$ROOT/templates/project/renovate.json" \
+  && ok_ "templates/project/renovate.json : ni customManagers ni github-actions désactivé, minimumReleaseAge 3 jours" || ko_ "templates/project/renovate.json : règle Renovate"
+[[ ! -e $CID/renovate.json ]] && ok_ "templates/ci : plus de fragment Renovate (gestionnaire intégré)" || ko_ "templates/ci/renovate.json existe encore"
+if [[ ${KIT_TEST_RENOVATE:-0} == 1 ]] && command -v npx >/dev/null 2>&1; then
+  if rvout=$(cd "$TMP" && npx --yes --package "renovate@$RENOVATE_VERSION" -- renovate-config-validator --strict "$ROOT/templates/project/renovate.json" 2>&1); then
+    ok_ "renovate-config-validator $RENOVATE_VERSION : templates/project/renovate.json valide"
+  else
+    ko_ "renovate-config-validator" "$(tail -3 <<<"$rvout")"
+  fi
 else
-  echo "  (node absent : regex Renovate non testée)"
+  echo "  (renovate-config-validator : KIT_TEST_RENOVATE=1 pour le lancer)"
 fi
 # actionlint: on PATH, or built at the pinned version with Go into the temp dir; skipped when neither works (offline).
 ACTIONLINT_VERSION=v1.7.12
@@ -2254,7 +2251,7 @@ cout=$("$KIT" project ci --dir "$CIP/astro" 2>&1)
 cmp -s "$CIP/astro/.forgejo/workflows/ci.yml" "$CID/astro.yml" && grep -q 'piles de CI détectées : astro' <<<"$cout" \
   && ok_ "project ci : sans argument, pose .forgejo/workflows/ci.yml de la pile détectée" || ko_ "project ci : écriture" "$cout"
 [[ $(grep -v '^#' "$CIP/astro/.fs0/bridge.yaml") == 'enabled: true' ]] && ok_ "project ci : .fs0/bridge.yaml minimal (enabled: true)" || ko_ "project ci : bridge.yaml"
-cmp -s "$CIP/astro/renovate.json" "$ROOT/templates/project/renovate.json" && ok_ "project ci : renovate.json absent = gabarit du projet (règle incluse)" || ko_ "project ci : renovate.json créé"
+cmp -s "$CIP/astro/renovate.json" "$ROOT/templates/project/renovate.json" && ok_ "project ci : renovate.json absent = gabarit du projet" || ko_ "project ci : renovate.json créé"
 echo "# edited" >>"$CIP/astro/.forgejo/workflows/ci.yml"
 cp "$CIP/astro/.forgejo/workflows/ci.yml" "$TMP/ci-edited.yml"
 "$KIT" project ci --dir "$CIP/astro" >/dev/null 2>&1 && ko_ "project ci : un ci.yml existant doit être refusé sans --force" || ok_ "project ci : ci.yml existant refusé sans --force"
@@ -2291,29 +2288,16 @@ ln -s "$TMP/ci-out/renovate.json" "$CIP/l3/renovate.json"
 "$KIT" project ci --dir "$HOME" >/dev/null 2>&1 && ko_ "project ci : le dossier personnel doit être refusé" || ok_ "project ci : dossier personnel refusé"
 [[ ! -e $HOME/.forgejo ]] && ok_ "project ci : rien écrit dans le dossier personnel" || ko_ "project ci : écrit dans le dossier personnel"
 rm -f "$HOME/go.mod"
-# Renovate merge: kept settings, appended once, idempotent; the old regexManagers name counts; other config files win.
-mkdir -p "$CIP/r1" "$CIP/r2" "$CIP/r3"
-for d in r1 r2 r3; do : >"$CIP/$d/go.mod"; done
-echo '{"extends":["config:base"],"customManagers":[{"customType":"regex","managerFilePatterns":["/x/"],"matchStrings":["y"],"datasourceTemplate":"npm"}],"packageRules":[{"matchPackageNames":["z"],"enabled":false}]}' >"$CIP/r1/renovate.json"
+# Renovate: an existing renovate.json is never touched; another Renovate config file means none is created.
+mkdir -p "$CIP/r1" "$CIP/r3"
+for d in r1 r3; do : >"$CIP/$d/go.mod"; done
+echo '{"extends":["config:base"]}' >"$CIP/r1/renovate.json"
 "$KIT" project ci --dir "$CIP/r1" >/dev/null 2>&1
-cp "$CIP/r1/renovate.json" "$TMP/r1.json"
-jqc --slurpfile f "$CID/renovate.json" '(.extends == ["config:base"]) and (.customManagers | length == 2) and (.customManagers[0].matchStrings == ["y"]) and (.customManagers[1] == $f[0].customManagers[0])
-  and (.packageRules | length == 2) and (.packageRules[1] == $f[0].packageRules[0])' "$CIP/r1/renovate.json" \
-  && ok_ "project ci : renovate.json existant complété (customManagers et packageRules ajoutés après les siens)" || ko_ "project ci : fusion renovate.json" "$(jq -c . "$CIP/r1/renovate.json" | cut -c1-200)"
-rm -rf "$CIP/r1/.forgejo"
-cout=$("$KIT" project ci --dir "$CIP/r1" 2>&1)
-cmp -s "$CIP/r1/renovate.json" "$TMP/r1.json" && grep -q 'déjà présente' <<<"$cout" && ok_ "project ci : relancé, renovate.json identique (aucun doublon)" || ko_ "project ci : doublons dans renovate.json" "$cout"
-jq --slurpfile f "$CID/renovate.json" '{regexManagers: [($f[0].customManagers[0] | del(.customType))]}' -n >"$CIP/r2/renovate.json"
-"$KIT" project ci --dir "$CIP/r2" >/dev/null 2>&1
-jqc '(.customManagers // [] | length == 0) and (.regexManagers | length == 1)' "$CIP/r2/renovate.json" \
-  && ok_ "project ci : règle déjà sous l'ancien nom regexManagers, pas de doublon" || ko_ "project ci : regexManagers" "$(jq -c . "$CIP/r2/renovate.json" | cut -c1-200)"
+[[ $(cat "$CIP/r1/renovate.json") == '{"extends":["config:base"]}' ]] && ok_ "project ci : renovate.json existant laissé intact" || ko_ "project ci : renovate.json existant modifié"
 echo '{}' >"$CIP/r3/renovate.json5"
-cout=$("$KIT" project ci --dir "$CIP/r3" 2>&1)
-[[ ! -e $CIP/r3/renovate.json && $(cat "$CIP/r3/renovate.json5") == '{}' ]] && grep -q 'renovate.json5 existe' <<<"$cout" \
-  && ok_ "project ci : autre fichier Renovate (renovate.json5) : avertissement, aucun renovate.json créé" || ko_ "project ci : renovate.json5" "$cout"
-echo '[1]' >"$CIP/r3/renovate.json"
-rm -rf "$CIP/r3/.forgejo"
-"$KIT" project ci --dir "$CIP/r3" >/dev/null 2>&1 && ko_ "project ci : renovate.json non objet doit échouer" || ok_ "project ci : renovate.json invalide refusé"
+"$KIT" project ci --dir "$CIP/r3" >/dev/null 2>&1
+[[ ! -e $CIP/r3/renovate.json && $(cat "$CIP/r3/renovate.json5") == '{}' ]] \
+  && ok_ "project ci : autre fichier Renovate (renovate.json5) : aucun renovate.json créé" || ko_ "project ci : renovate.json5"
 mkdir -p "$CIP/gh/.github/workflows"
 : >"$CIP/gh/go.mod"
 cout=$("$KIT" project ci --dir "$CIP/gh" 2>&1)

@@ -40,8 +40,8 @@ PROJETS
         pose seulement les autorisations de pile ; sans argument, détecte la pile d'après les fichiers du projet
   kit project ci [pile|type]... [--dir d] [--force]
         CI Forgejo : .forgejo/workflows/ci.yml (templates/ci/<pile>.yml : astro next vite go-web go-cli pocketbase
-        rust tauri static ; sans argument, détection), .fs0/bridge.yaml minimal, règle Renovate des actions
-        data.forgejo.org dans renovate.json ; n'écrase rien sans --force, refuse les liens symboliques
+        rust tauri static ; sans argument, détection), .fs0/bridge.yaml minimal et renovate.json s'ils manquent ;
+        n'écrase rien sans --force, refuse les liens symboliques
   kit project size S|M|L --reason "<une ligne>" [--dir d]
         fixe la taille : project.yaml, règles docs/rules/size-*.md et leurs imports dans CLAUDE.md (relançable)
   kit project effort <agent> <low|medium|high|xhigh|max> [--dir d]
@@ -609,39 +609,20 @@ detect_ci_stacks() { # dossier
   fi
   printf '%s\n' ${st[@]+"${st[@]}"}
 }
-# Adds the customManagers / packageRules of templates/ci/renovate.json to the project's renovate.json, without
-# duplicates (a custom manager is known by its matchStrings, also under the old name regexManagers). Absent: copies
-# the project template's renovate.json, unless another Renovate config file exists (then only a warning).
+# Renovate updates the data.forgejo.org actions with its built-in github-actions manager (forgejo-tags datasource,
+# SHA plus version comment): nothing to add to an existing config. Absent: copies the project template's renovate.json,
+# unless another Renovate config file exists.
 ci_renovate() { # dossier
-  local dir=$1 f="$1/renovate.json" frag="$KIT_HOME/templates/ci/renovate.json" o new
-  if [[ ! -f $f ]]; then
-    for o in renovate.json5 .renovaterc .renovaterc.json .renovaterc.json5 .github/renovate.json .github/renovate.json5 .gitlab/renovate.json .gitlab/renovate.json5; do
-      if [[ -e $dir/$o ]]; then
-        warn "$o existe : ajoute-y à la main la règle Renovate de $frag (kit n'écrit pas dans ce fichier)"
-        return 0
-      fi
-    done
-    cp "$KIT_HOME/templates/project/renovate.json" "$f"
-    ok "renovate.json créé (gabarit du kit, règle des actions data.forgejo.org incluse)"
-    return 0
-  fi
-  jq -e 'type == "object"' "$f" >/dev/null 2>&1 || die "$f n'est pas un objet JSON valide"
-  new=$(jq -s '.[0] as $c | .[1] as $f
-    | (($c.customManagers // []) + ($c.regexManagers // [])) as $known
-    | $c
-    | .customManagers = (reduce $f.customManagers[] as $e ($c.customManagers // [];
-        if any($known[]; .matchStrings == $e.matchStrings) then . else . + [$e] end))
-    | .packageRules = (reduce $f.packageRules[] as $e ($c.packageRules // [];
-        if any(.[]; . == $e) then . else . + [$e] end))' "$f" "$frag") || die "fusion de renovate.json échouée"
-  if [[ $(jq -S . <<<"$new") == "$(jq -S . "$f")" ]]; then
-    ok "renovate.json : règle des actions data.forgejo.org déjà présente"
-  else
-    write_atomic "$f" "$new"
-    ok "renovate.json : règle des actions data.forgejo.org ajoutée (customManagers)"
-  fi
+  local dir=$1 o
+  [[ ! -e $dir/renovate.json ]] || return 0
+  for o in renovate.json5 .renovaterc .renovaterc.json .renovaterc.json5 .github/renovate.json .github/renovate.json5 .gitlab/renovate.json .gitlab/renovate.json5; do
+    [[ ! -e $dir/$o ]] || return 0
+  done
+  cp "$KIT_HOME/templates/project/renovate.json" "$dir/renovate.json"
+  ok "renovate.json créé (gabarit du kit : épinglage par SHA, délai de 3 jours)"
 }
 # kit project ci [pile|type]... [--dir d] [--force] : .forgejo/workflows/ci.yml (première pile ; les suivantes dans
-# ci-<pile>.yml), .fs0/bridge.yaml minimal s'il manque, règle Renovate. N'écrase rien sans --force ; refuse les liens
+# ci-<pile>.yml), .fs0/bridge.yaml minimal et renovate.json s'ils manquent. N'écrase rien sans --force ; refuse les liens
 # symboliques et le dossier personnel. --if-absent (kit project add) : workflows existants laissés tels quels, sans erreur.
 project_ci() {
   local dir=. force=0 soft=0 stacks=() all=() s t m targets=() i f rdir home_phys exists=()

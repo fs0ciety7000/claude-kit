@@ -1,7 +1,7 @@
 # CI for a Vite application (React or Vue), on the self-hosted Forgejo runner (written by `kit project ci`).
 # The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
-# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate bumps the
-# SHA from the version comment. No secret is used. Package manager: npm (package-lock.json committed).
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate (built-in
+# github-actions manager, forgejo-tags) bumps the SHA from the version comment. No secret is used. Package manager: npm (package-lock.json committed).
 name: ci-vite
 on: [push]
 

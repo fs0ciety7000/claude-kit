@@ -1,7 +1,7 @@
 # CI for a Go command-line tool released with GoReleaser, on the self-hosted Forgejo runner (`kit project ci`).
 # The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
-# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate bumps the
-# SHA from the version comment. No secret is used: this checks the release configuration and builds a snapshot, it
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate (built-in
+# github-actions manager, forgejo-tags) bumps the SHA from the version comment. No secret is used: this checks the release configuration and builds a snapshot, it
 # publishes nothing (a release stays a local `goreleaser release`, or a later workflow with its own token).
 # Go version: go.mod (`go` and `toolchain` lines). Needs .goreleaser.yaml (or .goreleaser.yml) at the root.
 name: ci-go-cli
