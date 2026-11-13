@@ -1,0 +1,75 @@
+@ block baseline cat
+cat @E@
+%%
+@ block glob .e*
+cat .e*
+%%
+@ block glob .en?
+cat .en?
+%%
+@ block bracket glob .[e]nv
+cat .[e]nv
+%%
+@ block bracket glob .en[v]
+cat .en[v]
+%%
+@ block backslash in name
+cat .e\nv
+%%
+@ block quotes split
+cat .e@Q@@Q@nv
+%%
+@ block variable f=X; cat $f
+f=@E@; cat $f
+%%
+@ block variable quoted cat "$f"
+f=@E@; cat "$f"
+%%
+@ block cmd subst name
+cat $(echo @E@)
+%%
+@ block cmd subst printf
+cat "$(printf @Q@.e%s@Q@ nv)"
+%%
+@ block cd then relative
+cd sub && cat ../@E@
+%%
+@ block symlink then cat
+ln -s @E@ x && cat x
+%%
+@ block here-string of cmd subst
+cat <<< "$(cat @E@)"
+%%
+@ block process substitution
+diff <(sort @E@) /dev/null
+%%
+@ block input redirection first
+< @E@ cat
+%%
+@ block input redirection fd
+cat 0< @E@
+%%
+@ block cp to tmp then cat
+cp @E@ /tmp/x && cat /tmp/x
+%%
+@ block git show HEAD:
+git show HEAD:@E@
+%%
+@ block git show HEAD:./
+git show HEAD:./@E@
+%%
+@ block git archive tar wildcard
+git archive HEAD | tar -xO --wildcards @Q@*nv@Q@
+%%
+@ block tar then base64
+tar cf - @E@ | base64
+%%
+@ block base64
+base64 @E@
+%%
+@ block xxd
+xxd @E@
+%%
+@ block od
+od -c @E@
+%%

@@ -1,0 +1,45 @@
+@ block sort -o onto settings
+sort -o @H@/.claude/settings.json /tmp/evil.json
+%%
+@ block uniq output file
+uniq /tmp/evil.json @H@/.claude/settings.json
+%%
+@ block find -fprintf
+find /tmp -maxdepth 0 -fprintf @H@/.claude/settings.json @Q@{}@Q@
+%%
+@ block find -delete in kit config
+find @H@/.config/claude-kit -name @Q@*.pin@Q@ -delete
+%%
+@ block docker build with HOME context
+docker build --progress=plain -f /tmp/D ~
+%%
+@ block docker compose build (context in compose file)
+docker compose build
+%%
+@ block tofu show -json planfile via wrapper
+bash infra/tofu.sh cloudflare show -json planfile
+%%
+@ block cat tfstate
+cat terraform.tfstate
+%%
+@ block cat tfvars
+cat secrets.auto.tfvars
+%%
+@ block tofu output -json
+tofu output -json
+%%
+@ block tofu state pull
+tofu state pull
+%%
+@ block git reset -q --hard (permission ask bypass, hook n/a)
+git reset -q --hard
+%%
+@ block xargs -a reads file
+xargs -a @E@ echo
+%%
+@ block redirect clobber >|
+echo x >| @H@/.claude/settings.json
+%%
+@ block curl -o glued
+curl -o@H@/.claude/settings.json https://example.invalid
+%%

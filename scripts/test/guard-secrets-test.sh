@@ -344,8 +344,8 @@ cat ~/.ssh/id_ed25519.pub
 @ allow ssh -i avec la clé d'audit
 ssh -i ~/.ssh/id_audit -o IdentitiesOnly=yes user@host uptime
 %%
-@ allow ssh-keygen -y et ssh-add
-ssh-keygen -y -f ~/.ssh/id_audit; ssh-add ~/.ssh/id_audit
+@ allow ssh-add d'une clé
+ssh-add ~/.ssh/id_audit
 %%
 @ allow kit sync lui-même
 kit sync --dry-run
@@ -396,7 +396,7 @@ curl -sS https://example.org/.env
 curl -o /tmp/x.json https://example.org/x.json
 %%
 @ allow docker compose avec le modèle d'environnement
-docker compose --env-file .env.example config
+docker compose --env-file .env.example ps
 %%
 @ allow git add de .env.example
 git add .env.example
@@ -518,6 +518,472 @@ printf '%s' "$(bash_json 'cat .env')" | HOME=$FAKE_HOME bash "$HOOK" >/dev/null 
 grep -q 'Bloqué par claude-kit' "$TMP/err" && grep -q 'kit secrets run' "$TMP/err" && ok_ "message : préfixe « Bloqué par claude-kit » et kit secrets run" || ko_ "message de blocage"
 printf '%s' "$(bash_json 'cp x ~/.claude/settings.json')" | HOME=$FAKE_HOME bash "$HOOK" >/dev/null 2>"$TMP/err"
 grep -q 'kit sync' "$TMP/err" && ok_ "message : réglages gérés, indique kit sync / overlay / autoupdate" || ko_ "message de réglages"
+
+# ---------------------------------------------------------------------------------------------------------------------
+echo "== guard-secrets : cas ajoutés par la revue de sécurité de 2d =="
+IFS= read -r -d '' cases2 <<'DATA' || true
+@ allow docker compose config --services (noms seulement)
+docker compose config --services
+%%
+@ allow docker compose config -q
+docker compose -f compose.yaml config -q
+%%
+@ block docker compose config imprime les variables interpolées
+docker compose config
+%%
+@ block docker-compose config
+docker-compose -f a.yml config
+%%
+@ block tofu show -json
+tofu show -json plan.out
+%%
+@ block tofu output -raw
+tofu output -raw db_password
+%%
+@ block tofu state pull
+tofu state pull
+%%
+@ block tofu state show
+tofu state show cloudflare_record.x
+%%
+@ allow tofu state list (noms seulement)
+tofu state list
+%%
+@ block lecture d'un fichier d'état
+cat terraform.tfstate
+%%
+@ block lecture d'un fichier de variables
+cat prod.auto.tfvars
+%%
+@ allow lecture d'un modèle de variables
+cat terraform.tfvars.example
+%%
+@ block tofu apply derrière timeout
+timeout 600 tofu apply -auto-approve
+%%
+@ block le script d'infra avec apply, chemin relatif
+./infra/tofu.sh cloudflare apply
+%%
+@ block le script d'infra lancé par sh
+sh infra/tofu.sh tailscale destroy
+%%
+@ block tofu destroy avec -chdir
+tofu -chdir=infra/cloudflare destroy
+%%
+@ allow tofu plan avec -out dans le projet
+tofu plan -out=tfplan
+%%
+@ block tofu plan -out vers les réglages de l'utilisateur
+tofu plan -out=$HOME/.claude/settings.json
+%%
+@ block git rebase --exec lisant un secret
+git rebase --exec 'cat .env' HEAD~1
+%%
+@ block git rebase -x avec écriture protégée
+git rebase -x 'cp /tmp/x ~/.claude/settings.json' HEAD~1
+%%
+@ block git rebase --exec= avec écriture protégée
+git rebase --exec='cp /tmp/x ~/.claude/settings.json' HEAD~1
+%%
+@ allow git rebase non interactif
+git rebase origin/main
+%%
+@ block alias git qui lit un secret
+git -c alias.x='!cat .env' x
+%%
+@ block git log --output vers les réglages
+git log -1 --output=$HOME/.claude/settings.json
+%%
+@ block git clone dans la configuration de kit
+git clone https://example.org/x.git ~/.config/claude-kit/x
+%%
+@ block git worktree add dans la configuration de kit
+git worktree add ~/.config/claude-kit/wt
+%%
+@ block sort -o vers les réglages
+sort -o ~/.claude/settings.json /tmp/x
+%%
+@ block sort -ofichier collé
+sort -o$HOME/.claude/settings.json /tmp/x
+%%
+@ block uniq avec un second fichier
+uniq /tmp/x ~/.claude/settings.json
+%%
+@ block find -fprint vers la configuration
+find /tmp -maxdepth 0 -fprint ~/.config/claude-kit/settings.local.json
+%%
+@ block find -delete dans la configuration
+find ~/.config/claude-kit -name '*.pin' -delete
+%%
+@ block find -exec cp vers les réglages
+find /tmp/x -exec cp {} ~/.claude/settings.json \;
+%%
+@ block kit index --out
+kit index --out ~/.claude/settings.json
+%%
+@ block awk avec redirection de print
+awk '{print > "'$HOME'/.claude/settings.json"}' /tmp/x
+%%
+@ block awk system()
+awk 'BEGIN{system("cp /tmp/x '$HOME'/.claude/settings.json")}'
+%%
+@ allow awk sans écriture
+awk '{print $1}' data.txt
+%%
+@ allow awk avec un > dans une chaîne
+awk '{print $1 ">" $2}' data.txt
+%%
+@ block sed w vers les réglages
+sed -n 'w '$HOME'/.claude/settings.json' /tmp/x
+%%
+@ block sed s///w
+sed 's/a/b/w '$HOME'/.claude/settings.json' /tmp/x
+%%
+@ allow sed ordinaire
+sed -n '/error/p' app.log
+%%
+@ block cp dans le dossier ~/.claude (destination = dossier)
+cp /tmp/evil/settings.json ~/.claude/
+%%
+@ block mv dans le dossier
+mv settings.json ~/.claude
+%%
+@ block install -t
+install -t ~/.claude settings.json
+%%
+@ block rsync d'un dossier avec barre finale
+rsync -a /tmp/evil/ ~/.claude/
+%%
+@ block cp -r d'un dossier nommé claude-kit dans ~/.config
+cp -r /tmp/evil/claude-kit ~/.config/
+%%
+@ block redirection >|
+echo '{}' >| ~/.claude/settings.json
+%%
+@ block curl -o collé
+curl -o$HOME/.claude/settings.json https://example.org/x
+%%
+@ block wget -O collé
+wget -O$HOME/.claude/settings.json https://example.org/x
+%%
+@ block tar -C vers ~/.claude
+tar -C ~/.claude -xf /tmp/evil.tar
+%%
+@ block unzip -d vers la configuration
+unzip -o /tmp/evil.zip -d ~/.config/claude-kit
+%%
+@ block chemin avec glob vers les réglages
+cd ~/.cl*de && echo '{}' > settings.json
+%%
+@ block comparaison insensible à la casse
+cp /tmp/x ~/.Claude/Settings.json
+%%
+@ block rm du dossier de config
+rm -rf ~/.config/claude-kit
+%%
+@ block rm de ~/.claude
+rm -rf ~/.claude
+%%
+@ allow rm d'un dossier de build
+rm -rf dist
+%%
+@ block ln -s vers les réglages
+ln -s ~/.claude/settings.json /tmp/s
+%%
+@ block écriture dans les réglages locaux d'un projet
+cp /tmp/x .claude/settings.local.json
+%%
+@ block heredoc donné à python qui lit un secret
+python3 - <<'EOF'
+print(open('.env').read())
+EOF
+%%
+@ block heredoc donné à node
+node <<'EOF'
+console.log(require('fs').readFileSync('.env','utf8'))
+EOF
+%%
+@ block node --eval
+node --eval "console.log(require('fs').readFileSync('.env','utf8'))"
+%%
+@ block grep -r depuis HOME
+grep -ri token ~
+%%
+@ block rg --hidden depuis HOME
+rg --hidden -i token ~
+%%
+@ block grep -r depuis HOME avec --include d'un nom de clé
+grep -r -i private --include='id_*' ~
+%%
+@ block grep -r dans ~/.docker
+grep -r auth ~/.docker
+%%
+@ allow grep -r depuis HOME limité à *.md
+grep -r --include='*.md' notes ~/docs
+%%
+@ allow grep -r dans le projet
+grep -rn foo src
+%%
+@ block find -exec cat avec un motif *nv
+find . -name '*nv' -exec cat {} +
+%%
+@ block cat *.env (nom du type prod.env)
+cat *.env
+%%
+@ block glob avec crochets .[e]nv
+cat .[e]nv
+%%
+@ block proc/PID/task/TID/environ
+cat /proc/self/task/1/environ
+%%
+@ allow cat /proc/cpuinfo
+cat /proc/cpuinfo
+%%
+@ block declare -p d'une variable secrète
+declare -p GITHUB_TOKEN
+%%
+@ allow compgen -v (noms)
+compgen -v
+%%
+@ block echo d'une variable nommée *_PAT
+echo $GH_PAT
+%%
+@ block echo d'une variable nommée *_KEY
+echo $CLOUDFLARE_KEY
+%%
+@ block echo d'une variable nommée *_AUTH
+echo $COOLIFY_AUTH
+%%
+@ block echo d'une variable en minuscules
+echo $gh_token
+%%
+@ block expansion indirecte
+v=GITHUB_TOKEN; echo "${!v}"
+%%
+@ allow ${!PREFIX@} (noms seulement)
+echo "${!GITHUB@}"
+%%
+@ block echo TOKEN | cat
+echo $GITHUB_TOKEN | cat
+%%
+@ block echo TOKEN | base64
+echo "$GITHUB_TOKEN" | base64
+%%
+@ block printf TOKEN | tee
+printf '%s\n' "$CF_API_TOKEN" | tee /dev/stderr
+%%
+@ allow echo TOKEN | docker login --password-stdin
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u me --password-stdin
+%%
+@ allow echo TOKEN | gh auth login --with-token
+echo "$GH_TOKEN" | gh auth login --with-token
+%%
+@ allow echo TOKEN | wrangler secret put
+echo "$CF_API_TOKEN" | npx wrangler secret put X
+%%
+@ block here-string de TOKEN vers cat
+cat <<< "$GITHUB_TOKEN"
+%%
+@ allow here-string de TOKEN vers docker login --password-stdin
+docker login --password-stdin <<< "$GITHUB_TOKEN"
+%%
+@ block kit secrets run sans -- (la commande suit)
+kit secrets run printenv
+%%
+@ block kit secrets run avec une here-string
+kit secrets run -- sh -c 'cat <<<"$X"'
+%%
+@ block kit secrets run bash -x
+kit secrets run -- bash -xc 'curl -s -H "Authorization: Bearer $X" https://example.org'
+%%
+@ block kit secrets run set -x
+kit secrets run -- sh -c 'set -x; curl -s https://example.org -H "Authorization: Bearer $X"'
+%%
+@ block kit secrets run curl -v
+kit secrets run -- sh -c 'curl -v -H "Authorization: Bearer $X" https://example.org'
+%%
+@ block kit secrets run curl --trace-ascii
+kit secrets run -- sh -c 'curl --trace-ascii - -H "Authorization: Bearer $X" https://example.org'
+%%
+@ block kit secrets run python os.environ[...]
+kit secrets run -- python3 -c 'import os;print(os.environ["X"])'
+%%
+@ block kit secrets run node process.env.X
+kit secrets run -- node -e 'console.log(process.env.X)'
+%%
+@ block kit secrets run awk ENVIRON
+kit secrets run -- awk 'BEGIN{print ENVIRON["X"]}'
+%%
+@ block kit secrets run declare -p
+kit secrets run -- bash -c 'declare -p X'
+%%
+@ block python lit une variable secrète par os.environ[...]
+python3 -c "import os;print(os.environ['GITHUB_TOKEN'])"
+%%
+@ block python lit une variable secrète par getenv
+python3 -c "import os;print(os.getenv('GITHUB_TOKEN'))"
+%%
+@ block awk ENVIRON parcouru
+awk 'BEGIN{for(k in ENVIRON) print k"="ENVIRON[k]}'
+%%
+@ allow kit secrets run d'un script (opaque)
+kit secrets run -- bash ./dump.sh
+%%
+@ allow kit secrets run docker compose up
+kit secrets run -- docker compose up -d
+%%
+@ allow docker compose --env-file avec le fichier d'environnement
+docker compose --env-file .env up -d
+%%
+@ allow node --env-file
+node --env-file=.env server.js
+%%
+@ allow openssl x509 sur un certificat public
+openssl x509 -in fullchain.pem -noout -dates
+%%
+@ block openssl rsa sur une clé
+openssl rsa -in server.key -noout
+%%
+@ block ssh-keygen -y (dérive la clé publique d'une clé privée)
+ssh-keygen -y -f ~/.ssh/id_audit
+%%
+@ allow ssh-keygen d'une nouvelle clé
+ssh-keygen -t ed25519 -f ~/.ssh/id_new -N ''
+%%
+@ block commande eval imbriquée sur plus de huit niveaux
+eval eval eval eval eval eval eval eval eval eval cat .env
+%%
+@ block bash -o pipefail -c
+bash -o pipefail -c 'cat .env'
+%%
+@ block trap
+trap 'cat .env' EXIT
+%%
+@ block flock -c
+flock /tmp/l -c 'cat .env'
+%%
+@ block xargs -a lit le fichier
+xargs -a .env echo
+%%
+DATA
+want="" desc="" buf="" state=0
+run_case2() {
+  [[ -n $want ]] || return 0
+  expect "$want" "$desc" "$(bash_json "$buf")"
+  want="" desc="" buf="" state=0
+}
+while IFS= read -r line; do
+  if [[ $line == '%%' ]]; then run_case2; continue; fi
+  if [[ $state == 0 && $line == '@ '* ]]; then
+    rest=${line#@ }; want=${rest%% *}; desc=${rest#* }; state=1; buf=""; continue
+  fi
+  if [[ -z $buf ]]; then buf=$line; else buf="$buf"$'\n'"$line"; fi
+done <<<"$cases2"
+run_case2
+
+# Compose files: up/build on a file that gives the container the host is refused; a plain file is not.
+mkdir -p "$TMP/cp1" "$TMP/cp2" "$TMP/cp3" "$TMP/cp4" "$TMP/cp5" "$TMP/cp6" "$TMP/cp7"
+printf 'services:\n  web:\n    image: nginx\n    volumes:\n      - ./data:/data\n' >"$TMP/cp1/compose.yaml"
+printf 'services:\n  web:\n    image: nginx\n    privileged: true\n' >"$TMP/cp2/compose.yaml"
+printf 'services:\n  web:\n    image: nginx\n    volumes:\n      - /:/host\n' >"$TMP/cp3/compose.yaml"
+printf 'services:\n  web:\n    image: nginx\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n' >"$TMP/cp4/docker-compose.yml"
+printf 'services:\n  web:\n    network_mode: host\n    image: nginx\n' >"$TMP/cp5/compose.yaml"
+printf 'services:\n  web:\n    build:\n      context: ~\n' >"$TMP/cp6/compose.yaml"
+printf 'services:\n  web:\n    image: nginx\n    volumes:\n      - "%s:/h"\n' '$HOME' >"$TMP/cp7/compose.yaml"
+cw() { expect "$1" "$2" "$(bash_json "$3" "$4")"; }
+cw allow "compose up : fichier ordinaire" "docker compose up -d" "$TMP/cp1"
+cw block "compose up : privileged: true" "docker compose up -d" "$TMP/cp2"
+cw block "compose build : montage de /" "docker compose build" "$TMP/cp3"
+cw block "compose up : socket docker (docker-compose.yml)" "docker compose up" "$TMP/cp4"
+cw block "compose up : network_mode: host" "docker compose up -d" "$TMP/cp5"
+cw block "compose up : contexte de build ~" "docker compose up --build" "$TMP/cp6"
+cw block "compose up : montage de \$HOME" "docker compose up" "$TMP/cp7"
+cw block "compose -f vers un fichier dangereux" "docker compose -f $TMP/cp2/compose.yaml up" "$TMP/cp1"
+cw allow "compose up sans fichier compose : on laisse passer" "docker compose up" "$TMP"
+cw allow "compose ps ne lit pas le fichier" "docker compose ps" "$TMP/cp2"
+cw block "docker build avec \$HOME pour contexte" "docker build -f /tmp/D ~" "$TMP/cp1"
+cw allow "docker build du projet" "docker build -t x ." "$TMP/cp1"
+
+# A commit in another directory: git -C dir and a preceding cd are honoured.
+mkdir -p "$TMP/other"
+git -C "$TMP/other" init -q
+git -C "$TMP/other" config user.email t@example.org
+git -C "$TMP/other" config user.name t
+echo "token = $fake_key" >"$TMP/other/n.txt"
+git -C "$TMP/other" add n.txt
+expect block "commit : git -C vers un autre dépôt dont le diff contient une clé" "$(bash_json "git -C $TMP/other commit -m x" "$TMP")"
+expect block "commit : cd dans un autre dépôt puis commit" "$(bash_json "cd $TMP/other && git commit -m x" "$TMP")"
+expect allow "commit : le dépôt courant est propre" "$(bash_json "git commit -m x" "$REPO")"
+
+# Fail closed: no awk, an oversized command, an analysis that cannot run.
+mkdir -p "$TMP/noawk"
+ln -sf "$(command -v jq)" "$TMP/noawk/jq"
+rc=$(printf '%s' "$(bash_json 'ls')" | env HOME=$FAKE_HOME PATH="$TMP/noawk" "$BASH" "$HOOK" >/dev/null 2>"$TMP/err"; echo $?)
+[[ $rc == 2 ]] && grep -q 'Bloqué par claude-kit' "$TMP/err" && ok_ "sans awk le hook refuse (échoue fermé)" || ko_ "sans awk (code $rc)"
+{ printf 'echo '; head -c 300000 /dev/zero | tr '\0' 'a'; } >"$TMP/big.cmd"
+rc=$(jq -n --rawfile c "$TMP/big.cmd" --arg cwd "$CWD" '{tool_name: "Bash", cwd: $cwd, tool_input: {command: $c}}' | HOME=$FAKE_HOME bash "$HOOK" >/dev/null 2>&1; echo $?)
+[[ $rc == 2 ]] && ok_ "une commande de plus de 256 Ko est refusée" || ko_ "commande trop longue (code $rc)"
+jq -e '.hooks.PreToolUse[] | select(any(.hooks[]; .command | endswith("guard-secrets.sh"))) | .hooks[0].timeout == 10' "$ROOT/global/settings.json" >/dev/null \
+  && ok_ "le hook a un timeout explicite (10 s) dans global/settings.json" || ko_ "timeout du hook"
+
+# ---------------------------------------------------------------------------------------------------------------------
+echo "== guard-secrets : corpus de contournements de la revue (scripts/test/guard-corpus) =="
+# Fixtures: a fake home, a project with links into it, and the INSTALLED kit reached through the symlinked hook (so its
+# real path is the protected KIT_HOME). The corpus files hold placeholders (@E@ = the env file name, @H@ = home...) so
+# the cases themselves never contain a literal secret name.
+CF="$TMP/corpus"; FH="$CF/home"; PROJ="$CF/proj"; KITD="$CF/kit"
+mkdir -p "$FH/.ssh" "$FH/.aws" "$FH/.claude" "$FH/.config/claude-kit/hooks" "$PROJ/.claude" "$KITD/scripts/hooks" "$KITD/global"
+: >"$FH/.ssh/id_audit"; : >"$FH/.aws/credentials"; echo '{}' >"$FH/.claude/settings.json"
+cp "$HOOK" "$KITD/scripts/hooks/guard-secrets.sh"
+ln -s "$KITD/scripts/hooks/guard-secrets.sh" "$FH/.config/claude-kit/hooks/guard-secrets.sh"
+ln -s "$FH/.aws" "$PROJ/awsdir"; ln -s "$FH/.claude" "$PROJ/cdir"; ln -s "$FH/.ssh/id_audit" "$PROJ/klink"; ln -s "$FH/.claude/settings.json" "$PROJ/slink"
+HOOK_LINK="$FH/.config/claude-kit/hooks/guard-secrets.sh"
+CORPUS_DIR="$ROOT/scripts/test/guard-corpus"
+LIMITS="$CORPUS_DIR/known-limits.txt"
+cE=$(printf '.%s' env); cEU=$(printf '.%s' ENV); cQ="'"
+expand() {
+  local b=$1
+  b=${b//@PRINTENV@/print""env}; b=${b//@PEM@/.p""em}; b=${b//@H@/$FH}; b=${b//@K@/$KITD}; b=${b//@TK@/TOK""EN}; b=${b//@tk@/tok""en}
+  b=${b//@D@/\$}; b=${b//@P@//pro""c}; b=${b//@SET@/se""t}; b=${b//@EXPORT@/expo""rt}; b=${b//@Q@/$cQ}; b=${b//@EU@/$cEU}
+  b=${b//@SE@/*$cE}; b=${b//@E@/$cE}
+  printf '%s' "$b"
+}
+corpus_run() { # mode want desc body : prints the verdict of the hook (allow|block)
+  local json rc
+  if [[ $1 == bash ]]; then
+    json=$(jq -n --arg c "$(expand "$4")" --arg cwd "$PROJ" '{tool_name: "Bash", cwd: $cwd, tool_input: {command: $c}}')
+  else
+    json=$(expand "$4"); json=${json//@HOME@/$FH}; json=${json//@CWD@/$PROJ}
+  fi
+  printf '%s' "$json" | HOME=$FH KIT_CONFIG='' CLAUDE_HOME='' XDG_CONFIG_HOME='' bash "$HOOK_LINK" >/dev/null 2>&1
+  rc=$?
+  if [[ $rc == 2 ]]; then echo block; elif [[ $rc == 0 ]]; then echo allow; else echo "rc$rc"; fi
+}
+corpus_file() {
+  local f=$1 mode="" cwant="" cdesc="" cbody="" got exp line first=1
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line == "@T "* ]]; then mode=tool; read -r cwant cdesc <<<"${line#@T }"; cbody=""; first=1; continue; fi
+    if [[ $line == "@ "* ]]; then mode=bash; read -r cwant cdesc <<<"${line#@ }"; cbody=""; first=1; continue; fi
+    if [[ $line == "%%" ]]; then
+      cbody=${cbody%$'\n'}
+      got=$(corpus_run "$mode" "$cwant" "$cdesc" "$cbody")
+      exp=$cwant
+      # A documented limit of the guard (README) is pinned: the reviewer expected "block", the guard allows, and a test
+      # fails the day the limit is fixed so the list stays honest.
+      if grep -qxF -- "$(basename "$f" .txt): $cdesc" "$LIMITS"; then
+        if [[ $got == allow && $cwant == block ]]; then ok_ "limite connue ($(basename "$f" .txt)) : $cdesc"
+        else ko_ "limite connue corrigée ? retire-la de known-limits.txt : $(basename "$f" .txt): $cdesc (verdict $got)"; fi
+      elif [[ $got == "$exp" ]]; then ok_ "corpus $(basename "$f" .txt) : $cdesc"
+      else ko_ "corpus $(basename "$f" .txt) : $cdesc (attendu $exp, verdict $got)"; fi
+      mode=""; continue
+    fi
+    if [[ -n $mode ]]; then if ((first)); then cbody=$line; first=0; else cbody="$cbody"$'\n'"$line"; fi; fi
+  done <"$f"
+}
+for cf in "$CORPUS_DIR"/*.txt; do
+  [[ $(basename "$cf") == known-limits.txt ]] && continue
+  corpus_file "$cf"
+done
 
 printf '\nguard-secrets: %d passed, %d failed\n' "$pass" "$fail"
 [[ $fail == 0 ]]

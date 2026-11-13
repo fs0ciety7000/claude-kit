@@ -1,0 +1,95 @@
+@ allow docker compose --env-file dotenv up
+docker compose --env-file @E@ up -d
+%%
+@ allow node --env-file
+node --env-file=@E@ server.js
+%%
+@ allow kit secrets run docker compose up
+kit secrets run -- docker compose up -d
+%%
+@ allow openssl x509 on a public cert pem
+openssl x509 -in fullchain@PEM@ -noout -dates
+%%
+@ allow wc -l on dotenv
+wc -l @E@
+%%
+@ allow chmod 600 dotenv
+chmod 600 @E@
+%%
+@ allow tail autoupdate log
+tail -n 20 ~/.config/claude-kit/autoupdate.log
+%%
+@ allow jq read of claude settings
+jq .permissions.allow ~/.claude/settings.json
+%%
+@ allow git log -p -S search
+git log -p -S TOKEN --all
+%%
+@ allow ssh-keygen new key
+ssh-keygen -t ed25519 -f ~/.s@Q@@Q@sh/id_new -N @Q@@Q@
+%%
+@ allow export FOO=bar
+@EXPORT@ FOO=bar
+%%
+@ allow declare -x FOO=bar
+declare -x FOO=bar
+%%
+@ allow printenv PATH
+@PRINTENV@ PATH
+%%
+@ allow env assignment then command
+env NODE_ENV=production npm run build
+%%
+@ allow gh auth status
+gh auth status
+%%
+@ allow kit api GET
+kit api github GET /user
+%%
+@ allow gh pr create with heredoc body citing secrets
+gh pr create --title x --body "$(cat <<@Q@EOF@Q@
+Blocks reading @E@, ~/.s@Q@@Q@sh/id_r@Q@@Q@sa and *@PEM@; see @PRINTENV@ and @D@GITHUB_@TK@.
+EOF
+)"
+%%
+@ allow git commit heredoc mentioning patterns
+git commit -F - <<@Q@EOF@Q@
+guard: block cat @E@ and echo @D@X_@TK@
+EOF
+%%
+@ allow echo of secret var name in single quotes
+echo @Q@set @D@GITHUB_@TK@ in Coolify@Q@
+%%
+@ allow sed on project file mentioning dotenv
+sed -n @Q@/@E@/p@Q@ README.md
+%%
+@ block rm of config lock (kit-managed)
+rm ~/.config/claude-kit/settings.lock
+%%
+@ allow mkdir config
+mkdir -p ~/.config/claude-kit
+%%
+@ allow cat of package.json piped to jq
+cat package.json | jq .scripts
+%%
+@ allow kit perms allow
+kit perms allow "Bash(npm run e2e)" --reason "tests"
+%%
+@ allow tofu plan
+tofu plan -out=tfplan
+%%
+@ allow kit sync
+kit sync
+%%
+@ allow ls dotenv glob
+ls -la @E@*
+%%
+@ allow grep dotenv in gitignore
+grep -n @E@ .gitignore
+%%
+@ allow go test
+go test ./...
+%%
+@ allow node script file
+node scripts/build.mjs
+%%

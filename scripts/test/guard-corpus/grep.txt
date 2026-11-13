@@ -1,0 +1,15 @@
+@T block Grep HOME for token (reads unlisted token stores)
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":"auth","path":"@HOME@","output_mode":"content"}}
+%%
+@T block Grep root
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":"PRIVATE KEY","path":"/","output_mode":"content"}}
+%%
+@T block Grep docker config path
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":"auth","path":"@HOME@/.docker"}}
+%%
+@T block Grep claude.json glob in HOME
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":"Key","path":"@HOME@","glob":".claude.json"}}
+%%
+@T block Grep cloudflared
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":"Tunnel","path":"@HOME@/.cloudflared"}}
+%%

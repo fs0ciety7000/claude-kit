@@ -1,0 +1,126 @@
+@ block proc self environ
+cat @P@/self/environ
+%%
+@ block proc task glob environ
+cat @P@/self/task/*/environ
+%%
+@ block proc task numeric environ
+cat @P@/1/task/1/environ
+%%
+@ block proc thread-self
+tr @Q@\0@Q@ @Q@\n@Q@ < @P@/thread-self/environ
+%%
+@ block awk ENVIRON dump
+awk @Q@BEGIN{for(k in ENVIRON) print k"="ENVIRON[k]}@Q@
+%%
+@ block declare -p VAR
+declare -p GITHUB_@TK@
+%%
+@ block typeset -p VAR
+typeset -p CLOUDFLARE_API_@TK@
+%%
+@ allow compgen -v (names only)
+compgen -v
+%%
+@ block set -o posix then set
+@SET@ -o posix; @SET@
+%%
+@ block export bare
+@EXPORT@
+%%
+@ block env -0
+env -0
+%%
+@ block env -u FOO
+env -u FOO
+%%
+@ block python os.environ[TOKEN]
+python3 -c "import os;print(os.environ[@Q@GITHUB_@TK@@Q@])"
+%%
+@ block python getenv TOKEN
+python3 -c "import os;print(os.getenv(@Q@GITHUB_@TK@@Q@))"
+%%
+@ block node process.env.TOKEN
+node -e "console.log(process.env.GITHUB_@TK@)"
+%%
+@ block node Object.entries(process[env])
+node -e "console.log(Object.entries(process[@Q@env@Q@]))"
+%%
+@ block python dict(os.environ)
+python3 -c "import os;print(dict(os.environ))"
+%%
+@ block kit secrets run sh -c echo
+kit secrets run -- sh -c @Q@echo @D@X@Q@
+%%
+@ block kit secrets run sh -c printf
+kit secrets run -- sh -c @Q@printf %s "@D@X"@Q@
+%%
+@ block kit secrets run here-string cat
+kit secrets run -- sh -c @Q@cat <<<"@D@X"@Q@
+%%
+@ block kit secrets run python environ[X]
+kit secrets run -- python3 -c @Q@import os;print(os.environ["X"])@Q@
+%%
+@ block kit secrets run node process.env.X
+kit secrets run -- node -e @Q@console.log(process.env.X)@Q@
+%%
+@ block kit secrets run awk ENVIRON
+kit secrets run -- awk @Q@BEGIN{print ENVIRON["X"]}@Q@
+%%
+@ block kit secrets run declare -p
+kit secrets run -- bash -c @Q@declare -p X@Q@
+%%
+@ block kit secrets run env -0
+kit secrets run -- env -0
+%%
+@ block kit secrets run echo pipe cat
+kit secrets run -- sh -c @Q@echo @D@X | cat@Q@
+%%
+@ block kit secrets run -g printenv
+kit secrets run -g -- printenv
+%%
+@ block kit secrets run sh -c env
+kit secrets run -- sh -c env
+%%
+@ allow kit secrets run bash script file (opaque)
+kit secrets run -- bash ./dump.sh
+%%
+@ block kit secrets run without dashdash
+kit secrets run printenv
+%%
+@ block echo TOKEN pipe cat
+echo @D@GITHUB_@TK@ | cat
+%%
+@ block echo TOKEN pipe base64
+echo "@D@GITHUB_@TK@" | base64
+%%
+@ block printf TOKEN pipe tee stderr
+printf @Q@%s\n@Q@ "@D@CF_API_@TK@" | tee /dev/stderr
+%%
+@ allow echo prefix names (names only)
+echo "@D@{!GITHUB@}"
+%%
+@ block indirect expansion
+v=GITHUB_@TK@; echo "@D@{!v}"
+%%
+@ block cat via here-string of TOKEN
+cat <<< "@D@GITHUB_@TK@"
+%%
+@ block tee via here-string
+tee <<< @D@CLOUDFLARE_API_@TK@
+%%
+@ block echo TOKEN redirect file then cat
+echo @D@GITHUB_@TK@ > /tmp/t; cat /tmp/t
+%%
+@ block lowercase var name
+echo @D@gh_@tk@
+%%
+@ block var named PAT
+echo @D@GH_PAT
+%%
+@ block var named KEY
+echo @D@CLOUDFLARE_KEY
+%%
+@ block var named AUTH
+echo @D@COOLIFY_AUTH
+%%

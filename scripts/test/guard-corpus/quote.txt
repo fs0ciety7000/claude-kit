@@ -1,0 +1,24 @@
+@ block ANSI-C quoting
+cat @D@@Q@@E@@Q@
+%%
+@ block ANSI-C hex escape
+cat @D@@Q@\x2eenv@Q@
+%%
+@ block locale quoting
+cat @D@"@E@"
+%%
+@ block tilde-plus
+cat ~+/@E@
+%%
+@ block docker dir glob
+cat ~/.docker/*
+%%
+@ block grep -r docker dir
+grep -r auth ~/.docker
+%%
+@ block kit index --out onto claude settings
+kit index --out ~/.claude/settings.json
+%%
+@ block kit project perms --dir HOME
+kit project perms node --dir ~
+%%
