@@ -419,7 +419,7 @@ section "link_global, apply_managed_settings, usage"
   # shellcheck source=/dev/null
   source "$ROOT/scripts/lib.sh"
   link_global >/dev/null 2>&1
-  apply_managed_settings >/dev/null 2>&1
+  apply_managed_settings --yes >/dev/null 2>&1
   cp "$CLAUDE_HOME/settings.json" "$TMP/merged.json"
 )
 [[ -L $KIT_CONFIG/hooks/kit-autoupdate.sh && $(readlink "$KIT_CONFIG/hooks/kit-autoupdate.sh") == "$ROOT/scripts/hooks/kit-autoupdate.sh" ]] \
@@ -446,7 +446,7 @@ mkdir -p "$HOME/.claude"
 echo '{"model":"sonnet","hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo bye"}]}]}}' >"$TMP/real-settings.json"
 chmod 600 "$TMP/real-settings.json"
 ln -s "$TMP/real-settings.json" "$HOME/.claude/settings.json"
-( source "$ROOT/scripts/lib.sh"; apply_managed_settings >/dev/null 2>&1 )
+( source "$ROOT/scripts/lib.sh"; apply_managed_settings --yes >/dev/null 2>&1 )
 [[ -L $HOME/.claude/settings.json ]] && jq -e '.model == "sonnet" and (.hooks.Stop | length == 1) and (.hooks.SessionStart | length == 1)' "$TMP/real-settings.json" >/dev/null 2>&1 \
   && ok_ "apply_managed_settings : lien conservé, cible fusionnée" || ko_ "apply_managed_settings : lien conservé, cible fusionnée"
 [[ $(stat -c %a "$TMP/real-settings.json" 2>/dev/null || stat -f %Lp "$TMP/real-settings.json") == 600 ]] && ok_ "apply_managed_settings : droits conservés" || ko_ "apply_managed_settings : droits conservés"
@@ -747,13 +747,18 @@ msync >/dev/null 2>&1
 jqc '.permissions.deny | index("Bash(sudo *)") != null' "$(cur_settings)" && ok_ "deny : une règle retirée du kit n'est pas retirée du fichier" || ko_ "deny retiré automatiquement"
 jqc '.permissions.ask | index("Bash(rm *)") != null' "$(cur_settings)" && ok_ "ask : une règle retirée du kit n'est pas retirée du fichier" || ko_ "ask retiré automatiquement"
 cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
-# Seule une règle listée dans global/settings.retired.json est retirée, et la sortie la nomme.
-jq '.permissions.deny += ["Bash(retire-x)", "Bash(garde-y)"]' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
-echo '{"permissions":{"deny":["Bash(retire-x)"],"ask":[]}}' >"$KITC/global/settings.retired.json"
+# Une règle que le kit a livrée (elle est dans le registre) puis retirée, et listée dans global/settings.retired.json, disparaît
+# et la sortie la nomme ; une règle identique que l'utilisateur seul a ajoutée (absente du registre) reste.
+jq '.permissions.deny += ["Bash(retire-x)"]' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+msync >/dev/null 2>&1
+jq '.permissions.deny += ["Bash(garde-y)"]' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+echo '{"permissions":{"deny":["Bash(retire-x)","Bash(garde-y)"],"ask":[]}}' >"$KITC/global/settings.retired.json"
 dout=$(msync 2>&1)
 jqc '(.permissions.deny | index("Bash(retire-x)")) == null and (.permissions.deny | index("Bash(garde-y)")) != null' "$(cur_settings)" \
-  && ok_ "retired : seule la règle listée est retirée" || ko_ "retired : règle listée"
+  && ok_ "retired : la règle livrée puis retirée disparaît, l'identique ajoutée par l'utilisateur reste" || ko_ "retired : règle listée"
 grep -q 'retiré de permissions.deny : "Bash(retire-x)"' <<<"$dout" && ok_ "retired : la règle retirée est nommée dans la sortie" || ko_ "retired : sortie" "$dout"
+! grep -q 'garde-y' <<<"$dout" && ok_ "retired : la règle de l'utilisateur n'est pas nommée comme retirée" || ko_ "retired : garde-y nommée" "$dout"
 rm -f "$KITC/global/settings.retired.json"
 [[ $(jq -r '.permissions | keys | join(",")' "$ROOT/global/settings.retired.json") == "ask,deny" ]] && ok_ "settings.retired.json : forme permissions.ask|deny" || ko_ "settings.retired.json : forme"
 
@@ -1960,10 +1965,28 @@ for c in "tofu plan -out=plan.tfplan" "tofu fmt -check -recursive infra" "tofu v
   [[ $(hits deny "$c" "$GS") == 0 && $(hits allow "$c" "$GS") -ge 1 ]] && ok_ "autorisé : $c" || ko_ "autorisé : $c" "deny=$(hits deny "$c" "$GS") allow=$(hits allow "$c" "$GS")"
 done
 for c in "git worktree add ../x" "git rev-parse HEAD" "git cherry-pick abc" "git merge-base a b" "kit sync" "kit sync --dry-run" "kit equip search laravel" "kit index" \
-  "docker compose config" "docker compose ps" "docker compose logs web" "docker compose build" "echo ok" "sed -n 1p x" "shellcheck -x a.sh"; do
+  "docker compose ps" "docker compose logs web" "docker compose build" "shellcheck -x a.sh" "bash infra/tofu.sh cloudflare plan" \
+  "bash infra/tofu.sh tailscale plan -out=x" "tofu -chdir=infra/cloudflare plan" "tofu -chdir=infra/tailscale validate -json"; do
   [[ $(hits allow "$c" "$GS") -ge 1 && $(hits ask "$c" "$GS") == 0 && $(hits deny "$c" "$GS") == 0 ]] && ok_ "allow : $c" || ko_ "allow : $c"
 done
 [[ $(hits allow "kit sync --yes" "$GS") == 0 ]] && ok_ "kit sync --yes n'est pas autorisé d'office (accepte un defaultMode plus permissif)" || ko_ "kit sync --yes"
+# Review of 2d: commands that can write a file or print secrets are no longer auto-allowed, and the tofu rules are anchored.
+for c in "sort -o x y" "uniq a b" "sed -i s/a/b/ f" "awk BEGIN{system(1)}" "date -s now" "echo x" "docker compose config" "kit index --out /tmp/x" \
+  "tofu -chdir=infra/cloudflare show -json" "tofu -chdir=infra/other plan" "bash infra/tofu.sh cloudflare show -json planfile" \
+  "bash infra/tofu.sh cloudflare state pull" "tofu -chdir=infra/cloudflare state pull"; do
+  [[ $(hits allow "$c" "$GS") == 0 ]] && ok_ "pas d'allow automatique : $c" || ko_ "allow trop large : $c"
+done
+for c in "git push origin +main" "git push origin main -f" "git push --mirror" "git push origin -d old" "git push -d origin old" \
+  "git reset -q --hard" "git reset HEAD~1 --hard" "git rebase --exec 'cat x' main" "git rebase -x 'make' main" "git rebase main -x make"; do
+  [[ $(hits ask "$c" "$GS") -ge 1 ]] && ok_ "ask : $c" || ko_ "ask : $c"
+done
+for c in "git push origin main" "git push" "git push -u origin claude/x" "git reset HEAD~1" "git rebase origin/main"; do
+  [[ $(hits ask "$c" "$GS") == 0 ]] && ok_ "pas de ask : $c" || ko_ "ask indu : $c"
+done
+# shellcheck disable=SC2088  # literal ~/ paths: they are rule texts
+for t in '~/.claude.json' '~/.docker/**' '~/.netrc' '~/.npmrc' '~/.cloudflared/**' '~/.wrangler/**' '~/.config/rclone/**' '~/.config/gh/**' '~/.aws/**'; do
+  jq -e --arg r "Read($t)" '.permissions.deny | index($r) != null' "$GS" >/dev/null && ok_ "deny : Read($t)" || ko_ "deny manquant : Read($t)"
+done
 # Les réglages protégés ne s'éditent pas avec Edit ni Write.
 jq -e '.permissions.deny | (index("Edit(~/.config/claude-kit/**)") != null and index("Write(~/.config/claude-kit/**)") != null
   and index("Edit(~/.claude/settings.json)") != null and index("Write(~/.claude/settings.json)") != null)' "$GS" >/dev/null \
@@ -1997,10 +2020,11 @@ reset_home
 # Poste « avant 2d » : le kit sans les nouvelles règles ni Grep dans le matcher, déjà synchronisé (registre écrit).
 cp "$KITD/global/settings.json" "$TMP/new-settings.json"
 jq '.hooks.PreToolUse[0].matcher = "Bash|Read|Edit|Write|MultiEdit|NotebookEdit"
+    | .permissions.ask += ["Bash(git push*)"]
     | .permissions.ask |= map(select(. != "Bash(git rebase -i*)" and . != "Bash(git rebase --interactive*)" and . != "Bash(git rebase * -i*)" and . != "Bash(kit autoupdate *)" and . != "Bash(kit overlay *)"))
     | .permissions.deny |= map(select((test("tofu|terraform|^(Edit|Write)[(]") | not)))' "$TMP/new-settings.json" >"$KITD/global/settings.json"
 dsync >/dev/null 2>&1
-jq '.permissions.ask += ["Bash(git push*)", "Bash(mine)"] | .permissions.deny += ["Bash(mine-deny)"]' "$(cur_settings)" >"$TMP/u.json" && cp "$TMP/u.json" "$(cur_settings)"
+jq '.permissions.ask += ["Bash(mine)"] | .permissions.deny += ["Bash(mine-deny)"]' "$(cur_settings)" >"$TMP/u.json" && cp "$TMP/u.json" "$(cur_settings)"
 cp "$TMP/new-settings.json" "$KITD/global/settings.json"
 before_sum=$(cksum <"$(cur_settings)")
 dry=$(dsync --dry-run 2>&1)

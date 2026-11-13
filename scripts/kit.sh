@@ -473,6 +473,14 @@ project_permissions() {
     frags+=("$f"); names+=("$s")
   done
   ((${#frags[@]})) || return 0
+  # Never the user's own settings: not $HOME (its .claude/settings.json is ~/.claude/settings.json), not /, and not any
+  # project whose settings file is the user settings (a link, or CLAUDE_HOME elsewhere).
+  local rdir home_phys
+  rdir=$(cd -P -- "$dir" 2>/dev/null && pwd -P) || rdir=$dir
+  home_phys=$(cd -P -- "$HOME" 2>/dev/null && pwd -P) || home_phys=$HOME
+  if [[ $rdir == / || $rdir == "$home_phys" || $rdir == "$HOME" || $rdir == "$CLAUDE_HOME" || $settings -ef $CLAUDE_HOME/settings.json ]]; then
+    die "dossier de projet refusé ($dir) : c'est le dossier personnel ou il contient les réglages de l'utilisateur ; lance la commande dans un projet"
+  fi
   [[ ! -L $dir/.claude && ! -L $settings ]] || die "$settings (ou .claude) est un lien : refusé (aucune écriture hors du projet)"
   if [[ -f $settings ]]; then
     jq -e 'type == "object"' "$settings" >/dev/null 2>&1 || die "$settings n'est pas un objet JSON valide"

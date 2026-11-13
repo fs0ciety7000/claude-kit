@@ -8,14 +8,16 @@
 #             fusion (listes en union dédoublonnée, ordre gardé ; defaultMode : le dernier présent gagne). C'est K.
 #   merge   : fusion à trois points. --slurpfile c|k|l|r (réglage actuel, du kit pour ce poste, registre = K de la
 #             dernière fois, règles retirées par le kit), --argjson prefixes (préfixes ancrés du dossier des hooks du
-#             kit), names (noms des scripts de hooks du kit) et yes (accepte un defaultMode plus permissif). Sortie : {new, changes}.
+#             kit), names (noms des scripts de hooks du kit), yes (accepte un defaultMode plus permissif) et mig (première migration, sans registre). Sortie : {new, changes}.
 #
 # Règles :
 #   - allow, autoMode.environment, autoMode.allow : nouvelle liste = K puis U (ajouts de l'utilisateur = C moins L),
 #     dédoublonnée, ordre gardé.
 #   - deny, ask, autoMode.soft_deny, autoMode.hard_deny (les listes qui restreignent) : jamais retirées
 #     automatiquement. Nouvelle liste = K puis C, sans les seules entrées listées dans le fichier des règles retirées
-#     (r). Une entrée de l'utilisateur identique à une règle du kit survit donc au retrait de cette règle du kit.
+#     (r) ET que le kit avait livrées (présentes dans L) ; à la première migration (--argjson mig true, sans registre),
+#     toute règle listée dans r part. Une entrée de l'utilisateur identique à une règle du kit survit donc au retrait de
+#     cette règle du kit, et une règle que l'utilisateur seul a ajoutée reste même si elle figure dans r.
 #   - hooks : une entrée de C est au kit si sa commande est exactement <préfixe ancré><script du kit> ET si le même
 #     couple (matcher, commande) figure dans K ou L. Seules ces entrées sont retirées (le groupe disparaît s'il ne
 #     reste rien) : un hook de l'utilisateur dans le même groupe, un script du kit réutilisé avec un autre matcher, un
@@ -83,14 +85,19 @@ def rank: {"plan": 0, "default": 1, "acceptEdits": 2, "auto": 3, "bypassPermissi
 
 def restrictive: . == "soft_deny" or . == "hard_deny";
 
-def merge($c; $k; $l; $r; $pre; $names0; $yes):
+# Retired rules (r) only leave the file when the kit shipped them (they are in L, the previous K) ; on the first migration,
+# without registry, L is only the v1 snapshot, so every listed rule goes. A rule the user added alone stays even if it is
+# identical to a retired one.
+def retire($r; $l; $mig): if $mig then $r else ($r | map(select(. as $x | any($l[]; . == $x)))) end;
+
+def merge($c; $k; $l; $r; $pre; $names0; $yes; $mig):
   kitnames($k; $l; $pre; $names0) as $names
   | $c
   | reduce ("allow", "ask", "deny") as $key (.;
       .permissions[$key] =
         (if $key == "allow"
          then three(($k.permissions[$key] | arr); ($l.permissions[$key] | arr); ($c.permissions[$key] | arr))
-         else keepuser(($k.permissions[$key] | arr); ($c.permissions[$key] | arr); ($r.permissions[$key] | arr)) end))
+         else keepuser(($k.permissions[$key] | arr); ($c.permissions[$key] | arr); retire(($r.permissions[$key] | arr); ($l.permissions[$key] | arr); $mig)) end))
   | (if $k.permissions.defaultMode == null then .
      elif ($yes | not) and $c.permissions.defaultMode != null
           and ($k.permissions.defaultMode | rank) > ($c.permissions.defaultMode | rank) then .
@@ -103,7 +110,7 @@ def merge($c; $k; $l; $r; $pre; $names0; $yes):
   | (if .hooks == {} then del(.hooks) else . end)
   | reduce ((($k.autoMode // {}) + ($c.autoMode // {}) + ($l.autoMode // {})) | keys_unsorted[]) as $key (.;
       (if ($key | restrictive)
-       then keepuser(($k.autoMode[$key] | arr); ($c.autoMode[$key] | arr); ($r.autoMode[$key] | arr))
+       then keepuser(($k.autoMode[$key] | arr); ($c.autoMode[$key] | arr); retire(($r.autoMode[$key] | arr); ($l.autoMode[$key] | arr); $mig))
        else three(($k.autoMode[$key] | arr); ($l.autoMode[$key] | arr); ($c.autoMode[$key] | arr)) end) as $v
       | if ($v | length) == 0 and ($c.autoMode[$key] == null) then . else .autoMode[$key] = $v end);
 
@@ -129,6 +136,6 @@ $ARGS.named as $a
   elif $a.mode == "build" then build
   else
     ($a.c[0]) as $c
-    | merge($c; $a.k[0]; ($a.l[0] // {}); ($a.r[0] // {}); ($a.prefixes // []); ($a.names // []); ($a.yes // false)) as $new
+    | merge($c; $a.k[0]; ($a.l[0] // {}); ($a.r[0] // {}); ($a.prefixes // []); ($a.names // []); ($a.yes // false); ($a.mig // false)) as $new
     | {new: $new, changes: changes($c; $new)}
   end

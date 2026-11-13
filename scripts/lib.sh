@@ -348,6 +348,17 @@ apply_managed_settings() {
   done
   need jq "Installe jq."
   [[ -f $jqf ]] || die "$jqf introuvable"
+  # Le dépôt du kit installé a-t-il des modifications non commitées dans ce que kit sync lit ou exécute (scripts/, réglages) ?
+  # Un agent qui y aurait écrit un hook, un réglage ou le programme de fusion les ferait appliquer ici : on s'arrête
+  # (--yes les accepte, après relecture). Un KIT_HOME qui n'est pas un dépôt git n'est pas contrôlé.
+  if ((!yes)) && [[ -e $KIT_HOME/.git ]] && command -v git >/dev/null 2>&1; then
+    local dirty
+    dirty=$(git -C "$KIT_HOME" status --porcelain --untracked-files=all -- scripts 'global/settings*.json' 2>/dev/null | head -5 | cut -c4- | paste -sd' ' - || true)
+    if [[ -n $dirty ]]; then
+      warn "réglages non appliqués : le dépôt du kit ($KIT_HOME) a des modifications non commitées dans scripts/ ou global/settings*.json ($dirty). Relis-les (git -C $KIT_HOME diff), commite-les ou annule-les ; kit sync --yes les accepte."
+      if ((!dry)); then return 0; fi
+    fi
+  fi
   # Les nettoyages (fichier temporaire de la simulation, dossier de travail, verrou) tournent aussi si le programme meurt.
   trap '_ams_cleanup' EXIT
   trap '_ams_cleanup; exit 130' INT
@@ -399,6 +410,17 @@ apply_managed_settings() {
   trap '_ams_cleanup; exit 130' INT
   trap '_ams_cleanup; exit 143' TERM
 
+  # Le kit installé (KIT_HOME) : ses scripts (les hooks en sont des liens) et les réglages que kit sync lit ne s'éditent pas
+  # avec Edit ni Write. Règles propres au poste (le chemin d'installation n'est pas connu du dépôt), ajoutées à K.
+  local kh_phys kh_rule
+  kh_phys=$(cd -P -- "$KIT_HOME" 2>/dev/null && pwd -P) || kh_phys=$KIT_HOME
+  # shellcheck disable=SC2088  # the rule syntax wants a literal "~/"
+  if [[ $kh_phys == "$HOME"/* ]]; then kh_rule='~/'"${kh_phys#"$HOME"/}"; else kh_rule="/$kh_phys"; fi
+  jq -n --arg d "$kh_rule" '{permissions: {deny: [
+      "Edit(\($d)/scripts/**)", "Write(\($d)/scripts/**)",
+      "Edit(\($d)/global/settings*.json)", "Write(\($d)/global/settings*.json)"]}}' >"$tmpd/host.json" \
+    || die "règles du kit installé"
+  frags+=("$tmpd/host.json")
   # K : réglages du kit pour ce poste.
   jq -s --arg mode build -f "$jqf" "${frags[@]}" >"$tmpd/k.json" || die "calcul des réglages du kit échoué"
   # C : fichier actuel (lu une fois ; son cksum est revérifié juste avant l'écriture).
@@ -443,7 +465,7 @@ apply_managed_settings() {
   prefixes=$(printf '%s\n' "$KIT_CONFIG/hooks/" "$HOME/.config/claude-kit/hooks/" '$HOME/.config/claude-kit/hooks/' \
     '${HOME}/.config/claude-kit/hooks/' '~/.config/claude-kit/hooks/' | jq -R . | jq -s -c .) || die "préfixes de hooks"
   names=$(for h in "$KIT_HOME"/scripts/hooks/*.sh; do [[ -e $h ]] && basename "$h"; done | jq -R . | jq -s -c .) || die "noms de hooks"
-  jq -n --arg mode merge --argjson prefixes "$prefixes" --argjson names "$names" --argjson yes "$( ((yes)) && echo true || echo false )" \
+  jq -n --arg mode merge --argjson prefixes "$prefixes" --argjson names "$names" --argjson yes "$( ((yes)) && echo true || echo false )" --argjson mig "$( ((migrating)) && echo true || echo false )" \
     --slurpfile c "$tmpd/c.json" --slurpfile k "$tmpd/k.json" --slurpfile l "$tmpd/l.json" --slurpfile r "$tmpd/r.json" \
     -f "$jqf" >"$tmpd/res.json" || die "fusion des réglages échouée"
   jq '.new' "$tmpd/res.json" >"$tmpd/new.json"
