@@ -130,7 +130,7 @@ hooks) et ne lit pas le registre de la v2 : tout ce que la v2 a écrit dans `~/.
 `~/.config/claude-kit/settings.managed.json` garde en mémoire ce que le kit a posé la dernière fois. Pour retrouver
 exactement la v1 : restaure le `settings.json` de l'archive, **supprime le registre**, puis lance le `kit sync` de la
 v1 (section suivante). Le `settings.json` de l'archive reste la référence ; les sauvegardes
-`settings.json.pre-kit.<date>` (les trois dernières, écrites par la v2 avant chaque changement) ne servent qu'à
+`settings.json.pre-kit.<date>` (la plus ancienne et les deux plus récentes, écrites par la v2 avant chaque changement) ne servent qu'à
 revenir d'un état v2 à un état v2 plus ancien.
 
 ### 1.4 Restaurer depuis l'archive

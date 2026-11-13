@@ -11,7 +11,7 @@ Environnement Claude Code réutilisable : 14 sous-agents, skills routés par pro
 | `global/skills/` (3) | `~/.claude/skills/` | `pocketbase`, `secrets-handling`, `deploy-coolify-cloudflare` |
 | `global/commands/` | `~/.claude/commands/` | `/new-project`, `/add-skill`, `/add-agent`, `/env-check` |
 | `global/skills-registry.md` | `~/.claude/skills-registry.md` | type de projet → profils, skills, agents |
-| `global/settings.json` (+ `settings.vps.json`, `settings.v1.json`) | appliqué à `~/.claude/settings.json` (réglages gérés, voir plus bas) | permissions + hook anti-fuite ; `settings.v1.json` : instantané des entrées écrites par la v1 |
+| `global/settings.json` (+ `settings.vps.json`, `settings.v1.json`, `settings.retired.json`) | appliqué à `~/.claude/settings.json` (réglages gérés, voir plus bas) | permissions + hook anti-fuite ; `settings.v1.json` : instantané des entrées écrites par la v1 ; `settings.retired.json` : deny/ask que le kit retire explicitement |
 | `profiles/*.txt` | utilisés par `kit skills install` | listes de skills par domaine (web, design, brand, android, game, threejs, go, rust, shopify, cloud, media, meta, custom) |
 | `scripts/` | `~/.local/bin/kit` | CLI : secrets, skills, agents, MCP |
 
@@ -131,31 +131,53 @@ Tout le reste est refusé : `Edit`/`Write`, écritures `kit api`, outils MCP qui
 ## Réglages gérés
 
 `kit sync` (aussi lancé par `install.sh` et par `kit update`) applique les réglages du kit à `~/.claude/settings.json`
-par une **fusion à trois points** : une règle retirée du kit disparaît, tes ajouts restent, les doublons sont fusionnés.
+par une **fusion à trois points** : une règle `allow` retirée du kit disparaît, tes ajouts restent, les doublons sont
+fusionnés.
 
 - **Clés gérées** : `permissions.allow|ask|deny|defaultMode`, `hooks`, `autoMode.*`. Le reste du fichier (`model`,
   `statusLine`, `enabledPlugins`, `env`, `permissions.additionalDirectories`…) n'est jamais lu ni modifié.
 - **K, réglages du kit pour ce poste** : `global/settings.json`, plus `global/settings.vps.json` (profil `vps`), plus
   la surcharge locale ci-dessous.
-- **Registre** `~/.config/claude-kit/settings.managed.json` : le K appliqué la dernière fois. Tes ajouts sont ce qui est
-  dans `settings.json` sans être dans le registre ; la nouvelle liste est K puis tes ajouts, sans doublon, ordre gardé.
-  Un groupe de hooks dont la commande pointe dans `~/.config/claude-kit/hooks/` appartient toujours au kit, ce qui
-  retire les groupes dupliqués. Le fichier n'est réécrit (de façon atomique, droits et lien symbolique conservés) que
-  si son contenu change ; l'ancien est copié en `settings.json.pre-kit.<date>` (les 3 dernières sont gardées).
-- **Première exécution après la mise à niveau** (pas de registre) : tout ce que le kit v1 écrivait
-  (`global/settings.v1.json`, instantané des entrées des profils local et vps) compte comme venant du kit : ces entrées
-  disparaissent si le kit ne les a plus, les tiennes restent. Les phrases d'`autoMode.*` y sont stockées en empreintes
+- **Registre** `~/.config/claude-kit/settings.managed.json` (droits 600) : le K appliqué la dernière fois, avec le
+  profil. Pour `allow` et `autoMode.environment|allow`, tes ajouts sont ce qui est dans `settings.json` sans être dans
+  le registre ; la nouvelle liste est K puis tes ajouts, sans doublon, ordre gardé. Un registre illisible ou de forme
+  inattendue est traité comme absent (avertissement). Si le fichier `profile` manque, le profil du registre est gardé
+  (un poste `vps` ne retombe pas sur `local`).
+- **`deny`, `ask`, `autoMode.soft_deny|hard_deny` ne sont jamais retirés automatiquement** : ce sont des
+  restrictions, et une règle identique à celle du kit peut être la tienne. Le kit ne les retire que s'il les liste dans
+  `global/settings.retired.json` (`permissions.ask|deny`, `autoMode.*`) ; chaque retrait est nommé dans la sortie de
+  `kit sync` (donc dans `autoupdate.log` quand le hook lance le sync).
+- **Hooks** : une entrée de ton fichier appartient au kit seulement si sa commande est exactement
+  `~/.config/claude-kit/hooks/<script du kit>` (préfixe `$HOME/`, `${HOME}/`, `~/` ou le chemin développé), si ce script
+  est un hook du kit **et** si le même couple (matcher, commande) est dans K ou le registre. Seules ces entrées sont
+  retirées (doublons compris) : un hook à toi dans le même groupe, un script du kit réutilisé avec un autre matcher, un
+  script à toi dans ce dossier, un chemin hors préfixe (`/opt/…/claude-kit/hooks/…`) ou un événement entier que le kit
+  ne connaît pas restent. Les groupes retirés sont nommés dans la sortie.
+- **Première exécution après la mise à niveau** (pas de registre) : tout ce que le kit v1 écrivait pour `allow`, les
+  hooks et `autoMode` (`global/settings.v1.json`, union de toutes les versions de `global/settings.json` sur `main` ;
+  le profil `vps` ajoute les siennes via `profiles.vps`) compte comme venant du kit : ces entrées `allow` et ces hooks
+  disparaissent si le kit ne les a plus. Limite : une entrée `allow` que tu avais ajoutée à la main et qui est
+  identique à une entrée v1 est prise pour une entrée du kit. Les phrases d'`autoMode.*` y sont stockées en empreintes
   SHA-256 (`autoModeSha256`, empreinte de la chaîne exacte), pas en clair : le dépôt est public et ces phrases décrivent
   l'infra interne.
+- **`defaultMode`** vient de K, mais un passage à un mode plus permissif (`default` → `auto`…) est refusé : le mode
+  actuel reste et `kit sync` le dit. `kit sync --yes` l'accepte (le hook de mise à jour automatique ne le fait jamais).
 - **Surcharge propre au poste** : `~/.config/claude-kit/settings.local.json` (jamais dans Git, absente par défaut,
   à créer à la main ; à ne pas confondre avec le `~/.claude/settings.local.json` de Claude Code). Même forme que
   `global/settings.json`, limitée aux clés gérées : ses entrées s'ajoutent à K sur ce poste seulement (par exemple des
-  entrées `autoMode.environment` décrivant des domaines internes) ; supprimer le fichier retire ses entrées au sync
-  suivant.
+  entrées `autoMode.environment` décrivant des domaines internes) ; supprimer le fichier retire ses entrées `allow` au
+  sync suivant. Le fichier est remis en 600 à chaque sync. Il ne peut pas contenir `defaultMode: bypassPermissions` ni
+  de règle `allow` large (`Bash(*)`, `Bash`, `*`, `Edit`, `Write` sans chemin…) : le sync s'arrête avec un message,
+  rien n'est écrit. Ce qu'elle apporte est affiché à chaque sync (règles pour les permissions, nombre d'entrées pour
+  `hooks` et `autoMode`).
+- **Écriture** : sous verrou (`~/.config/claude-kit/settings.lock`, `KIT_LOCK_WAIT` secondes d'attente, 10 par défaut ;
+  un verrou orphelin est repris). Atomique, droits et lien symbolique conservés, et seulement si le contenu change ; si
+  `settings.json` a changé entre la lecture et l'écriture, rien n'est écrit (réessaie). L'ancien contenu est copié en
+  `settings.json.pre-kit.<date>` ; on garde la plus ancienne et les deux plus récentes.
 - **Simulation** : `kit sync --dry-run` affiche, par clé, les entrées qui seraient ajoutées (`+`) et retirées (`-`) et
-  n'écrit rien (ni réglages, ni sauvegarde, ni registre, ni liens). Les tests et les HOME temporaires utilisent aussi
-  `KIT_SYNC_CONTEXT=0` (pas de clonage des dépôts de contexte) et `KIT_SYNC_REGISTRY=0` (pas de régénération de
-  `global/skills-registry.md` dans le dépôt du kit).
+  n'écrit rien (ni réglages, ni sauvegarde, ni registre, ni verrou, ni liens). Les tests et les HOME temporaires
+  utilisent aussi `KIT_SYNC_CONTEXT=0` (pas de clonage des dépôts de contexte) et `KIT_SYNC_REGISTRY=0` (pas de
+  régénération de `global/skills-registry.md` dans le dépôt du kit).
 - **Retour à la v1** : voir `docs/rollback-v1.md` (restaurer le `settings.json` de l'archive, supprimer le registre,
   lancer le `kit sync` de la v1).
 
@@ -327,7 +349,7 @@ claude-kit/
 │   ├── backup-v1.sh            sauvegarde d'un poste avant la v2 (docs/rollback-v1.md)
 │   └── hooks/guard-secrets.sh  hook PreToolUse
 ├── global/                     lié dans ~/.claude
-│   ├── CLAUDE.md, settings.json, settings.vps.json, settings.v1.json, skills-registry.md
+│   ├── CLAUDE.md, settings.json, settings.vps.json, settings.v1.json, settings.retired.json, skills-registry.md
 │   ├── agents/  commands/  skills/
 ├── profiles/                   listes de skills par domaine
 └── templates/project/          gabarit copié par « kit project new/init »
