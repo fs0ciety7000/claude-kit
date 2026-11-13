@@ -7,6 +7,10 @@ agent_descriptions.words	400	words of all agent descriptions
 skill_command_descriptions.words	450	words of all skill and command descriptions
 project_sessionstart.chars	1500	characters injected at the start of a project session (memory filled to the max)
 hooks_per_tool_call.Bash	1	hook processes per Bash call (PreToolUse + PostToolUse)
+hooks_per_tool_call.Read	1	hook processes per Read call
+hooks_per_tool_call.Edit	1	hook processes per Edit call
+hooks_per_tool_call.Write	1	hook processes per Write call
+hooks_per_tool_call.Grep	1	hook processes per Grep call
 new_project_command.words	900	words of the /new-project command
 superpowers_path.words	4000	words of the Superpowers skills loaded on the /new-project path
 skills_registry.words	600	words of the skills registry (+ generated profiles table)
