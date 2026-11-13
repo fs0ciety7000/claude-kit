@@ -12,6 +12,7 @@
 # application, tofu apply and archiving the GitHub repository stay with the owner. Settings: ~/.config/claude-kit/ship.conf.
 set -euo pipefail
 RSELF=$(readlink -f "${BASH_SOURCE[0]}")
+# shellcheck disable=SC2034 # read by ship.sh: helpers only, no entry point
 KIT_SHIP_SOURCED=1
 # shellcheck source=ship.sh
 source "$(dirname "$RSELF")/ship.sh"
