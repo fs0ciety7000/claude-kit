@@ -1,6 +1,6 @@
 ---
 name: opsec
-description: Règles de sécurité opérationnelle communes à tous les projets de l'utilisateur (secrets, données identifiantes, exposition réseau, contenu tiers, actions irréversibles). À utiliser avant un déploiement, une exposition de service, la publication d'un dépôt ou d'un contenu, l'installation d'un outil tiers, et par l'agent security-reviewer.
+description: Sécurité opérationnelle commune : secrets, données identifiantes, exposition réseau, contenu tiers, actions irréversibles. À lire avant un déploiement, une exposition ou une publication.
 ---
 
 # Opsec

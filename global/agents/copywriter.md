@@ -1,8 +1,8 @@
 ---
 name: copywriter
-description: Rédige et corrige les textes d'un produit : pages web, microcopie UX (boutons, erreurs, états vides), emails, fiches produit, en français et en anglais. À déléguer pour tout texte visible par l'utilisateur.
+description: Rédige les textes d'un produit : pages, microcopie UX, e-mails, fiches produit, en français et en anglais.
 tools: Read, Write, Edit, Glob, Grep
-model: sonnet
+model: opus
 effort: medium
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: pocketbase
-description: Développer avec PocketBase (backend SQLite en un binaire) : collections, règles d'API, hooks JS, migrations, SDK JavaScript, déploiement avec volume persistant. À utiliser dès qu'un projet contient pb_data, pb_hooks, pb_migrations ou le SDK pocketbase.
+description: Développer avec PocketBase : collections, règles d'API, hooks, migrations, déploiement. À utiliser si un projet contient pb_data, pb_hooks ou pb_migrations.
 ---
 
 # PocketBase

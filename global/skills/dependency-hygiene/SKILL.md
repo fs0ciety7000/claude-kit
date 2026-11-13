@@ -1,6 +1,6 @@
 ---
 name: dependency-hygiene
-description: Choisir et tenir à jour les dépendances (paquets, images Docker, actions, runtimes) en dernière version stable et sans faille connue (CVE), vérifiées auprès des registres et des bases de vulnérabilités, jamais de mémoire. À utiliser dès qu'on ajoute, met à jour ou épingle une dépendance, crée un projet, écrit un Dockerfile ou un compose, ou répond à une alerte de sécurité.
+description: Choisir et tenir à jour les dépendances (paquets, images, actions, runtimes) en dernière version stable sans faille, vérifiée aux registres. À utiliser à chaque ajout, mise à jour ou Dockerfile.
 ---
 
 # Dépendances : à jour et sans faille connue

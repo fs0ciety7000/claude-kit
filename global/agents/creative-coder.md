@@ -1,8 +1,8 @@
 ---
 name: creative-coder
-description: Réalise des expériences visuelles interactives : Three.js / React Three Fiber, shaders, animations GSAP/Framer Motion, SVG et Lottie, effets visuels Godot. À déléguer pour la 3D web, le mouvement et le rendu.
+description: Réalise des expériences visuelles interactives : Three.js, shaders, GSAP, Framer Motion, SVG, Lottie. Pour la 3D web et le mouvement.
 tools: Read, Write, Edit, Glob, Grep, Bash
-model: sonnet
+model: opus
 effort: medium
 ---
 

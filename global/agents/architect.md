@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Conçoit avant qu'on code : découpage en modules et en lots, choix techniques argumentés (deux options, une recommandée), plan détaillé d'un lot avec fichiers touchés et critères de fin. À déléguer au début d'un projet, d'un lot ou d'une fonctionnalité qui touche plusieurs parties du code.
+description: Conçoit avant le code : découpage en lots, choix techniques (deux options, une recommandée), plan d'un lot. Pour un projet ou une fonctionnalité multi-parties.
 tools: Read, Glob, Grep, WebSearch, WebFetch
 model: opus
 effort: high

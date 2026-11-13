@@ -1,8 +1,8 @@
 ---
 name: creative-content
-description: Produit des contenus créatifs : scripts vidéo, posts réseaux, newsletters, concepts de campagne, noms, accroches, storyboards. À déléguer pour toute création de contenu éditorial ou marketing.
+description: Produit des contenus éditoriaux : scripts vidéo, posts, newsletters, concepts de campagne, noms, accroches, storyboards.
 tools: Read, Write, Edit, Glob, Grep, WebSearch, WebFetch
-model: sonnet
+model: opus
 effort: medium
 ---
 

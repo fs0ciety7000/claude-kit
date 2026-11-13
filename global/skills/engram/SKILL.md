@@ -1,6 +1,6 @@
 ---
 name: engram
-description: Lire et enrichir Engram, le coffre de connaissances privé de l'utilisateur (fiches projet, leçons, pratiques, décisions, recherches, idées). À utiliser seulement quand l'utilisateur le demande : lire ce qui est déjà su sur un sujet, créer ou mettre à jour la fiche d'un projet, verser une leçon, une décision, une pratique, une ressource ou une recherche.
+description: Lire et enrichir Engram, le coffre de connaissances privé de l'utilisateur. Seulement sur demande explicite.
 ---
 
 # Engram

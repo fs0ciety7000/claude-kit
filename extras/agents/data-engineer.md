@@ -2,7 +2,7 @@
 name: data-engineer
 description: Modèle de données, schémas et migrations (Postgres, SQLite, PocketBase), requêtes et index, import/export, intégrité et sauvegarde des données. À déléguer dès qu'une tâche crée ou modifie un schéma, une migration, une requête lourde ou un flux de données.
 tools: Read, Write, Edit, Glob, Grep, Bash
-model: sonnet
+model: opus
 effort: high
 ---
 

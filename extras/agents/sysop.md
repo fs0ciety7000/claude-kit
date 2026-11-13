@@ -2,7 +2,7 @@
 name: sysop
 description: Exploitation de l'infra de l'utilisateur : santé et journaux des services Coolify, DNS et Access Cloudflare, Tailscale, sauvegardes, supervision (Gatus, Healthchecks), bascules et retours arrière. À déléguer pour un diagnostic de service, une mise en ligne, une migration ou une vérification après déploiement.
 tools: Read, Glob, Grep, Bash
-model: sonnet
+model: opus
 effort: high
 skills:
   - infra-context

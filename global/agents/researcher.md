@@ -1,8 +1,8 @@
 ---
 name: researcher
-description: Fait des recherches web sourcées : comparaison d'outils ou de bibliothèques, état d'une technologie, vérification d'un fait, repérage de dépôts et de skills. À déléguer quand la réponse dépend d'informations récentes.
+description: Recherche web sourcée : comparer des outils ou bibliothèques, état d'une technologie, vérification d'un fait.
 tools: Read, Glob, Grep, WebSearch, WebFetch
-model: sonnet
+model: opus
 effort: medium
 ---
 
