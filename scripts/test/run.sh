@@ -561,6 +561,81 @@ OUT=$(CLAUDE_CODE_REMOTE=true "$NOGIT/scripts/hooks/kit-autoupdate.sh" </dev/nul
 [[ $RC == 0 && -z $OUT ]] && ok_ "hors dépôt git : code 0, silencieux" || ko_ "hors dépôt git" "code $RC, sortie : $OUT"
 
 # ---------------------------------------------------------------------------
+section "budgets de contexte (context-budget.sh)"
+CB="$ROOT/scripts/context-budget.sh"
+CBT="$TMP/ctx"
+mkdir -p "$CBT/global/agents" "$CBT/global/skills/alpha" "$CBT/global/commands" "$CBT/templates/project/.claude" "$CBT/scripts"
+# Fixture tree with known sizes: CLAUDE.md 7 words + one imported file of 3 words ("@" in a code span is ignored).
+printf 'un deux trois quatre @extra.md cinq `@ignore.md`\n' >"$CBT/global/CLAUDE.md"
+printf 'six sept huit\n' >"$CBT/global/extra.md"
+printf -- '---\nname: a1\ndescription: un deux trois\n---\ncorps long qui ne compte pas\n' >"$CBT/global/agents/a1.md"
+printf -- '---\nname: a2\ndescription: "deux mots"\n---\ncorps\n' >"$CBT/global/agents/a2.md"
+printf -- '---\nname: alpha\ndescription: >\n  quatre mots sur\n  deux lignes\n---\ncorps\n' >"$CBT/global/skills/alpha/SKILL.md"
+printf -- '---\ndescription: une commande\n---\ncorps\n' >"$CBT/global/commands/c1.md"
+printf 'un deux\n' >"$CBT/templates/project/CLAUDE.md"
+cat >"$CBT/global/settings.json" <<'JSON'
+{"hooks": {
+  "PreToolUse": [
+    {"matcher": "Bash|Read", "hooks": [{"type": "command", "command": "true"}]},
+    {"matcher": "*", "hooks": [{"type": "command", "command": "true"}, {"type": "command", "command": "true"}]}],
+  "PostToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "true"}]}],
+  "SessionStart": [
+    {"hooks": [{"type": "command", "command": "printf 'bonjour le monde'"}]},
+    {"matcher": "clear", "hooks": [{"type": "command", "command": "printf 'jamais lu'"}]}]}}
+JSON
+cat >"$CBT/templates/project/.claude/settings.json" <<'JSON'
+{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "printf 'abcde fghij'"}]}]}}
+JSON
+printf 'global_claude_md.words\t10\tx\nhooks_per_tool_call.Bash\t3\tx\n' >"$CBT/budgets-ok.tsv"
+printf 'global_claude_md.words\t9\tx\nhooks_per_tool_call.Bash\t2\tx\n' >"$CBT/budgets-over.tsv"
+
+CBJ=$(bash "$CB" --root "$CBT" --json 2>/dev/null)
+cbv() { jq -r "$1" <<<"$CBJ"; }
+[[ $(cbv '.global_claude_md.words') == 10 && $(cbv '.global_claude_md.files') == 2 ]] \
+  && ok_ "fixture : CLAUDE.md global + import = 10 mots, 2 fichiers" \
+  || ko_ "fixture : CLAUDE.md global" "$(cbv '.global_claude_md')"
+[[ $(cbv '.agent_descriptions.count') == 2 && $(cbv '.agent_descriptions.words') == 5 ]] \
+  && ok_ "fixture : descriptions d'agents (simple et entre guillemets) = 5 mots" || ko_ "fixture : descriptions d'agents" "$(cbv '.agent_descriptions')"
+[[ $(cbv '.skill_descriptions.words') == 5 && $(cbv '.command_descriptions.words') == 2 && $(cbv '.skill_command_descriptions.words') == 7 ]] \
+  && ok_ "fixture : description de skill repliée (5) + commande (2) = 7 mots" || ko_ "fixture : descriptions skills et commandes" "$(cbv '.skill_command_descriptions')"
+[[ $(cbv '.sessionstart_kit.chars') == 16 && $(cbv '.sessionstart_kit.hooks') == 1 ]] \
+  && ok_ "fixture : SessionStart du kit (matcher « clear » ignoré) = 16 caractères" || ko_ "fixture : SessionStart du kit" "$(cbv '.sessionstart_kit')"
+[[ $(cbv '.project_sessionstart.chars') == 11 ]] \
+  && ok_ "fixture : SessionStart du projet = 11 caractères" || ko_ "fixture : SessionStart du projet" "$(cbv '.project_sessionstart')"
+[[ $(cbv '.hooks_per_tool_call.Bash') == 3 && $(cbv '.hooks_per_tool_call.Read') == 3 && $(cbv '.hooks_per_tool_call.Edit') == 3 \
+  && $(cbv '.hooks_per_tool_call.Write') == 2 && $(cbv '.hooks_per_tool_call.Glob') == 2 ]] \
+  && ok_ "fixture : hooks par appel (matchers regex, *, PostToolUse)" || ko_ "fixture : hooks par appel" "$(cbv '.hooks_per_tool_call')"
+[[ $(cbv '.project_template.words') == 2 && $(cbv '.new_project_command.words') == 0 && $(cbv '.superpowers_path.skills') == 0 ]] \
+  && ok_ "fixture : éléments absents mesurés à 0" || ko_ "fixture : éléments absents"
+
+BUDGET_ENFORCE=0 bash "$CB" --root "$CBT" --budgets "$CBT/budgets-over.tsv" --budget >/dev/null 2>&1; rc_warn=$?
+BUDGET_ENFORCE=1 bash "$CB" --root "$CBT" --budgets "$CBT/budgets-over.tsv" --budget >/dev/null 2>&1; rc_enf=$?
+BUDGET_ENFORCE=1 bash "$CB" --root "$CBT" --budgets "$CBT/budgets-ok.tsv" --budget >/dev/null 2>&1; rc_ok=$?
+[[ $rc_warn == 0 && $rc_enf == 1 && $rc_ok == 0 ]] \
+  && ok_ "--budget : dépassement = avertissement ; échec seulement avec BUDGET_ENFORCE=1" \
+  || ko_ "--budget : codes de sortie" "avertissement $rc_warn, enforce+dépassement $rc_enf, enforce+ok $rc_ok"
+[[ $(bash "$CB" --root "$CBT" --budgets "$CBT/budgets-over.tsv" --budget --json 2>/dev/null | jq -r '.budget.over') == 2 ]] \
+  && ok_ "--budget --json : nombre de dépassements" || ko_ "--budget --json"
+
+# The real tree: stable JSON shape, hooks run in a sandbox (the real HOME stays untouched), then the budgets (warnings).
+REALJ=$(bash "$CB" --json 2>/dev/null)
+missing=$(jq -r '
+  . as $d | [ "global_claude_md.words", "global_claude_md.chars", "agent_descriptions.words", "skill_descriptions.words",
+    "command_descriptions.words", "skill_command_descriptions.words", "sessionstart_kit.chars", "project_sessionstart.chars",
+    "project_template.words", "new_project_command.words", "skills_registry.words", "team_builder.words",
+    "superpowers_path.words", "hooks_per_tool_call.Bash", "hooks_per_tool_call.Read", "hooks_per_tool_call.Edit",
+    "hooks_per_tool_call.Write", "startup_total.words", "startup_total.chars" ]
+  | map(select(. as $p | ($d | getpath($p | split(".")) | type) != "number")) | join(" ")' <<<"$REALJ" 2>/dev/null)
+[[ -n $REALJ && -z $missing && $(jq -r '.version' <<<"$REALJ") == 1 ]] \
+  && ok_ "arbre réel : JSON de forme stable (clés numériques présentes)" || ko_ "arbre réel : JSON" "manquant : $missing"
+EH="$TMP/emptyhome"; mkdir -p "$EH"
+HOME=$EH bash "$CB" --json >/dev/null 2>&1
+[[ -z $(ls -A "$EH") ]] && ok_ "arbre réel : un HOME vide le reste (les hooks tournent dans un bac à sable)" || ko_ "arbre réel : effets de bord des hooks"
+echo "  -- budgets (avertissements seulement) --"
+bash "$CB" --budget 2>&1 | sed 's/^/  /'
+check "arbre réel : --budget sort 0 hors BUDGET_ENFORCE" bash "$CB" --budget
+
+# ---------------------------------------------------------------------------
 echo
 echo "$pass passed, $fail failed"
 HOME=$REAL_HOME
