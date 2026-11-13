@@ -1,6 +1,6 @@
 ---
 name: opsec
-description: Sécurité opérationnelle commune : secrets, données identifiantes, exposition réseau, contenu tiers, actions irréversibles. À lire avant un déploiement, une exposition ou une publication.
+description: "Sécurité opérationnelle commune : secrets, données identifiantes, exposition réseau, contenu tiers, actions irréversibles. À lire avant un déploiement, une exposition ou une publication."
 ---
 
 # Opsec

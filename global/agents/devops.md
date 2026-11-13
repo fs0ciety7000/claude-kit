@@ -1,6 +1,6 @@
 ---
 name: devops
-description: Prépare et diagnostique déploiements Coolify, Cloudflare, Docker et CI : configuration, variables, builds, santé des services.
+description: "Prépare et diagnostique déploiements Coolify, Cloudflare, Docker et CI : configuration, variables, builds, santé des services."
 tools: Read, Write, Edit, Glob, Grep, Bash
 model: opus
 effort: medium

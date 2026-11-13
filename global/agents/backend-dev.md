@@ -1,6 +1,6 @@
 ---
 name: backend-dev
-description: Développe des backends Go ou Rust : API, modèle de données, migrations, tests. Pour la logique serveur et les bases de données.
+description: "Développe des backends Go ou Rust : API, modèle de données, migrations, tests. Pour la logique serveur et les bases de données."
 tools: Read, Write, Edit, Glob, Grep, Bash
 model: opus
 effort: medium

@@ -1,6 +1,6 @@
 ---
 name: brand-identity
-description: Construit une identité de marque : positionnement, nom, logo, palette, typographies, charte. Taille L ou sur demande.
+description: "Construit une identité de marque : positionnement, nom, logo, palette, typographies, charte. Taille L ou sur demande."
 tools: Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch
 model: opus
 effort: high

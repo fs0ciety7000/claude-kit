@@ -1,6 +1,6 @@
 ---
 name: go-cli
-description: Développe des binaires Go : CLI, compilation croisée, publication avec goreleaser. Pour un outil en ligne de commande Go.
+description: "Développe des binaires Go : CLI, compilation croisée, publication avec goreleaser. Pour un outil en ligne de commande Go."
 tools: Read, Write, Edit, Glob, Grep, Bash
 model: opus
 effort: medium

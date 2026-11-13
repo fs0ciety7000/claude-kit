@@ -1,6 +1,6 @@
 ---
 name: deploy-coolify-cloudflare
-description: Déployer et diagnostiquer sur Coolify et Cloudflare (Workers, DNS, proxy) : build, variables, volumes, domaines, santé, retour arrière. Pour tout déploiement ou panne d'hébergement.
+description: "Déployer et diagnostiquer sur Coolify et Cloudflare (Workers, DNS, proxy) : build, variables, volumes, domaines, santé, retour arrière. Pour tout déploiement ou panne d'hébergement."
 ---
 
 # Déploiement Coolify + Cloudflare

@@ -2185,6 +2185,46 @@ git -C "$KG" checkout -q -- .
 reset_home
 
 # ---------------------------------------------------------------------------
+section "en-têtes YAML des agents, skills et commandes"
+# A plain (unquoted) scalar containing ": " is invalid YAML for strict parsers
+# (npx skills, js-yaml): French typography puts a space before the colon.
+fmbad=$(find "$ROOT/global" "$ROOT/extras" "$ROOT/templates" -name '*.md' -type f 2>/dev/null | while IFS= read -r f; do
+  awk -v f="$f" '
+    NR == 1 { if ($0 != "---") exit; next }
+    /^---[ \t]*$/ { exit }
+    /^[A-Za-z_-]+:[ \t]/ {
+      v = $0; sub(/^[A-Za-z_-]+:[ \t]+/, "", v)
+      if (v !~ /^["\047|>\[{]/ && (index(v, ": ") || v ~ /:$/ || v ~ / #/)) print f ": " $0
+    }' "$f"
+done)
+[[ -z $fmbad ]] && ok_ "aucun scalaire YAML nu avec « : » dans un en-tête" || ko_ "scalaire YAML nu avec « : »" "$(printf '%s' "$fmbad" | head -3)"
+if command -v python3 >/dev/null && python3 -c 'import yaml' 2>/dev/null; then
+  fmparse=$(python3 - "$ROOT" <<'PY'
+import glob, sys, yaml
+root = sys.argv[1]
+for d in ("global", "extras", "templates"):
+    for f in glob.glob(f"{root}/{d}/**/*.md", recursive=True):
+        s = open(f, encoding="utf-8").read()
+        if not s.startswith("---\n"):
+            continue
+        end = s.find("\n---", 4)
+        try:
+            yaml.safe_load(s[4:end])
+        except Exception as e:
+            print(f, str(e).splitlines()[0])
+PY
+)
+  [[ -z $fmparse ]] && ok_ "en-têtes YAML lus par un parseur strict" || ko_ "en-tête YAML invalide" "$(printf '%s' "$fmparse" | head -3)"
+fi
+kh=$(mktemp -d); mkdir -p "$kh/global/agents" "$kh/global/skills"
+( # shellcheck disable=SC1090
+  source <(sed -n '/^fm_get()/,/^}/p; /^yaml_q()/,/^}/p' "$ROOT/scripts/kit.sh")
+  printf -- '---\nname: t\ndescription: %s\n---\n' "$(yaml_q 'Fait x : y, "z" et \w')" >"$kh/t.md"
+  [[ $(fm_get "$kh/t.md" description) == 'Fait x : y, "z" et \w' ]] ) \
+  && ok_ "yaml_q puis fm_get rendent la description d'origine" || ko_ "yaml_q / fm_get : aller-retour faux"
+rm -rf "$kh"
+
+# ---------------------------------------------------------------------------
 section "dépôt du kit"
 [[ $(repo_state) == "$REPO_STATE0" ]] && ok_ "aucune écriture dans le dépôt du kit pendant les tests" || ko_ "le dépôt du kit a été modifié pendant les tests" "$(git -C "$ROOT" status --porcelain | head -5)"
 

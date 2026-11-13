@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Conçoit avant le code : découpage en lots, choix techniques (deux options, une recommandée), plan d'un lot. Pour un projet ou une fonctionnalité multi-parties.
+description: "Conçoit avant le code : découpage en lots, choix techniques (deux options, une recommandée), plan d'un lot. Pour un projet ou une fonctionnalité multi-parties."
 tools: Read, Glob, Grep, WebSearch, WebFetch
 model: opus
 effort: high

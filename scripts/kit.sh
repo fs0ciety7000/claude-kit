@@ -254,8 +254,19 @@ fm_get() { # fichier clé -> valeur de l'en-tête YAML
   awk -v k="$2" '
     NR == 1 && $0 != "---" { exit }
     NR > 1 && $0 == "---" { exit }
-    NR > 1 && index($0, k ":") == 1 { sub("^" k ":[[:space:]]*", ""); print; exit }
+    NR > 1 && index($0, k ":") == 1 {
+      sub("^" k ":[[:space:]]*", "")
+      if ($0 ~ /^".*"$/) { $0 = substr($0, 2, length($0) - 2); gsub(/\\"/, "\""); gsub(/\\\\/, "\\") }
+      else if ($0 ~ /^\047.*\047$/) { $0 = substr($0, 2, length($0) - 2); gsub(/\047\047/, "\047") }
+      print; exit
+    }
   ' "$1"
+}
+
+yaml_q() { # texte -> scalaire YAML entre guillemets doubles (\ et " échappés)
+  local v=${1//\\/\\\\}
+  v=${v//\"/\\\"}
+  printf '"%s"' "$v"
 }
 
 resolve_source() {
@@ -370,7 +381,7 @@ cmd_new_agent() {
   cat >"$dest" <<EOF
 ---
 name: $name
-description: $desc
+description: $(yaml_q "$desc")
 tools: $tools
 model: $model
 effort: $effort
@@ -404,7 +415,7 @@ cmd_new_skill() {
   cat >"$dir/SKILL.md" <<EOF
 ---
 name: $name
-description: $desc
+description: $(yaml_q "$desc")
 ---
 
 # $name

@@ -1,6 +1,6 @@
 ---
 name: design-critic
-description: Relit une interface en lecture seule : hiérarchie, cohérence, contraste, accessibilité, états, responsive. Taille L ou sur demande.
+description: "Relit une interface en lecture seule : hiérarchie, cohérence, contraste, accessibilité, états, responsive. Taille L ou sur demande."
 tools: Read, Glob, Grep
 model: opus
 effort: medium

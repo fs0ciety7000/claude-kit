@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: Clarifier une idée floue avec l'utilisateur avant de planifier : ce qu'il veut vraiment et pourquoi. Pas pour une demande déjà précise.
+description: "Clarifier une idée floue avec l'utilisateur avant de planifier : ce qu'il veut vraiment et pourquoi. Pas pour une demande déjà précise."
 ---
 
 # Brainstorming
