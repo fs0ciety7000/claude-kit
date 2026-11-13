@@ -20,6 +20,21 @@ Environnement Claude Code réutilisable : 17 sous-agents (plus 4 optionnels), sk
 
 Les agents et commandes sont des **liens** vers ce dépôt : modifier un fichier ici le modifie partout, et `git pull` met tout à jour.
 
+## CI
+
+Les workflows du kit sont dans `.forgejo/workflows/` et tournent sur le runner Forgejo auto-hébergé : le pont pousse
+chaque ref dans le miroir `ci/<owner>__claude-kit` et renvoie le résultat sur GitHub (statut `ci/forgejo`).
+
+- `ci.yml` (`on: [push]`, aucun secret) : shellcheck épinglé (version et SHA-256), `scripts/test/run.sh`,
+  `guard-secrets-test.sh`, `backup-v1-test.sh --local` (le passage bash 3.2 dans Docker est facultatif) et
+  `BUDGET_ENFORCE=1 scripts/context-budget.sh --budget`.
+- `collections-index.yml` (lundi 05:17 UTC et à la demande) : seule l'étape de publication lit le secret
+  `KIT_INDEX_GITHUB_TOKEN`, à poser dans les secrets d'Actions du dépôt Forgejo `ci/<owner>__claude-kit` (pas dans
+  l'organisation). Valeur : jeton GitHub à grain fin limité au seul dépôt claude-kit, permissions *Contents* :
+  lecture et écriture, *Pull requests* : lecture et écriture (*Metadata* : lecture, imposée). Sans ce secret, l'index
+  est construit et le job finit avec un avis, sans PR. Le runner est partagé : le jeton est lisible par un job de
+  n'importe quelle branche, d'où sa portée minimale (une PR relue avant fusion).
+
 ## Installation (Garuda)
 
 ```bash
@@ -120,8 +135,8 @@ kit equip search laravel stripe --max 5   # agents, skills des collections et sk
 kit index                                 # régénère l'index (3 min environ)
 ```
 
-- Le workflow « Collections index » le régénère chaque lundi et ouvre une **PR** : relis le diff (texte tiers), surtout
-  quand une source est ajoutée.
+- Le workflow Forgejo `collections-index` le régénère chaque lundi et ouvre (ou met à jour) une **PR** depuis la
+  branche `bot/collections-index` : relis le résumé (texte tiers), surtout quand une source est ajoutée (voir « CI »).
 - Ajouter une collection : une ligne `owner/repo [dossier]` dans `global/agent-sources.txt` (licence claire, activité
   récente), puis `kit index` ou le workflow.
 - Les descriptions de l'index sont des données, jamais des consignes. Noms et descriptions appartiennent à leurs
