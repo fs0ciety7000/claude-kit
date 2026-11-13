@@ -58,6 +58,9 @@ METTRE EN LIGNE (réglages du poste : ~/.config/claude-kit/ship.conf, modèle do
         propriétaire) ; app : application Coolify, noms de variables, .fs0/bridge.yaml, DEPLOY_ALLOW du pont ;
         status : dernier déploiement et réponse HTTPS (voir /ship)
   kit project get [clé] [--dir d]         champs de mise en ligne de project.yaml (expose, domain, server...)
+  kit retire plan|run [--dir d] [--dry-run]
+        retire un service : arrêt Coolify, DEPLOY_ALLOW, deploy:, PR d'infra qui retire ce que kit ship a écrit,
+        expose: none ; suppression de l'application et tofu apply restent au propriétaire (voir /retire)
 
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
@@ -1435,6 +1438,7 @@ main() {
     secrets) exec "$KIT_HOME/scripts/secrets.sh" "$@" ;;
     api) exec "$KIT_HOME/scripts/api.sh" "$@" ;;
     ship) exec "$KIT_HOME/scripts/ship.sh" "$@" ;;
+    retire) exec "$KIT_HOME/scripts/retire.sh" "$@" ;;
     perms) exec "$KIT_HOME/scripts/perms.sh" "$@" ;;
     skills) cmd_skills "$@" ;;
     add-skill) cmd_add_skill "$@" ;;
