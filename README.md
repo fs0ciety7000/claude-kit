@@ -73,8 +73,17 @@ Le tableau de bord en direct (hook d'émission, serveur MCP de validation) est *
 seule liste de tâches, les validations se font dans le chat, et une session se suit avec `claude remote-control`
 (depuis l'app Claude ou claude.ai/code, voir plus bas). `kit sync` nettoie les postes qui l'avaient : il retire le
 hook et ses autorisations de `~/.claude/settings.json` (fusion à trois points, tes hooks et règles restent), supprime
-le lien du hook et le fichier d'URL, et retire le serveur MCP de portée utilisateur s'il est déclaré. `kit doctor`
-signale un reste.
+le lien du hook (seulement s'il pointe dans ce kit) et le fichier d'URL, et retire le serveur MCP de portée utilisateur
+s'il est déclaré. `kit doctor` signale un reste, y compris `KIT_DASH_TOKEN` ou `KIT_DASH_URL` encore présents dans
+l'environnement (leurs noms seulement, jamais les valeurs).
+
+**À faire de ton côté, le kit n'y touche pas** (rien de tout cela n'est automatique) :
+1. révoquer le jeton du tableau de bord côté serveur (réglages du dashboard), puis, sur chaque poste local,
+   `kit secrets rm KIT_DASH_TOKEN -g` ;
+2. dans l'environnement cloud : retirer la variable `KIT_DASH_URL` et le secret réseau (en-tête `Authorization`) de
+   l'hôte du dashboard ;
+3. arrêter l'application du tableau de bord sur son serveur et purger ses données (événements, mémoire de projet,
+   jetons), puis retirer son entrée DNS et sa politique d'accès si elles ne servent plus.
 
 `kit detect [--json]` devine les types de projet à partir des fichiers (`global/detect-rules.tsv`) et en déduit profils, skills et agents ; `/new-project` s'en sert et note le choix dans `docs/memory/stack.md`.
 
@@ -162,7 +171,10 @@ fusionnés.
   retirées (doublons compris) : un hook à toi dans le même groupe, un script du kit réutilisé avec un autre matcher, un
   script à toi dans ce dossier, un chemin hors préfixe (`/opt/…/claude-kit/hooks/…`) ou un événement entier que le kit
   ne connaît pas restent. Les groupes retirés sont nommés dans la sortie.
-- **Première exécution après la mise à niveau** (pas de registre) : tout ce que le kit v1 écrivait pour `allow`, les
+- **Instantané v1, à chaque sync** : le registre est toujours **uni** à l'instantané. Ce qu'un `kit sync` de la v1 réécrit
+  après coup (retour arrière, autre poste : hooks du tableau de bord, autorisations du tableau de bord, règles allow retirées,
+  anciennes phrases) est donc retiré au sync v2 suivant ; `deny`, `ask`, `soft_deny` et `hard_deny` restent régis par
+  `settings.retired.json`. Sans registre (première exécution après la mise à niveau), tout ce que le kit v1 écrivait pour `allow`, les
   hooks et `autoMode` (`global/settings.v1.json`, union de toutes les versions de `global/settings.json` sur `main` ;
   le profil `vps` ajoute les siennes via `profiles.vps`) compte comme venant du kit : ces entrées `allow` et ces hooks
   disparaissent si le kit ne les a plus. Limite : une entrée `allow` que tu avais ajoutée à la main et qui est
@@ -184,12 +196,24 @@ fusionnés.
   texte **hors dépôt**, `~/.config/claude-kit/environment.local.txt` (une phrase par ligne, en anglais, `#` pour un
   commentaire ; modèle : `docs/environment.local.example.txt`, avec des domaines factices). `kit sync` (et
   `install.sh`) en tire l'entrée `autoMode.environment` de `settings.local.json` (600, ses autres clés sont conservées,
-  rien n'est écrit si rien ne change) ; `kit overlay env [fichier]` le fait à la demande, `kit overlay env --clear` retire
-  les phrases. Les phrases ne sont jamais affichées. Session cloud : la variable `KIT_LOCAL_ENVIRONMENT` (même format,
-  lignes séparées par des retours à la ligne) alimente ce fichier à chaque sync. **À faire une fois par poste** : sans ce
-  fichier, le classifieur du mode auto ne connaît plus tes domaines de confiance, et le premier `kit sync` après la
-  mise à jour le signale (l'ancien contenu est dans `settings.json.pre-kit.<date>`). **Historique** : les anciennes
-  phrases restent dans l'historique Git du dépôt public (il n'a pas été réécrit) ; seul le contenu actuel est propre.
+  rien n'est écrit si rien ne change) ; `kit overlay env [fichier]` le fait à la demande. Les phrases ne sont jamais
+  affichées : ni par le sync, ni par `kit sync --dry-run` (comptes seulement, calculés depuis la surcharge telle qu'elle
+  serait écrite). Session cloud : la variable `KIT_LOCAL_ENVIRONMENT` (même format, lignes séparées par des retours à la
+  ligne) alimente ce fichier à chaque sync.
+  - **Refus** (avertissement sur stderr, donc dans `autoupdate.log` ; **le sync continue** et les phrases précédentes
+    restent appliquées) : source ou `settings.local.json` qui est un lien symbolique, source qui n'est pas à toi ou
+    modifiable par d'autres, octet NUL, plus de 50 phrases, phrase de plus de 800 caractères, caractère de contrôle (C0,
+    DEL, C1), séparateurs U+2028/2029, contrôles bidirectionnels (U+202A à U+202E, U+2066 à U+2069), U+FFFD, et tout ce qui
+    ressemble à un secret (clé age ou privée, `ghp_`, `github_pat_`, `sk-`, `xoxb-`/`xoxp-`, suite de 40 caractères base64
+    ou hexadécimaux). Ces phrases **ne sont pas secrètes** : elles sont copiées dans `~/.claude/settings.json`, dont les
+    droits sont ceux que Claude Code lui donne, et lues par le classifieur du mode auto.
+  - `kit overlay env --clear` retire les phrases **et met le fichier source de côté**
+    (`environment.local.txt.cleared-<date>`) : sinon le sync suivant les remettrait. Si `KIT_LOCAL_ENVIRONMENT` est défini,
+    il les réécrira : retire la variable.
+  - **À faire une fois par poste** : sans ce fichier, le classifieur du mode auto ne connaît plus tes domaines de
+    confiance, et le premier `kit sync` après la mise à jour le signale (l'ancien contenu est dans
+    `settings.json.pre-kit.<date>`). **Historique** : les anciennes phrases restent dans l'historique Git du dépôt public
+    (il n'a pas été réécrit) ; seul le contenu actuel est propre.
 - **Écriture** : sous verrou (`~/.config/claude-kit/settings.lock`, `KIT_LOCK_WAIT` secondes d'attente, 10 par défaut ;
   un verrou orphelin est repris). Atomique, droits et lien symbolique conservés, et seulement si le contenu change ; si
   `settings.json` a changé entre la lecture et l'écriture, rien n'est écrit (réessaie). L'ancien contenu est copié en
@@ -210,12 +234,19 @@ En session cloud (`CLAUDE_CODE_REMOTE=true`), un second hook `SessionStart`, `ki
 - Il ne fait rien si le dépôt du kit a des modifications locales ou n'est pas sur `main`.
 - **Couper** : `KIT_AUTOUPDATE=0` (variable d'environnement) ou le fichier `~/.config/claude-kit/autoupdate.off` (n'importe quel
   contenu) sur ce poste ; `kit autoupdate off` / `kit autoupdate on` le crée ou le retire.
-- **Épingler une version** : `~/.config/claude-kit/autoupdate.pin`, une référence sur la première ligne (tag, branche de
-  `origin` ou révision ; lettres, chiffres, `. _ - /` seulement, sinon le hook l'ignore avec un message). Le hook va
-  chercher `origin` et ses tags et met le kit en HEAD détaché sur cette référence, puis lance `kit sync` ; il ne suit plus
-  `main` (un nouveau commit sur `main` ne déplace pas le kit). Mêmes garde-fous : arbre propre, et le kit doit être sur
-  `main` ou déjà détaché. `kit update` ne fait pas de `git pull` tant que le fichier existe. `kit autoupdate pin <réf>` écrit
-  le fichier, `kit autoupdate unpin` le retire (puis `git -C <kit> checkout main` pour suivre `main` de nouveau),
+- **Épingler une version** : `kit autoupdate pin <tag|branche|révision>`. La référence est **résolue une fois** (le hook,
+  appelé avec `--resolve`, va chercher `origin/main` et les tags) et `~/.config/claude-kit/autoupdate.pin` reçoit le **SHA
+  complet** (première ligne ; le nom donné sur la seconde, pour l'affichage). Une chaîne de 7 à 40 caractères
+  hexadécimaux est toujours un objet, jamais un tag ou une branche du même nom. Le hook ne lit que ce SHA (aucun tag ni
+  aucune branche : un tag déplacé sur `origin` n'a aucun effet), ne va chercher que `main`, et met le kit en HEAD
+  détaché dessus, puis lance `kit sync`. Conditions, refusées au `pin` **et** revérifiées par le hook avant le
+  `checkout` : la révision est un **ancêtre de `origin/main`** (jamais de code non fusionné, branche ou fork), et son propre
+  hook porte un `KIT_PIN_FLOOR` au moins égal au courant (**socle** : aucun retour à une version qui ne sait pas épingler ;
+  le retour à la v1 est la procédure de `docs/rollback-v1.md`, pas l'épinglage). Le hook ne bouge pas non plus avec un arbre
+  modifié, pendant un bisect, un rebase, un merge, un cherry-pick ou un revert, ni si le kit est sur une autre branche
+  que `main` ou détaché ailleurs que sur le dernier SHA qu'il a épinglé (`autoupdate.pinned`). Un fichier sans SHA de 40
+  caractères est signalé une fois et ignoré. `kit update` ne fait pas de `git pull` tant que le fichier existe ;
+  `kit autoupdate unpin` le retire (puis `git -C <kit> checkout main` pour suivre `main` de nouveau),
   `kit autoupdate status` montre l'état.
 - `kit --version` affiche le tag (ou la révision, `git describe`) et la date du commit ; `kit doctor` l'ajoute à ses
   contrôles, avec l'état de la mise à jour automatique.
