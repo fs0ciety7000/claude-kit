@@ -24,6 +24,7 @@ build:   TODO
 .
 ├── AGENTS.md
 ├── CLAUDE.md
+├── project.yaml        # taille (S, M, L) et réglages
 ├── DESIGN.md           # direction visuelle
 ├── DEPLOY.md           # Coolify / Cloudflare, domaine, variables (noms)
 ├── docs/brief.md       # objectif et périmètre
@@ -37,16 +38,15 @@ build:   TODO
 1. Lis avant d'écrire : ouvre les fichiers concernés avant de les modifier.
 2. Plus petit changement qui résout le problème. Pas de refactor non demandé.
 3. Suis le style existant (nommage, formatage, structure).
-4. Ajoute ou mets à jour les tests avec chaque changement de comportement.
-5. Lance `test` et `lint` avant de conclure ; rapporte les résultats réels.
-6. Ne touche jamais à : `.env*`, `dist/`, `build/`, fichiers de lock modifiés à la main.
-7. Tâche de plus de ~5 fichiers ou changement d'architecture : propose d'abord un plan.
-8. Dépendances : dernière version stable vérifiée auprès du registre (jamais de mémoire), images épinglées par digest,
-   actions par SHA, audit de failles (`npm audit`, `govulncheck`, `pip-audit`, `osv-scanner`…) avant de conclure ;
-   Renovate tient le reste à jour (`renovate.json`).
+4. Lance le build (et les tests, s'il y en a) avant de conclure ; rapporte les résultats réels.
+5. Ne touche jamais à : `.env*`, `dist/`, `build/`, fichiers de lock modifiés à la main.
+6. Tâche de plus de ~5 fichiers ou changement d'architecture : propose d'abord un plan.
+7. Dépendances : dernière version stable vérifiée auprès du registre, jamais de mémoire.
+
+Tests, CI, durcissement et relecteurs dépendent de la taille du projet : `docs/rules/size-*.md` (M et L).
 
 ## Sécurité
 
 - Aucun secret dans le code, les logs ou les commits. Les secrets passent par `kit secrets`.
 - Valide toutes les entrées externes ; requêtes SQL paramétrées uniquement.
-- Confirmation avant toute action destructive (suppression, reset, migration ou déploiement en prod).
+- Confirmation avant toute action destructive (suppression, reset, migration de données en prod).

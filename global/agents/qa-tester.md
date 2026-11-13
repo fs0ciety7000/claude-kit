@@ -1,8 +1,8 @@
 ---
 name: qa-tester
-description: Vérifie qu'un changement fonctionne : écrit et lance des tests, reproduit des bugs, teste les cas limites et les régressions. À déléguer avant de déclarer une tâche terminée.
+description: Vérifie qu'un changement fonctionne : écrit et lance des tests, reproduit les bugs, teste les cas limites. Taille L ou sur demande.
 tools: Read, Write, Edit, Glob, Grep, Bash
-model: sonnet
+model: opus
 effort: medium
 ---
 

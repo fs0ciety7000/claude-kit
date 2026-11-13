@@ -13,8 +13,9 @@ AJOUTER FACILEMENT
   kit add-skill <source> [--skill nom ...] [--profile p] [--project]
         installe un skill (global par défaut), le mémorise dans profiles/<p>.txt (défaut : custom)
         ex. kit add-skill vercel-labs/agent-skills --skill vercel-react-best-practices --profile web
-  kit add-agent <url|gh:owner/repo/chemin.md|fichier.md> [--project] [--force]
-        télécharge un agent, vérifie son en-tête, l'installe (global par défaut)
+  kit add-agent <url|gh:owner/repo/chemin.md|fichier.md|nom> [--project] [--force]
+        télécharge un agent, vérifie son en-tête, l'installe (global par défaut) ; un nom seul désigne un agent
+        optionnel du kit (extras/agents/ : sysop, data-engineer, game-designer, android-ui-reviewer)
   kit new-agent <nom> "<description>" [--tools "Read, Glob, Grep"] [--model haiku|sonnet|opus|fable|inherit] [--effort low|medium|high|xhigh|max]
   kit new-skill <nom> "<description>"
 
@@ -32,6 +33,10 @@ PROJETS
   kit project types                       types de projet du registre (profils et agents de chacun)
   kit project add <type>... [--dir d] [--no-skills]
         copie dans .claude/ du projet les agents et skills maison du type, installe ses profils de skills
+  kit project size S|M|L --reason "<une ligne>" [--dir d]
+        fixe la taille : project.yaml, règles docs/rules/size-*.md et leurs imports dans CLAUDE.md (relançable)
+  kit project effort <agent> <low|medium|high|xhigh|max> [--dir d]
+        règle l'effort d'un agent pour ce projet (copie de l'agent dans .claude/agents/, effort: réécrit)
   kit project template [nom]              publie le gabarit comme dépôt modèle GitHub (défaut : project-template)
   kit detect [dossier] [--json]           devine les types de projet (fichiers, dépendances) et en déduit
         profils, skills et agents du registre ; Claude valide ensuite (voir /new-project)
@@ -244,6 +249,13 @@ resolve_source() {
   esac
 }
 
+# Names of the optional agents shipped with the kit (extras/agents/*.md): installed per project, never linked globally.
+extras_agents() {
+  local f
+  for f in "$KIT_HOME"/extras/agents/*.md; do [[ -f $f ]] && basename "$f" .md; done
+  return 0
+}
+
 cmd_add_agent() {
   local src="" project=0 force=0
   while (($#)); do
@@ -255,8 +267,14 @@ cmd_add_agent() {
     esac
     shift
   done
-  [[ -n $src ]] || die "usage : kit add-agent <url|gh:owner/repo/chemin.md|fichier.md> [--project] [--force]"
+  [[ -n $src ]] || die "usage : kit add-agent <url|gh:owner/repo/chemin.md|fichier.md|nom> [--project] [--force]"
   local url name desc tools dest_dir dest
+  # A bare name (no slash, no .md, no such file here) is an optional agent of the kit: extras/agents/<name>.md.
+  if [[ $src =~ ^[a-z0-9][a-z0-9-]*$ && ! -e $src ]]; then
+    [[ -f $KIT_HOME/extras/agents/$src.md ]] \
+      || die "agent optionnel inconnu : $src (disponibles : $(extras_agents | paste -sd' ' -))"
+    src="$KIT_HOME/extras/agents/$src.md"
+  fi
   TMP_FILE=$(mktemp)  # global exprès : nettoyé par le trap EXIT, hors de la portée de la fonction
   trap 'rm -f "${TMP_FILE:-}"' EXIT
   url=$(resolve_source "$src")
@@ -307,7 +325,7 @@ cmd_add_agent() {
 }
 
 cmd_new_agent() {
-  local name=${1:-} desc=${2:-} tools="Read, Glob, Grep" model=sonnet effort=medium
+  local name=${1:-} desc=${2:-} tools="Read, Glob, Grep" model=opus effort=medium
   shift 2 2>/dev/null || true
   while (($#)); do
     case $1 in
@@ -434,8 +452,13 @@ project_add() {
   mkdir -p "$dir/.claude/agents" "$dir/.claude/skills"
   local placed=()
   for a in $(printf '%s\n' "${agents[@]}" | sort -u); do
-    [[ -f $KIT_HOME/global/agents/$a.md ]] || continue
-    cp "$KIT_HOME/global/agents/$a.md" "$dir/.claude/agents/$a.md"
+    if [[ -f $KIT_HOME/global/agents/$a.md ]]; then
+      cp "$KIT_HOME/global/agents/$a.md" "$dir/.claude/agents/$a.md"
+    elif [[ -f $KIT_HOME/extras/agents/$a.md ]]; then
+      cp "$KIT_HOME/extras/agents/$a.md" "$dir/.claude/agents/$a.md"   # optional agent: only ever installed per project
+    else
+      continue
+    fi
     placed+=("agent:$a")
   done
   # Skills maison du kit cités par le type (pocketbase, deploy-coolify-cloudflare, secrets-handling).
@@ -457,6 +480,126 @@ project_add() {
     echo "Profils à installer ensuite : kit skills install $uprof"
   fi
   echo "Commite .claude/ : le projet retrouvera ses agents et skills à chaque session, y compris sur claude.ai/code."
+}
+
+# Écrit `clé: valeur` dans un fichier plat (remplace la ligne de la clé, sinon l'ajoute en fin de fichier).
+yaml_set() { # fichier clé valeur
+  local f=$1 tmp
+  [[ -f $f ]] || : >"$f"
+  tmp=$(mktemp)
+  KEY=$2 VAL=$3 awk '
+    BEGIN { k = ENVIRON["KEY"]; v = ENVIRON["VAL"]; done = 0 }
+    index($0, k ":") == 1 { if (!done) print k ": " v; done = 1; next }
+    { print }
+    END { if (!done) print k ": " v }
+  ' "$f" >"$tmp" && cat "$tmp" >"$f"
+  rm -f "$tmp"
+}
+
+# Valeur d'une clé d'un fichier plat (vide si absente).
+yaml_get() { # fichier clé
+  [[ -f $1 ]] || return 0
+  awk -v k="$2" 'index($0, k ":") == 1 { sub(/^[^:]*:[ \t]*/, ""); print; exit }' "$1"
+}
+
+# kit project size S|M|L --reason "…" [--dir d] : fixe la taille du projet.
+# Écrit project.yaml, copie (ou retire) docs/rules/size-M.md et size-L.md, pose (ou retire) leurs imports dans le
+# CLAUDE.md du projet. Relançable : S -> L -> S ne laisse ni règle ni import en double.
+project_size() {
+  local dir=. size="" reason="" f
+  while (($#)); do
+    case $1 in
+      --dir) dir=${2:?"dossier manquant"}; shift ;;
+      --reason) reason=${2:?"justification manquante"}; shift ;;
+      -*) die "option inconnue : $1" ;;
+      *) [[ -z $size ]] || die "une seule taille : S, M ou L"; size=$1 ;;
+    esac
+    shift
+  done
+  size=$(printf '%s' "$size" | tr '[:lower:]' '[:upper:]')
+  [[ $size =~ ^[SML]$ ]] || die 'usage : kit project size S|M|L --reason "<une ligne de justification>" [--dir d]'
+  [[ -d $dir ]] || die "dossier introuvable : $dir"
+  reason=$(printf '%s' "$reason" | tr '\n' ' ')
+  local yaml="$dir/project.yaml" claude="$dir/CLAUDE.md" rules="$dir/docs/rules" cur
+  if [[ ! -f $yaml ]]; then
+    if [[ -f $KIT_HOME/templates/project/project.yaml ]]; then cp "$KIT_HOME/templates/project/project.yaml" "$yaml"; else : >"$yaml"; fi
+  fi
+  cur=$(yaml_get "$yaml" size_reason)
+  if [[ -z $reason ]]; then
+    [[ -n $cur && $cur != TODO ]] || die 'justification requise : --reason "<une ligne>"'
+    reason=$cur
+  fi
+  cur=$(yaml_get "$yaml" name)
+  if [[ -z $cur || $cur == TODO ]]; then yaml_set "$yaml" name "$(basename "$(cd "$dir" && pwd)")"; fi
+  yaml_set "$yaml" size "$size"
+  yaml_set "$yaml" size_reason "$reason"
+
+  # Règles : M pour M et L ; L seulement pour L. Une copie existante est gardée (elle peut avoir été adaptée).
+  local want=() r
+  case $size in M) want=(M) ;; L) want=(M L) ;; esac
+  for r in M L; do
+    f="$rules/size-$r.md"
+    case " ${want[*]:-} " in
+      *" $r "*)
+        mkdir -p "$rules"
+        [[ -e $f ]] || cp "$KIT_HOME/templates/rules/size-$r.md" "$f" ;;
+      *) rm -f "$f" ;;
+    esac
+  done
+  rmdir "$rules" 2>/dev/null || true
+
+  # Imports dans CLAUDE.md : on retire les deux lignes, puis on pose celles de la taille après « @AGENTS.md ».
+  if [[ -f $claude ]]; then
+    local imports="" tmp
+    for r in "${want[@]:-}"; do [[ -n $r ]] && imports="$imports@docs/rules/size-$r.md"$'\n'; done
+    tmp=$(mktemp)
+    IMPORTS=$imports SIZE=$size awk '
+      BEGIN { imp = ENVIRON["IMPORTS"]; sz = ENVIRON["SIZE"]; done = 0 }
+      $0 == "@docs/rules/size-M.md" || $0 == "@docs/rules/size-L.md" { next }
+      /^- \*\*Taille\*\* :/ { print "- **Taille** : `" sz "` (voir `project.yaml`)"; next }
+      { print }
+      $0 == "@AGENTS.md" && !done { printf "%s", imp; done = 1 }
+      END { if (!done && imp != "") printf "\n%s", imp }
+    ' "$claude" >"$tmp" && cat "$tmp" >"$claude"
+    rm -f "$tmp"
+  else
+    warn "pas de CLAUDE.md dans $dir : ajoute à la main les imports @docs/rules/size-*.md"
+  fi
+  ok "taille $size : $yaml${want[0]:+, règles ${want[*]/#/size-}}"
+}
+
+# kit project effort <agent> <low|medium|high|xhigh|max> [--dir d] : règle l'effort d'un agent pour ce projet.
+# Réécrit `effort:` dans .claude/agents/<agent>.md du projet (copie d'abord l'agent global s'il n'y est pas) et le
+# note dans project.yaml (effort.<agent>) s'il existe.
+project_effort() {
+  local dir=. agent="" level=""
+  while (($#)); do
+    case $1 in
+      --dir) dir=${2:?"dossier manquant"}; shift ;;
+      -*) die "option inconnue : $1" ;;
+      *) if [[ -z $agent ]]; then agent=$1; elif [[ -z $level ]]; then level=$1; else die "trop d'arguments"; fi ;;
+    esac
+    shift
+  done
+  [[ $agent =~ ^[a-z0-9][a-z0-9-]*$ && $level =~ ^(low|medium|high|xhigh|max)$ ]] \
+    || die "usage : kit project effort <agent> <low|medium|high|xhigh|max> [--dir d]"
+  local f="$dir/.claude/agents/$agent.md" tmp
+  if [[ ! -f $f ]]; then
+    [[ -f $KIT_HOME/global/agents/$agent.md ]] || die "agent inconnu : $agent (ni dans $dir/.claude/agents ni dans le kit)"
+    mkdir -p "$dir/.claude/agents"
+    cp "$KIT_HOME/global/agents/$agent.md" "$f"
+  fi
+  [[ $(head -n1 "$f") == --- ]] || die "$f : en-tête (---) introuvable"
+  tmp=$(mktemp)
+  LEVEL=$level awk '
+    BEGIN { n = 0; done = 0; l = ENVIRON["LEVEL"] }
+    /^---[ \t]*$/ { n++; if (n == 2 && !done) { print "effort: " l; done = 1 } print; next }
+    n == 1 && /^effort:/ { if (!done) { print "effort: " l; done = 1 } next }
+    { print }
+  ' "$f" >"$tmp" && cat "$tmp" >"$f"
+  rm -f "$tmp"
+  [[ -f $dir/project.yaml ]] && yaml_set "$dir/project.yaml" "effort.$agent" "$level"
+  ok "effort de $agent : $level ($f)"
 }
 
 # kit project template [nom] : publie templates/project comme dépôt modèle GitHub (« Use this template »).
@@ -739,12 +882,14 @@ cmd_project() {
       ok "projet créé dans $dir (dépôt git initialisé, aucun commit)"
       echo "Étapes suivantes :"
       echo "  cd $dir && claude"
-      echo "  puis : /new-project \"<description du projet>\"   (ajoute --rapide pour enchaîner sans pause)"
+      echo "  puis : /new-project \"<description du projet>\""
       ;;
     add) shift; project_add "$@" ;;
+    size) shift; project_size "$@" ;;
+    effort) shift; project_effort "$@" ;;
     types) project_types ;;
     template) shift; project_template "$@" ;;
-    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type>... | types | template [nom]" ;;
+    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type>... | size S|M|L | effort <agent> <niveau> | types | template [nom]" ;;
   esac
 }
 
@@ -821,6 +966,10 @@ cmd_list() {
   local f
   echo "== Agents (kit) =="
   for f in "$KIT_HOME"/global/agents/*.md; do
+    [[ -f $f ]] && printf '  %-22s %s\n' "$(fm_get "$f" name)" "$(fm_get "$f" description | cut -c1-90)"
+  done
+  echo "== Agents optionnels (kit add-agent <nom> --project) =="
+  for f in "$KIT_HOME"/extras/agents/*.md; do
     [[ -f $f ]] && printf '  %-22s %s\n' "$(fm_get "$f" name)" "$(fm_get "$f" description | cut -c1-90)"
   done
   echo "== Skills (kit) =="

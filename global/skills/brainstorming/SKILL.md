@@ -1,9 +1,11 @@
 ---
 name: brainstorming
-description: "You MUST use this before any creative work - creating features, building components, adding functionality, modifying behavior, or planning anything new, in software or out of it (a talk, a business, a renovation)."
+description: Clarifier une idée floue avec l'utilisateur avant de planifier : ce qu'il veut vraiment et pourquoi. Pas pour une demande déjà précise.
 ---
 
 # Brainstorming
+
+Patched for claude-kit (see `vendor/superpowers/PATCHES.md`): for vague ideas only; the design goes to `docs/brief.md`; no reviewer subagent.
 
 You are very good at building. You build what you believe your human
 partner wants, and that belief is usually thinner than it feels. This
@@ -27,9 +29,9 @@ Before you start implementing, you must, in order:
 
 1. Lay out the approaches in a message of their own, and have your
    human partner pick one (see Lay out the approaches).
-2. Write the design doc, short or full (see Size the Work).
+2. Write the design into `docs/brief.md`, short or full (see Size the Work).
 3. Get their approval of that doc.
-4. Invoke the superpowers:writing-plans skill.
+4. Hand over to the plan: skill `writing-plans` (size S), or the `architect` agent (sizes M and L).
 
 If nothing is open when you write your first message and there's one
 sensible way, steps 1 to 3 happen in that message (see Your First
@@ -242,35 +244,26 @@ For a small change, the short design covers the same points in a line
 or two each and goes straight to your human partner, without the
 builder check.
 
-**Where it goes:** in a software repo,
-`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`, committed.
-Otherwise, pick a sensible place and say where. Your human partner's
-preferences override both.
+**Where it goes:** `docs/brief.md` (objective, audience, 3 to 5 features, out of scope, constraints, direction,
+plus an **Approaches** part), committed with the project. Outside a software repo, pick a sensible place and say
+where. Your human partner's preferences override both.
 
-**Builder check** (for a project): dispatch a fresh subagent with
-`builder-check-prompt.md` in this directory. When you tell your human
-partner you're writing it up, say a reviewer will read it first and you
-may come back once with a few questions. Don't hand over the document
-until the check is back. Sort what the builder asks into three piles:
+**Builder check** (for a project): before you hand the document over, read it once as the builder who will plan from
+it, and write down what that builder would have to ask. Sort the questions into three piles:
 
-- **Answered already** by the conversation or the project: put the answer
-  in the document.
-- **Minor:** a sensible builder could settle it without changing what gets
-  built. Settle it yourself and mark it in the document as your call.
-- **Theirs:** only your human partner can answer it, and the answer changes
-  what gets built.
+- **Answered already** by the conversation or the project: put the answer in the document.
+- **Minor:** a sensible builder could settle it without changing what gets built. Settle it yourself and mark it in
+  the document as your call.
+- **Theirs:** only your human partner can answer it, and the answer changes what gets built.
 
-Bring the "theirs" pile in one message, most important first. Update the
-document with their answers, then hand it over with a short list of the
-calls you made so they can check those while reading. That's the only
-round of questions the check produces. Without a subagent tool, read the
-document as that builder yourself.
+Bring the "theirs" pile in one message, most important first. Update the document with their answers, then hand it
+over with a short list of the calls you made so they can check those while reading. No reviewer subagent.
 
 <HARD-GATE>
 Nothing gets built until your human partner approves the design doc:
 the short one for a small change, the full one for a project.
 Building includes writing product code, scaffolding, installing
-dependencies, creating projects, and invoking an implementation skill.
+dependencies, creating projects, and starting an implementation lot.
 Reading and exploring are fine.
 
 Two exceptions. If they opted out of the questions, the skill is done
@@ -278,8 +271,7 @@ and the gate goes with it. A spike they said yes to may be built; it
 stays labeled throwaway, and keeping what it produced is a new request
 that comes back through this gate.
 
-After the design doc is approved, the next step is the plan: invoke
-superpowers:writing-plans and no other skill.
+After the design doc is approved, the next step is the plan (`writing-plans`, or the `architect` agent).
 </HARD-GATE>
 
 ## Red Flags

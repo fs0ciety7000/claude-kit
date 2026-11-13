@@ -1,8 +1,8 @@
 ---
 name: frontend-dev
-description: Implémente des interfaces React, Next.js, Tailwind ou Shopify Liquid à partir d'une maquette ou d'une spécification. À déléguer pour écrire composants, pages, formulaires et intégrations d'API côté client.
+description: Implémente des interfaces React, Next.js, Tailwind ou Shopify Liquid d'après une maquette : composants, pages, formulaires.
 tools: Read, Write, Edit, Glob, Grep, Bash
-model: sonnet
+model: opus
 effort: medium
 ---
 

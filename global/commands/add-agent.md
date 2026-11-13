@@ -11,9 +11,8 @@ Ajoute un agent pour : $ARGUMENTS
 3. Installe avec `kit add-agent <source>` (ajoute `--force` seulement si l'utilisateur accepte de remplacer).
 
 **Cas B : l'argument décrit un besoin.**
-1. Vérifie `kit list` : un agent équivalent existe-t-il déjà ? Si oui, propose de l'ajuster plutôt que d'en créer un second.
+1. Vérifie `kit list` (agents du kit et optionnels de `extras/agents/`, installables par `kit add-agent <nom> --project`) : un agent équivalent existe-t-il déjà ? Si oui, propose de l'ajuster plutôt que d'en créer un second.
 2. Crée-le avec `kit new-agent <nom-en-minuscules> "<description : quand le déléguer>" --tools "<outils minimaux>"`. Par défaut lecture seule (`Read, Glob, Grep`) ; ajoute `Write, Edit` ou `Bash` seulement si le rôle l'exige.
 3. Complète le fichier créé (`~/.claude/agents/<nom>.md`) : rôle, méthode en étapes concrètes, format de sortie, limites. Court et impératif.
-4. Ajoute une ligne à la table « Agents » de `~/.claude/skills-registry.md`.
 
 Conclus en 3 lignes : nom, outils accordés, rappel de redémarrer Claude Code et de commiter le kit.

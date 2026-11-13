@@ -1,14 +1,15 @@
 # claude-kit
 
-Environnement Claude Code réutilisable : 14 sous-agents, skills routés par profil, secrets chiffrés (sops + age), garde-fous, et une commande `kit` pour tout étendre en une ligne. Pensé pour Garuda Linux (Arch), macOS et un VPS Debian/Ubuntu.
+Environnement Claude Code réutilisable : 17 sous-agents (plus 4 optionnels), skills routés par profil, secrets chiffrés (sops + age), garde-fous, et une commande `kit` pour tout étendre en une ligne. Pensé pour Garuda Linux (Arch), macOS et un VPS Debian/Ubuntu.
 
 ## Ce qui est installé
 
 | Élément | Où | Rôle |
 |---|---|---|
 | `global/CLAUDE.md` | lien vers `~/.claude/CLAUDE.md` | langue, routage, règles secrets et qualité |
-| `global/agents/*.md` (14) | `~/.claude/agents/` | ui-designer, design-critic, android-ui-reviewer, frontend-dev, backend-dev, qa-tester, brand-identity, game-designer, creative-coder, creative-content, copywriter, devops, security-reviewer, researcher |
-| `global/skills/` (3) | `~/.claude/skills/` | `pocketbase`, `secrets-handling`, `deploy-coolify-cloudflare` |
+| `global/agents/*.md` (17) | `~/.claude/agents/` | tous en `model: opus` (alias, suit les versions), effort réglé par rôle dans l'en-tête. Conception : architect. Code : frontend-dev, backend-dev, rust-dev, go-cli, pocketbase, creative-coder, devops. Design et textes : ui-designer, brand-identity, copywriter, creative-content, researcher. Relecteurs (taille L ou sur demande) : code-reviewer, qa-tester, security-reviewer (effort `xhigh`), design-critic |
+| `extras/agents/*.md` (4) | copiés dans `.claude/agents/` d'un projet | agents optionnels, jamais en global : sysop, data-engineer, game-designer, android-ui-reviewer. `kit add-agent <nom> --project` (ou `kit project add <type>` quand le registre les cite) |
+| `global/skills/` (11) | `~/.claude/skills/` | `pocketbase`, `secrets-handling`, `deploy-coolify-cloudflare`, `dependency-hygiene`, `infra-context`, `opsec`, `engram`, `project-size`, `team-builder`, `brainstorming`, `writing-plans` |
 | `global/commands/` | `~/.claude/commands/` | `/new-project`, `/add-skill`, `/add-agent`, `/env-check` |
 | `global/skills-registry.md` | `~/.claude/skills-registry.md` | type de projet → profils, skills, agents |
 | `global/settings.json` (+ `settings.vps.json`, `settings.v1.json`, `settings.retired.json`) | appliqué à `~/.claude/settings.json` (réglages gérés, voir plus bas) | permissions + hook anti-fuite ; `settings.v1.json` : instantané des entrées écrites par la v1 ; `settings.retired.json` : deny/ask que le kit retire explicitement |
@@ -59,7 +60,7 @@ kit mcp setup                             # déclare le MCP Coolify, jeton injec
 ```
 
 - **Sauvegarde ta clé privée** (`~/.config/sops/age/keys.txt`) dans ton gestionnaire de mots de passe : sans elle, les secrets sont perdus. Ne la mets jamais dans git.
-- Nouveau projet : `kit project new mon-projet && cd mon-projet && claude`, puis `/new-project "<description>"` (ajoute `--rapide` pour enchaîner sans pause). Le flux guidé passe par cadrage, stack, design (`DESIGN.md`), gabarit, déploiement Coolify + sous-domaine Cloudflare (`DEPLOY.md`), secrets, puis plan de travail. Projet existant : `kit project init`.
+- Nouveau projet : `kit project new mon-projet && cd mon-projet && claude`, puis `/new-project "<description>"` Deux validations dans le chat : le plan (brief, taille, stack, équipe, direction visuelle, brouillon de `DEPLOY.md`), puis la première mise en prod (Coolify + sous-domaine Cloudflare). Projet existant : `kit project init`.
 - Dépôt GitHub : `kit repo create mon-projet` (dans le dossier du projet) crée le dépôt privé, une clé de déploiement propre à ce dépôt (écriture) et configure `origin`. Prérequis : `git config --global user.name/user.email` et `kit secrets add GITHUB_TOKEN -g` (droits : création de dépôts + Administration pour la clé). `/new-project` l'appelle tout seul.
 - Par projet : remplis `.env.example`, puis `kit secrets add NOM` (fichier `secrets/dev.enc.json`, commitable car chiffré). `kit secrets check` compare les deux.
 - Lancer une commande avec secrets : `kit secrets run -g -- wrangler deploy`. Les valeurs n'existent que dans ce processus.
@@ -83,6 +84,21 @@ Session claude.ai/code : ajoute la variable `KIT_DASH_URL=https://kit.fs0ciety.o
 `kit dash setup` déclare aussi le serveur MCP **kit-control** (`/mcp`) : Claude y demande les validations de phase (`checkpoint`) et pose ses questions (`ask`), auxquelles tu réponds depuis le dashboard, et tient le tableau de tâches. En local, le jeton est fourni par `headersHelper` (`kit secrets run`), jamais écrit en clair ; en cloud, `install.sh --cloud` le déclare si `KIT_DASH_URL` est défini, et le proxy injecte le jeton.
 
 `kit detect [--json]` devine les types de projet à partir des fichiers (`global/detect-rules.tsv`) et en déduit profils, skills et agents ; `/new-project` s'en sert et note le choix dans `docs/memory/stack.md`.
+
+## Taille du projet (S, M, L)
+
+La taille règle ce qu'un projet exige : relecteurs, tests, CI, durcissement, équipe. Claude la choisit au cadrage
+d'après une grille (skill `project-size`) et l'annonce avec une ligne de justification ; tu la corriges d'un mot.
+Elle vit dans `project.yaml` (paires `clé: valeur`, lisibles sans `yq`).
+
+```bash
+kit project size M --reason "boutique pour quelques proches, accès restreint"   # ou S, L ; relançable
+kit project effort devops high     # effort d'un agent pour ce projet (copie dans .claude/agents/)
+```
+
+`kit project size` écrit `project.yaml`, copie `docs/rules/size-M.md` (et `size-L.md` en L) depuis `templates/rules/`,
+et ajoute leurs lignes `@docs/rules/size-*.md` au `CLAUDE.md` du projet ; en S, rien n'est importé. Revenir à une
+taille plus petite retire règles et imports. Les règles copiées sont à toi : adapte-les dans le projet.
 
 ## Équiper un projet selon son domaine et sa stack
 
@@ -209,7 +225,8 @@ Les noms de skills de chaque profil ont été vérifiés auprès des dépôts av
 kit add-skill vercel-labs/agent-skills --skill vercel-react-best-practices --profile web
 kit add-skill <dépôt> --project              # seulement pour le projet courant
 kit add-agent gh:owner/repo/chemin/agent.md  # ou une URL, ou un fichier local
-kit new-agent seo-auditor "Audite le SEO technique d'un site" --tools "Read, Glob, Grep, WebFetch"
+kit new-agent seo-auditor "Audite le SEO technique d'un site" --tools "Read, Glob, Grep, WebFetch"   # model: opus, effort: medium par défaut
+kit add-agent sysop --project                   # un agent optionnel du kit (extras/agents/), pour ce projet
 kit new-skill mon-skill "Quand et pourquoi l'utiliser"
 ```
 
@@ -292,8 +309,8 @@ git add -A && git commit && git push
 | `/resume` | début de session : relit relais, état, plan, tâches, vérifie le dépôt, propose la suite |
 | `/handoff` | fin de session : écrit `docs/memory/handoff.md`, met à jour état et plan, commite et pousse |
 
-- **Équipe** : 4 à 7 agents par projet, copiés et adaptés dans `.claude/agents/` (commandes et règles réelles du
-  projet, `model` et `effort`), listés dans la rubrique « Équipe » de `CLAUDE.md`. La session principale orchestre.
+- **Équipe** : selon la taille (S : fil principal et 1 ou 2 agents ; M : `architect` et 3 à 5 ; L : `architect` et 4 à 7,
+  avec relecteurs), copiée dans `.claude/agents/` (`model` et `effort` de l'en-tête, réglables par `kit project effort`), listée dans la rubrique « Équipe » de `CLAUDE.md`. La session principale orchestre.
 - **Hook de démarrage** du gabarit (`.claude/settings.json`) : affiche `handoff.md` et `state.md` en tête de session.
 - **Contexte d'infra** (skill `infra-context`) : `KNOWLEDGE.md` de fs0ciety-ops, lu dans `~/.kit/context/fs0ciety-ops`
   (copie en lecture seule tenue par `kit sync`, liste dans `global/context-repos.txt`) ou, en cloud, dans le dépôt
@@ -303,8 +320,10 @@ git add -A && git commit && git push
   `~/.kit/context/engram`, comme pour fs0ciety-ops : clone superficiel s'il manque (HTTPS puis SSH, avec les
   identifiants git de la machine, aucun jeton dans l'URL), sinon `git pull --ff-only` ; un échec n'est qu'un
   avertissement. Rien n'est cloné en profil cloud : la session attache le dépôt `fs0ciety7000/engram`.
-- **Workflow** : 11 skills de Superpowers copiés dans `global/skills/` à un commit relu (`vendor/superpowers/`),
-  donc épinglés : pas de mise à jour automatique depuis le dépôt amont.
+- **Workflow** : deux skills de Superpowers, `brainstorming` (idées floues) et `writing-plans` (écrit `docs/plan.md`),
+  copiés dans `global/skills/` à un commit relu puis corrigés (`vendor/superpowers/`, corrections dans `PATCHES.md`),
+  donc épinglés : pas de mise à jour automatique depuis le dépôt amont. Les neuf autres skills (exécution par
+  sous-agents, TDD, débogage, revues…) sont retirés du kit en v2 ; ils restent dans la branche `legacy/v1`.
 
 ## Mode auto (presque sans interruption)
 
@@ -352,5 +371,6 @@ claude-kit/
 │   ├── CLAUDE.md, settings.json, settings.vps.json, settings.v1.json, settings.retired.json, skills-registry.md
 │   ├── agents/  commands/  skills/
 ├── profiles/                   listes de skills par domaine
-└── templates/project/          gabarit copié par « kit project new/init »
+├── templates/project/          gabarit copié par « kit project new/init » (dont `project.yaml`)
+└── templates/rules/            règles de taille M et L, copiées par « kit project size »
 ```

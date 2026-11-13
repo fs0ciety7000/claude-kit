@@ -1,6 +1,6 @@
 ---
 name: secrets-handling
-description: Gérer clés API, jetons et variables d'environnement sans jamais les exposer : kit secrets (sops + age), .env.example, injection par commande, quoi faire si une variable manque ou si un secret a fuité. À utiliser dès qu'une tâche touche à une clé, un jeton, un .env ou un déploiement.
+description: Gérer clés API, jetons et variables sans jamais les exposer : kit secrets, .env.example, variable manquante, fuite. À utiliser dès qu'une tâche touche à un secret ou à un .env.
 ---
 
 # Secrets : procédure
