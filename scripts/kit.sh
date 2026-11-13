@@ -167,7 +167,8 @@ regen_registry() {
     echo '| Profil | Contenu (source → skills) |'
     echo '|---|---|'
     for p in $(profile_names); do
-      content=$(grep -vE '^[[:space:]]*(#|$)' "$KIT_HOME/profiles/$p.txt" \
+      # Un profil qui n'a que des commentaires : grep ne retient rien (code 1), ce qui ne doit pas arrêter le sync (pipefail).
+      content=$({ grep -vE '^[[:space:]]*(#|$)' "$KIT_HOME/profiles/$p.txt" || true; } \
         | sed -E 's# --skill # → #; s#https://github.com/##' | paste -sd';' - | sed 's/;/ ; /g')
       echo "| \`$p\` | ${content:-(vide)} |"
     done
@@ -1050,21 +1051,27 @@ cmd_autoupdate() {
 cmd_overlay() {
   [[ ${1:-} == env ]] || die "usage : kit overlay env [fichier|--clear]"
   need jq
-  local src=${2:-}
+  local src=${2:-} empty keep stamp
   if [[ $src == --clear ]]; then
-    local empty
     empty=$(mktemp) || die "mktemp échoué"
-    overlay_sync "$empty" 0 --verbose
+    overlay_sync "$empty" 0 --verbose || { rm -f "$empty"; exit 1; }
     rm -f "$empty"
+    # Le fichier source est mis de côté : sinon le sync suivant remettrait les phrases.
+    keep="$KIT_CONFIG/environment.local.txt"
+    if [[ -e $keep || -L $keep ]]; then
+      stamp=$(date +%Y%m%d%H%M%S)
+      mv "$keep" "$keep.cleared-$stamp" && ok "environment.local.txt mis de côté : $keep.cleared-$stamp"
+    fi
+    [[ -z ${KIT_LOCAL_ENVIRONMENT:-} ]] || warn "KIT_LOCAL_ENVIRONMENT est défini : kit sync réécrira ces phrases (retire la variable pour que --clear dure)"
     return 0
   fi
   if [[ -z $src ]]; then
-    [[ -f $KIT_CONFIG/environment.local.txt || -n ${KIT_LOCAL_ENVIRONMENT:-} ]] \
+    [[ -f $KIT_CONFIG/environment.local.txt || -L $KIT_CONFIG/environment.local.txt || -n ${KIT_LOCAL_ENVIRONMENT:-} ]] \
       || die "aucun fichier : crée $KIT_CONFIG/environment.local.txt (une phrase par ligne, modèle : docs/environment.local.example.txt) ou passe un fichier"
   else
-    [[ -f $src ]] || die "fichier introuvable : $src"
+    [[ -f $src || -L $src ]] || die "fichier introuvable : $src"
   fi
-  overlay_sync "$src" 0 --verbose
+  overlay_sync "$src" 0 --verbose || exit 1
 }
 
 cmd_update() {
@@ -1119,6 +1126,9 @@ cmd_doctor() {
   # Restes du tableau de bord abandonné : retirés par kit sync.
   if dashboard_hook_left "$CLAUDE_HOME/settings.json"; then
     echo "! un hook du tableau de bord abandonné reste dans settings.json : kit sync"
+  fi
+  if t=$(dashboard_env_left); then
+    echo "! variable(s) du tableau de bord abandonné encore dans l'environnement : $t (retire-les ; jeton à révoquer côté serveur, voir README « Suivre une session »)"
   fi
   if ((cloud)); then
     command -v kit >/dev/null 2>&1 && ok "kit dans le PATH" || { echo "✗ kit absent du PATH"; bad=1; }
