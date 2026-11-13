@@ -4,3 +4,11 @@ name: TODO
 size: TODO
 size_reason: TODO
 stack: TODO
+# Mise en ligne (kit ship, /ship). « "" » = non défini. expose : none | tailnet | access (derrière Cloudflare Access) |
+# public ; domain : nom complet sans https:// ; server : nom défini dans ship.conf du poste ; volumes : yes | no.
+expose: none
+domain: ""
+server: ""
+coolify_uuid: ""
+health_path: /
+volumes: no
