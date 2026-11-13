@@ -24,9 +24,15 @@ agents lancés, temps jusqu'au premier déploiement. Plan : `docs/plans/2026-11-
 
 | Version | Date | Tokens (total) | Durée | Validations | Agents | Premier déploiement |
 |---|---|---|---|---|---|---|
-| v1 | | | | | | |
+| v1 | 2026-11-13 | 23,6 M (sortie 277 k, cache écrit 823 k) | 47 min | 5 | 6 lancés (11 sous-agents au total, 160 messages) | non mesuré |
 | v2 (lot 2) | | | | | | |
 | v2 (lot 6) | | | | | | |
 
 `total` additionne entrée, cache écrit, cache lu et sortie ; le cache lu domine et coûte peu : comparer aussi
 `output` et `cache_write`, plus représentatifs de l'effort.
+
+### Détail v1 (2026-11-13, poste Linux, énoncé de référence)
+
+Session `measure` : 93 messages dans la session principale + 160 dans 11 sous-agents ; 20 messages humains ;
+modèles Opus 5.5 et Sonnet 5.5. Tokens : entrée 548, cache écrit 822 829, cache lu 22 549 447, sortie 277 040.
+Le premier déploiement n'a pas été chronométré (à mesurer pour la v2 : heure du premier HTTPS qui répond).
