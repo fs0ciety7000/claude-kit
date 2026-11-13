@@ -2319,7 +2319,8 @@ mkdir -p "$PB"
 [[ ! -e $PB/.forgejo && ! -e $PB/.fs0 ]] && ok_ "project add --no-ci : aucune CI posée" || ko_ "project add --no-ci"
 cmp -s "$PNEW/.forgejo/workflows/ci.yml" "$CID/go-web.yml" && ok_ "project new backend-go : CI go-web posée" || ko_ "project new : CI"
 "$KIT" help 2>&1 | grep -q 'kit project ci' && ok_ "usage : kit project ci documenté" || ko_ "usage : kit project ci"
-grep -q 'kit project add <type>...` (pose aussi la CI Forgejo)' "$ROOT/global/commands/new-project.md" && ok_ "/new-project : kit project add pose la CI" || ko_ "/new-project : CI non citée"
+grep -q 'kit new <nom> --stack' "$ROOT/global/commands/new-project.md" && grep -q '/ship' "$ROOT/global/commands/new-project.md" \
+  && ok_ "/new-project : délègue le squelette à kit new et la mise en prod à /ship" || ko_ "/new-project : kit new ou /ship non cités"
 grep -qF -- '- CI dans `.forgejo/workflows/`, jamais `.github/workflows/`.' "$ROOT/global/CLAUDE.md" && ok_ "CLAUDE.md global : CI dans .forgejo/workflows/" || ko_ "CLAUDE.md global : règle de CI absente"
 
 # kit sync ne salit pas le dépôt du kit, et refuse d'appliquer des réglages si scripts/ ou global/settings*.json y ont des
