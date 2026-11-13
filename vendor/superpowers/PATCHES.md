@@ -20,7 +20,7 @@ installed either (`PLUGINS.md`): it would bring all the skills back, with a star
 
 | Part | Upstream | Here | Why |
 |---|---|---|---|
-| `description` | "You MUST use this before any creative work…" | French, limited to a vague idea ("Clarifier une idée floue…"), 20 words | the upstream trigger fired on every feature and added a design phase to clear requests |
+| `description` | "You MUST use this before any creative work…" | French, limited to a vague idea ("Clarifier une idée floue…"), 22 words | the upstream trigger fired on every feature and added a design phase to clear requests |
 | Handoff (opening list, HARD-GATE) | invoke `superpowers:writing-plans` and no other skill | hand over to `writing-plans` (size S) or the `architect` agent (M, L) | the skills it chained to are removed; M and L plans come from `architect` |
 | Design document | `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` | `docs/brief.md`, same content plus an Approaches part | one brief per project, read by every agent |
 | Builder check | a fresh subagent runs `builder-check-prompt.md` | the main thread reads the document as that builder, same three piles of questions | one fewer subagent; `builder-check-prompt.md` deleted |
@@ -37,7 +37,7 @@ implementer cannot make alone; signatures and test names rather than bodies; sel
 
 | Part | Upstream | Here | Why |
 |---|---|---|---|
-| `description` | "Use when you have a spec…" | French, "écrire le plan … en lots dans docs/plan.md", 24 words | matches the harness language and the v2 plan format |
+| `description` | "Use when you have a spec…" | French, "écrire le plan … en lots dans docs/plan.md", 23 words | matches the harness language and the v2 plan format |
 | Output file | `docs/superpowers/plans/YYYY-MM-DD-<feature>.md` | `docs/plan.md`, lots with checkboxes, `Agent / Parallel with / Done when` line per lot, `Équipe` table | `docs/plan.md` is the only task list |
 | Unit of work | bite-sized TDD steps, one subagent per task | one lot = one agent, tasks are checkable results | v2: one subagent per lot |
 | Plan header | "REQUIRED SUB-SKILL: use superpowers:subagent-driven-development or executing-plans" | removed | those skills are removed |

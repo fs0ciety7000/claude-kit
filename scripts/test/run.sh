@@ -643,6 +643,111 @@ nt=$(bash "$KIT" project types 2>/dev/null | wc -l | tr -d ' ')
 [[ $nt -ge 16 ]] && ok_ "registre : kit project types lit $((nt - 1)) types (registry_rows)" || ko_ "registre : kit project types ($nt lignes)"
 
 # ---------------------------------------------------------------------------
+section "agents et Superpowers (2f)"
+# Every global agent: model alias opus, effort valid and set per role, description <= 25 words.
+declare -a EFFORT_OF=(
+  "architect=high" "backend-dev=medium" "brand-identity=high" "code-reviewer=high" "copywriter=medium"
+  "creative-coder=medium" "creative-content=medium" "design-critic=medium" "devops=medium" "frontend-dev=medium"
+  "qa-tester=medium" "researcher=medium" "security-reviewer=xhigh" "ui-designer=high"
+  "rust-dev=medium" "go-cli=medium" "pocketbase=medium")
+want_effort() { local e; for e in "${EFFORT_OF[@]}"; do [[ ${e%%=*} == "$1" ]] && { echo "${e#*=}"; return; }; done; }
+fm() { awk -v k="$2" 'NR == 1 && $0 != "---" {exit} NR > 1 && $0 == "---" {exit} NR > 1 && index($0, k ":") == 1 {sub("^" k ":[[:space:]]*", ""); print; exit}' "$1"; }
+bad_model="" bad_effort="" bad_desc="" bad_name="" n_agents=0
+for f in "$ROOT"/global/agents/*.md; do
+  n=$(basename "$f" .md); n_agents=$((n_agents + 1))
+  [[ $(fm "$f" name) == "$n" ]] || bad_name="$bad_name $n"
+  [[ $(fm "$f" model) == opus ]] || bad_model="$bad_model $n"
+  e=$(fm "$f" effort); w=$(want_effort "$n")
+  [[ $e =~ ^(low|medium|high|xhigh|max)$ && -n $w && $e == "$w" ]] || bad_effort="$bad_effort $n($e)"
+  [[ $(fm "$f" description | wc -w | tr -d ' ') -le 25 ]] || bad_desc="$bad_desc $n"
+done
+[[ -z $bad_name ]] && ok_ "agents : name = nom du fichier ($n_agents agents)" || ko_ "agents : name" "$bad_name"
+[[ -z $bad_model ]] && ok_ "agents : model: opus partout" || ko_ "agents : model" "$bad_model"
+[[ -z $bad_effort ]] && ok_ "agents : effort valide et conforme au rôle" || ko_ "agents : effort" "$bad_effort"
+[[ -z $bad_desc ]] && ok_ "agents : description <= 25 mots" || ko_ "agents : description trop longue" "$bad_desc"
+[[ $n_agents == "${#EFFORT_OF[@]}" ]] && ok_ "agents : $n_agents fichiers = le barème d'effort" || ko_ "agents : $n_agents fichiers pour ${#EFFORT_OF[@]} rôles du barème"
+miss=""
+for a in "${EFFORT_OF[@]}"; do [[ -f $ROOT/global/agents/${a%%=*}.md ]] || miss="$miss ${a%%=*}"; done
+[[ -z $miss ]] && ok_ "agents : rust-dev, go-cli, pocketbase présents (et tout le barème)" || ko_ "agents : manquants" "$miss"
+badskill=""
+for f in "$ROOT"/global/agents/*.md "$ROOT"/extras/agents/*.md; do
+  for s in $(awk 'NR == 1 {next} $0 == "---" {exit} /^skills:/ {c = 1; next} c && /^[[:space:]]+-/ {sub(/^[[:space:]]+-[[:space:]]*/, ""); print; next} c {c = 0}' "$f"); do
+    [[ -f $ROOT/global/skills/$s/SKILL.md ]] || badskill="$badskill $(basename "$f"):$s"
+  done
+done
+[[ -z $badskill ]] && ok_ "agents : chaque skill préchargé (skills:) existe" || ko_ "agents : skill préchargé introuvable" "$badskill"
+grep -qx '  - pocketbase' "$ROOT/global/agents/pocketbase.md" && ok_ "pocketbase : précharge le skill pocketbase" || ko_ "pocketbase : skills:"
+if grep -qi 'engram' "$ROOT/global/agents/brand-identity.md" "$ROOT/global/agents/ui-designer.md"; then ko_ "brand-identity, ui-designer : plus de lecture d'Engram"; else ok_ "brand-identity, ui-designer : aucune lecture d'Engram"; fi
+if grep -q 'chaque PR\|recommande `security-reviewer`' "$ROOT/global/agents/code-reviewer.md"; then ko_ "code-reviewer : contradictions retirées"; else ok_ "code-reviewer : ni « chaque PR » ni recommandation de security-reviewer"; fi
+for r in code-reviewer qa-tester design-critic security-reviewer brand-identity; do
+  fm "$ROOT/global/agents/$r.md" description | grep -q 'Taille L' && ok_ "$r : réservé à la taille L ou à la demande" || ko_ "$r : description sans « Taille L »"
+done
+
+# Optional agents: extras/agents/, never linked globally, installable per project.
+for a in sysop data-engineer game-designer android-ui-reviewer; do
+  [[ -f $ROOT/extras/agents/$a.md && ! -e $ROOT/global/agents/$a.md ]] && ok_ "extras : $a hors de global/agents" || ko_ "extras : $a mal placé"
+done
+XP="$TMP/extras-proj"; mkdir -p "$XP"
+(cd "$XP" && bash "$KIT" add-agent sysop --project >/dev/null 2>&1)
+[[ -f $XP/.claude/agents/sysop.md && ! -e $KIT_HOME/global/agents/sysop.md ]] \
+  && ok_ "kit add-agent sysop --project : installé dans le projet seulement" || ko_ "kit add-agent <extra> --project"
+(cd "$XP" && bash "$KIT" add-agent no-such-agent --project >/dev/null 2>&1) && ko_ "extra inconnu : doit échouer" || ok_ "kit add-agent : nom inconnu refusé"
+bash "$KIT" project add android --no-skills --dir "$XP" >/dev/null 2>&1
+[[ -f $XP/.claude/agents/android-ui-reviewer.md ]] && ok_ "kit project add android : copie l'agent optionnel android-ui-reviewer" || ko_ "kit project add android : agent optionnel"
+klist=$(bash "$KIT" list 2>/dev/null)
+grep -q 'Agents optionnels' <<<"$klist" && ok_ "kit list : rubrique des agents optionnels" || ko_ "kit list : agents optionnels"
+grep -q 'effort=medium' "$ROOT/scripts/kit.sh" && grep -q 'tools="Read, Glob, Grep" model=opus' "$ROOT/scripts/kit.sh" \
+  && ok_ "kit new-agent : model: opus par défaut" || ko_ "kit new-agent : modèle par défaut"
+reviewers_in_registry=$(awk -F'|' '/^\| `/ {print $6}' "$ROOT/global/skills-registry.md" | grep -cE 'code-reviewer|qa-tester|security-reviewer|design-critic' || true)
+[[ $reviewers_in_registry == 0 ]] && ok_ "registre : aucun relecteur dans la colonne des agents" || ko_ "registre : relecteurs dans la colonne des agents" "$reviewers_in_registry lignes"
+
+# team-builder is short; every skill and command description stays short.
+tbw=$(wc -w <"$ROOT/global/skills/team-builder/SKILL.md" | tr -d ' ')
+[[ $tbw -le 250 ]] && ok_ "team-builder : $tbw mots (<= 250)" || ko_ "team-builder : $tbw mots (> 250)"
+longdesc=""
+for f in "$ROOT"/global/skills/*/SKILL.md "$ROOT"/global/commands/*.md; do
+  [[ $(fm "$f" description | wc -w | tr -d ' ') -le 30 ]] || longdesc="$longdesc $(basename "$(dirname "$f")")/$(basename "$f")"
+done
+[[ -z $longdesc ]] && ok_ "skills et commandes : description <= 30 mots" || ko_ "description > 30 mots" "$longdesc"
+
+# Superpowers: only brainstorming and writing-plans remain, patched and documented.
+gone=""
+for s in executing-plans subagent-driven-development dispatching-parallel-agents requesting-code-review receiving-code-review \
+  systematic-debugging test-driven-development verification-before-completion finishing-a-development-branch; do
+  [[ -e $ROOT/global/skills/$s ]] && gone="$gone $s"
+done
+[[ -z $gone ]] && ok_ "Superpowers : les 9 skills retirés sont absents de global/skills" || ko_ "Superpowers : skills encore présents" "$gone"
+refs=$(grep -rnE 'superpowers:|subagent-driven|executing-plans|test-driven|systematic-debugging|verification-before|finishing-a-dev|requesting-code-review|receiving-code-review|dispatching-parallel' \
+  "$ROOT/global" "$ROOT/templates" "$ROOT/README.md" "$ROOT/PLUGINS.md" "$ROOT/docs" \
+  --exclude=collections-index.json --exclude-dir=plans --exclude=measure.md 2>/dev/null | cut -c1-160 || true)
+[[ -z $refs ]] && ok_ "aucune référence aux skills retirés (global, templates, README, PLUGINS, docs hors plans et mesure)" || ko_ "références aux skills retirés" "$refs"
+WP="$ROOT/global/skills/writing-plans/SKILL.md"
+if grep -q 'REQUIRED SUB-SKILL\|using-git-worktrees' "$WP"; then ko_ "writing-plans : ni REQUIRED SUB-SKILL ni using-git-worktrees"; else ok_ "writing-plans : ni REQUIRED SUB-SKILL ni using-git-worktrees"; fi
+grep -q 'docs/plan.md' "$WP" && grep -q -- '- \[ \]' "$WP" && grep -qi 'one agent runs one lot' "$WP" \
+  && ok_ "writing-plans : écrit docs/plan.md, lots, cases à cocher, un agent par lot" || ko_ "writing-plans : format docs/plan.md"
+BS="$ROOT/global/skills/brainstorming/SKILL.md"
+if fm "$BS" description | grep -q 'MUST'; then ko_ "brainstorming : description sans « MUST »"; else ok_ "brainstorming : description limitée aux idées floues (pas de « MUST »)"; fi
+grep -q 'docs/brief.md' "$BS" && ! grep -q 'docs/superpowers' "$BS" && ok_ "brainstorming : le design va dans docs/brief.md" || ko_ "brainstorming : emplacement du design"
+[[ -f $ROOT/vendor/superpowers/PATCHES.md ]] && grep -q 'brainstorming' "$ROOT/vendor/superpowers/PATCHES.md" && grep -q 'writing-plans' "$ROOT/vendor/superpowers/PATCHES.md" \
+  && ok_ "vendor/superpowers/PATCHES.md consigne les deux correctifs" || ko_ "PATCHES.md"
+if grep -q 'plugin install superpowers' "$ROOT/PLUGINS.md"; then ko_ "PLUGINS.md : plus de commande d'installation de Superpowers"; else ok_ "PLUGINS.md : plugin Superpowers retiré"; fi
+
+# kit sync on a copy of the tree, temp HOME, cloud mode (no network, no write in the repository): no broken link,
+# and the links of agents and skills removed from a previous version are pruned.
+SY="$TMP/sync"; mkdir -p "$SY/kit" "$SY/home/.claude/agents" "$SY/home/.claude/skills"
+(cd "$ROOT" && tar --exclude=.git -cf - .) | tar -xf - -C "$SY/kit"
+ln -s "$SY/kit/global/agents/sysop.md" "$SY/home/.claude/agents/sysop.md"
+ln -s "$SY/kit/global/skills/executing-plans" "$SY/home/.claude/skills/executing-plans"
+(
+  export HOME="$SY/home" KIT_HOME="$SY/kit" KIT_CONFIG="$SY/home/.config/claude-kit" CLAUDE_CODE_REMOTE=true
+  bash "$SY/kit/scripts/kit.sh" sync >/dev/null 2>&1
+)
+broken=$(find -L "$SY/home/.claude" -type l 2>/dev/null | wc -l | tr -d ' ')
+[[ $broken == 0 ]] && ok_ "kit sync : aucun lien cassé dans ~/.claude (agents, skills, commandes)" || ko_ "kit sync : $broken lien(s) cassé(s)" "$(find -L "$SY/home/.claude" -type l | sed "s#$SY##")"
+[[ $(find "$SY/home/.claude/agents" -name '*.md' | wc -l | tr -d ' ') == "$n_agents" ]] \
+  && ok_ "kit sync : $n_agents agents liés, les extras ne le sont pas" || ko_ "kit sync : nombre d'agents liés"
+
+# ---------------------------------------------------------------------------
 section "budgets de contexte (context-budget.sh)"
 CB="$ROOT/scripts/context-budget.sh"
 CBT="$TMP/ctx"
@@ -713,12 +818,13 @@ missing=$(jq -r '
 EH="$TMP/emptyhome"; mkdir -p "$EH"
 HOME=$EH bash "$CB" --json >/dev/null 2>&1
 [[ -z $(ls -A "$EH") ]] && ok_ "arbre réel : un HOME vide le reste (les hooks tournent dans un bac à sable)" || ko_ "arbre réel : effets de bord des hooks"
-# Budgets owned by delivered sub-lots are enforced (2e: global CLAUDE.md, /new-project, registry); the others
-# (agents and Superpowers 2f, hooks 2c/2d, startup memory 2c) stay warnings until their sub-lot lands.
-ENFORCED='global_claude_md.words new_project_command.words skills_registry.words'
+# Budgets owned by delivered sub-lots are enforced (2e: global CLAUDE.md, /new-project, registry; 2f: agent and
+# skill/command descriptions, Superpowers on the /new-project path); the others (hooks 2c/2d, startup memory 2c) stay
+# warnings until their sub-lot lands.
+ENFORCED='global_claude_md.words new_project_command.words skills_registry.words agent_descriptions.words skill_command_descriptions.words superpowers_path.words'
 grep -E "^($(printf '%s' "$ENFORCED" | tr ' ' '|'))	" "$ROOT/scripts/context-budgets.tsv" >"$TMP/budgets-enforced.tsv"
 if bash_out=$(BUDGET_ENFORCE=1 bash "$CB" --budgets "$TMP/budgets-enforced.tsv" --budget 2>&1); then
-  ok_ "budgets appliqués (CLAUDE.md global, /new-project, registre) : respectés"
+  ok_ "budgets appliqués (CLAUDE.md global, /new-project, registre, agents, skills et commandes, Superpowers) : respectés"
 else
   ko_ "budgets appliqués dépassés" "$(grep 'DÉPASSÉ' <<<"$bash_out" | tr -s ' ' | paste -sd';' -)"
 fi
