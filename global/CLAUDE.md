@@ -44,5 +44,5 @@ décision durable dans `decisions.md`. `/handoff` sur demande ou en fin de sessi
 
 ## Permissions
 
-Action de routine bloquée que le projet refera : `kit perms allow "<règle>" --reason "<pourquoi>"`. Jamais
-d'édition à la main des réglages.
+Routine bloquée qui reviendra : `kit perms allow "<règle>" --reason "<pourquoi>"`. Fin de session : skill
+`fewer-permission-prompts` complète les allows du projet. Jamais d'édition à la main des réglages.
