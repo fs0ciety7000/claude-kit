@@ -176,7 +176,6 @@ run_start_hook() { # command
   local out ctx
   out=$(cd "$P" && timeout_cmd 15 env -i PATH="$PATH" HOME="$H" LC_ALL="$LC_ALL" TMPDIR="$SB" \
     CLAUDE_PROJECT_DIR="$P" CLAUDE_CODE_REMOTE= KIT_AUTOUPDATE=0 KIT_DOCKERD=0 \
-    KIT_DASH_URL="https://dashboard.invalid" KIT_DASH_TOKEN=measure \
     https_proxy=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 NO_PROXY= \
     bash -c "$1" <<<"$INPUT" 2>/dev/null) || true
   ctx=$(printf '%s' "$out" | jq -er '.hookSpecificOutput.additionalContext // empty' 2>/dev/null) || ctx=$out
@@ -187,7 +186,6 @@ hook_note() { # hook basename
   case "$1" in
     kit-autoupdate.sh) echo "network (git fetch): measured with KIT_AUTOUPDATE=0, i.e. 0; empty when the kit is up to date, one line after an update" ;;
     kit-dockerd.sh) echo "cloud sessions only: 0 on a local session" ;;
-    kit-emit.sh) echo "measured with a dashboard URL configured (owner's setup); the send itself is detached" ;;
     *) echo "" ;;
   esac
 }
@@ -210,13 +208,13 @@ fi
 m sessionstart_kit.words "$kit_w"; m sessionstart_kit.chars "$kit_c"; m sessionstart_kit.hooks "$kit_n"
 det "$(jq -Rn '{sessionstart_kit: {detail: [inputs | split("\t") | {name: .[0], words: (.[1] | tonumber), chars: (.[2] | tonumber), note: .[3]}]}}' <"$TMP/hooks.tsv")"
 
-# Project template hook, with docs/memory/*.md filled past any cap (5000 ASCII chars each), then with the fresh template.
+# Project template hook, with docs/memory/*.md filled past any cap (about 5000 ASCII chars each, in lines), then with the fresh template.
 proj_hook="$ROOT/templates/project/.claude/settings.json"
 pc=0 pw=0 fc=0 fw=0
 if [ -f "$proj_hook" ]; then
   jq -r '(.hooks.SessionStart // [])[] | .hooks[]? | select(.type == "command") | .command' "$proj_hook" >"$TMP/proj-start.cmds" 2>/dev/null || : >"$TMP/proj-start.cmds"
-  fill() { # file : 5000 ASCII chars of plain prose
-    awk 'BEGIN {for (i = 0; length(s) < 5000; i++) s = s "Fait : lot " i " termine, tests verts, prochaine etape documentee. "; print substr(s, 1, 4999)}' >"$1"
+  fill() { # file : about 5000 ASCII chars of plain prose, one 70-character list item per line (a real state.md)
+    awk 'BEGIN {for (i = 0; t < 5000; i++) {l = sprintf("- Fait : lot %d termine, tests verts, prochaine etape documentee.", i); print l; t += length(l) + 1}}' >"$1"
   }
   # fresh template
   rm -rf "$P/docs"; mkdir -p "$P/docs"

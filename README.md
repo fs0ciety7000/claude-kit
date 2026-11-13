@@ -67,21 +67,23 @@ kit mcp setup                             # déclare le MCP Coolify, jeton injec
 - Interroger Coolify ou Cloudflare en lecture : `kit api coolify /applications --jq 'map({uuid,name,status})'`. Le jeton passe à `curl` par stdin (jamais dans `ps`), le filtre `--jq` est obligatoire (la réponse brute peut contenir des variables d'environnement). Les écritures (`POST`, `PUT`, `PATCH`) et les actions (`TRIGGER`, qui lance un déploiement) sont autorisées sans confirmation dans `global/settings.json` ; `DELETE` est refusé. Pour redemander une confirmation, déplace les lignes `kit api … POST/PUT/PATCH/TRIGGER` de `allow` vers `ask`. Une valeur secrète dans un corps JSON s'écrit `__SECRET:NOM__`. Les agents utilisent cette commande plutôt que `curl`.
 - Jetons à portée minimale : Cloudflare par zone et par permission, GitHub fine-grained, Coolify séparé dev/prod.
 
-## Dashboard en direct (kit.fs0ciety.org)
+## Suivre une session
 
-Le dépôt [`claude-kit-dashboard`](https://github.com/fs0ciety7000/claude-kit-dashboard) affiche en direct les sessions Claude Code (terminal, claude.ai/code, worker VPS) : fil d'événements, arbre des sous-agents et workflows, fichiers modifiés, commits, mémoire du projet (`docs/memory/*.md`) et statut Coolify. Il est protégé par Cloudflare Access.
+Le tableau de bord en direct (hook d'émission, serveur MCP de validation) est **abandonné** : `docs/plan.md` est la
+seule liste de tâches, les validations se font dans le chat, et une session se suit avec `claude remote-control`
+(depuis l'app Claude ou claude.ai/code, voir plus bas). `kit sync` nettoie les postes qui l'avaient : il retire le
+hook et ses autorisations de `~/.claude/settings.json` (fusion à trois points, tes hooks et règles restent), supprime
+le lien du hook (seulement s'il pointe dans ce kit) et le fichier d'URL, et retire le serveur MCP de portée utilisateur
+s'il est déclaré. `kit doctor` signale un reste, y compris `KIT_DASH_TOKEN` ou `KIT_DASH_URL` encore présents dans
+l'environnement (leurs noms seulement, jamais les valeurs).
 
-Le hook `kit-emit` (installé par `kit sync`, inactif tant que rien n'est configuré) envoie chaque événement en arrière-plan, sans jamais ralentir Claude, après masquage des valeurs qui ressemblent à des secrets.
-
-```bash
-kit dash setup https://kit.fs0ciety.org     # active l'envoi
-kit secrets add KIT_DASH_TOKEN -g           # jeton affiché dans Réglages du dashboard
-kit dash status
-```
-
-Session claude.ai/code : ajoute la variable `KIT_DASH_URL=https://kit.fs0ciety.org` à l'environnement cloud et enregistre le jeton comme *network secret* de l'hôte `kit.fs0ciety.org` (en-tête `Authorization: Bearer`) : le proxy l'injecte, il n'existe dans aucune variable.
-
-`kit dash setup` déclare aussi le serveur MCP **kit-control** (`/mcp`) : Claude y demande les validations de phase (`checkpoint`) et pose ses questions (`ask`), auxquelles tu réponds depuis le dashboard, et tient le tableau de tâches. En local, le jeton est fourni par `headersHelper` (`kit secrets run`), jamais écrit en clair ; en cloud, `install.sh --cloud` le déclare si `KIT_DASH_URL` est défini, et le proxy injecte le jeton.
+**À faire de ton côté, le kit n'y touche pas** (rien de tout cela n'est automatique) :
+1. révoquer le jeton du tableau de bord côté serveur (réglages du dashboard), puis, sur chaque poste local,
+   `kit secrets rm KIT_DASH_TOKEN -g` ;
+2. dans l'environnement cloud : retirer la variable `KIT_DASH_URL` et le secret réseau (en-tête `Authorization`) de
+   l'hôte du dashboard ;
+3. arrêter l'application du tableau de bord sur son serveur et purger ses données (événements, mémoire de projet,
+   jetons), puis retirer son entrée DNS et sa politique d'accès si elles ne servent plus.
 
 `kit detect [--json]` devine les types de projet à partir des fichiers (`global/detect-rules.tsv`) et en déduit profils, skills et agents ; `/new-project` s'en sert et note le choix dans `docs/memory/stack.md`.
 
@@ -102,7 +104,7 @@ taille plus petite retire règles et imports. Les règles copiées sont à toi :
 
 ## Équiper un projet selon son domaine et sa stack
 
-`/new-project` a une phase « Équipement » : Claude extrait des mots-clés du domaine (finance, compta…) et de la stack (laravel, php…), lance `kit equip search` (skills de skills.sh triés par installations, agents et skills de l'index des collections), garde ce qui est utile au projet après relecture, le fait valider (outil `equip` de kit-control, avec sources de confiance), l'installe au niveau du projet (`--project`, commité dans `.claude/`) puis relance la session pour charger les nouveaux skills. Une stack absente du registre fait l'objet d'une PR automatique (`kit registry propose`) : une fois fusionnée, le projet suivant l'installe directement.
+`/new-project` a une phase « Équipement » : Claude extrait des mots-clés du domaine (finance, compta…) et de la stack (laravel, php…), lance `kit equip search` (skills de skills.sh triés par installations, agents et skills de l'index des collections), garde ce qui est utile au projet après relecture, le fait valider dans le chat (avec les sources de confiance), l'installe au niveau du projet (`--project`, commité dans `.claude/`) puis relance la session pour charger les nouveaux skills. Une stack absente du registre fait l'objet d'une PR automatique (`kit registry propose`) : une fois fusionnée, le projet suivant l'installe directement.
 
 ### Index des collections
 
@@ -169,23 +171,49 @@ fusionnés.
   retirées (doublons compris) : un hook à toi dans le même groupe, un script du kit réutilisé avec un autre matcher, un
   script à toi dans ce dossier, un chemin hors préfixe (`/opt/…/claude-kit/hooks/…`) ou un événement entier que le kit
   ne connaît pas restent. Les groupes retirés sont nommés dans la sortie.
-- **Première exécution après la mise à niveau** (pas de registre) : tout ce que le kit v1 écrivait pour `allow`, les
+- **Instantané v1, à chaque sync** : le registre est toujours **uni** à l'instantané. Ce qu'un `kit sync` de la v1 réécrit
+  après coup (retour arrière, autre poste : hooks du tableau de bord, autorisations du tableau de bord, règles allow retirées,
+  anciennes phrases) est donc retiré au sync v2 suivant ; `deny`, `ask`, `soft_deny` et `hard_deny` restent régis par
+  `settings.retired.json`. Sans registre (première exécution après la mise à niveau), tout ce que le kit v1 écrivait pour `allow`, les
   hooks et `autoMode` (`global/settings.v1.json`, union de toutes les versions de `global/settings.json` sur `main` ;
   le profil `vps` ajoute les siennes via `profiles.vps`) compte comme venant du kit : ces entrées `allow` et ces hooks
   disparaissent si le kit ne les a plus. Limite : une entrée `allow` que tu avais ajoutée à la main et qui est
   identique à une entrée v1 est prise pour une entrée du kit. Les phrases d'`autoMode.*` y sont stockées en empreintes
-  SHA-256 (`autoModeSha256`, empreinte de la chaîne exacte), pas en clair : le dépôt est public et ces phrases décrivent
-  l'infra interne.
+  SHA-256 (`autoModeSha256`, empreinte de la chaîne exacte), pas en clair : le dépôt est public et ces phrases décrivaient
+  l'infra interne. Les empreintes des phrases sorties du dépôt (domaines internes) y restent : un poste qui les a encore
+  les perd au sync, sauf si elles sont déclarées en local.
 - **`defaultMode`** vient de K, mais un passage à un mode plus permissif (`default` → `auto`…) est refusé : le mode
   actuel reste et `kit sync` le dit. `kit sync --yes` l'accepte (le hook de mise à jour automatique ne le fait jamais).
-- **Surcharge propre au poste** : `~/.config/claude-kit/settings.local.json` (jamais dans Git, absente par défaut,
-  à créer à la main ; à ne pas confondre avec le `~/.claude/settings.local.json` de Claude Code). Même forme que
-  `global/settings.json`, limitée aux clés gérées : ses entrées s'ajoutent à K sur ce poste seulement (par exemple des
-  entrées `autoMode.environment` décrivant des domaines internes) ; supprimer le fichier retire ses entrées `allow` au
-  sync suivant. Le fichier est remis en 600 à chaque sync. Il ne peut pas contenir `defaultMode: bypassPermissions` ni
-  de règle `allow` large (`Bash(*)`, `Bash`, `*`, `Edit`, `Write` sans chemin…) : le sync s'arrête avec un message,
-  rien n'est écrit. Ce qu'elle apporte est affiché à chaque sync (règles pour les permissions, nombre d'entrées pour
-  `hooks` et `autoMode`).
+- **Surcharge propre au poste** : `~/.config/claude-kit/settings.local.json` (jamais dans Git, ignoré par `.gitignore`,
+  absente par défaut ; à ne pas confondre avec le `~/.claude/settings.local.json` de Claude Code). Même forme que
+  `global/settings.json`, limitée aux clés gérées : ses entrées s'ajoutent à K sur ce poste seulement ; supprimer le
+  fichier retire ses entrées `allow` au sync suivant. Le fichier est remis en 600 à chaque sync. Il ne peut pas contenir
+  `defaultMode: bypassPermissions` ni de règle `allow` large (`Bash(*)`, `Bash`, `*`, `Edit`, `Write` sans chemin…) :
+  le sync s'arrête avec un message, rien n'est écrit. Ce qu'elle apporte est affiché à chaque sync (règles pour les
+  permissions, nombre d'entrées pour `hooks` et `autoMode`).
+- **Domaines internes (`autoMode.environment`)** : le dépôt est public, les phrases qui nomment tes domaines et hôtes
+  internes n'y sont plus ; `global/settings.json` ne garde qu'un texte générique. Chaque poste les déclare dans un fichier
+  texte **hors dépôt**, `~/.config/claude-kit/environment.local.txt` (une phrase par ligne, en anglais, `#` pour un
+  commentaire ; modèle : `docs/environment.local.example.txt`, avec des domaines factices). `kit sync` (et
+  `install.sh`) en tire l'entrée `autoMode.environment` de `settings.local.json` (600, ses autres clés sont conservées,
+  rien n'est écrit si rien ne change) ; `kit overlay env [fichier]` le fait à la demande. Les phrases ne sont jamais
+  affichées : ni par le sync, ni par `kit sync --dry-run` (comptes seulement, calculés depuis la surcharge telle qu'elle
+  serait écrite). Session cloud : la variable `KIT_LOCAL_ENVIRONMENT` (même format, lignes séparées par des retours à la
+  ligne) alimente ce fichier à chaque sync.
+  - **Refus** (avertissement sur stderr, donc dans `autoupdate.log` ; **le sync continue** et les phrases précédentes
+    restent appliquées) : source ou `settings.local.json` qui est un lien symbolique, source qui n'est pas à toi ou
+    modifiable par d'autres, octet NUL, plus de 50 phrases, phrase de plus de 800 caractères, caractère de contrôle (C0,
+    DEL, C1), séparateurs U+2028/2029, contrôles bidirectionnels (U+202A à U+202E, U+2066 à U+2069), U+FFFD, et tout ce qui
+    ressemble à un secret (clé age ou privée, `ghp_`, `github_pat_`, `sk-`, `xoxb-`/`xoxp-`, suite de 40 caractères base64
+    ou hexadécimaux). Ces phrases **ne sont pas secrètes** : elles sont copiées dans `~/.claude/settings.json`, dont les
+    droits sont ceux que Claude Code lui donne, et lues par le classifieur du mode auto.
+  - `kit overlay env --clear` retire les phrases **et met le fichier source de côté**
+    (`environment.local.txt.cleared-<date>`) : sinon le sync suivant les remettrait. Si `KIT_LOCAL_ENVIRONMENT` est défini,
+    il les réécrira : retire la variable.
+  - **À faire une fois par poste** : sans ce fichier, le classifieur du mode auto ne connaît plus tes domaines de
+    confiance, et le premier `kit sync` après la mise à jour le signale (l'ancien contenu est dans
+    `settings.json.pre-kit.<date>`). **Historique** : les anciennes phrases restent dans l'historique Git du dépôt public
+    (il n'a pas été réécrit) ; seul le contenu actuel est propre.
 - **Écriture** : sous verrou (`~/.config/claude-kit/settings.lock`, `KIT_LOCK_WAIT` secondes d'attente, 10 par défaut ;
   un verrou orphelin est repris). Atomique, droits et lien symbolique conservés, et seulement si le contenu change ; si
   `settings.json` a changé entre la lecture et l'écriture, rien n'est écrit (réessaie). L'ancien contenu est copié en
@@ -204,7 +232,24 @@ Un hook `SessionStart` (démarrage et reprise de session) lance `kit-autoupdate`
 En session cloud (`CLAUDE_CODE_REMOTE=true`), un second hook `SessionStart`, `kit-dockerd`, démarre le démon Docker s'il est installé mais arrêté : il le lance détaché (hors des tâches de fond de Claude, donc sans leur limite de durée) et le relance après un redémarrage du conteneur. `KIT_DOCKERD=0` le désactive, `KIT_DOCKERD=1` le force hors cloud ; journal dans `~/.config/claude-kit/dockerd.log`.
 - En session cloud, il tourne à chaque démarrage ; en local ou sur le VPS, au plus une fois toutes les 6 h.
 - Il ne fait rien si le dépôt du kit a des modifications locales ou n'est pas sur `main`.
-- `KIT_AUTOUPDATE=0` le désactive.
+- **Couper** : `KIT_AUTOUPDATE=0` (variable d'environnement) ou le fichier `~/.config/claude-kit/autoupdate.off` (n'importe quel
+  contenu) sur ce poste ; `kit autoupdate off` / `kit autoupdate on` le crée ou le retire.
+- **Épingler une version** : `kit autoupdate pin <tag|branche|révision>`. La référence est **résolue une fois** (le hook,
+  appelé avec `--resolve`, va chercher `origin/main` et les tags) et `~/.config/claude-kit/autoupdate.pin` reçoit le **SHA
+  complet** (première ligne ; le nom donné sur la seconde, pour l'affichage). Une chaîne de 7 à 40 caractères
+  hexadécimaux est toujours un objet, jamais un tag ou une branche du même nom. Le hook ne lit que ce SHA (aucun tag ni
+  aucune branche : un tag déplacé sur `origin` n'a aucun effet), ne va chercher que `main`, et met le kit en HEAD
+  détaché dessus, puis lance `kit sync`. Conditions, refusées au `pin` **et** revérifiées par le hook avant le
+  `checkout` : la révision est un **ancêtre de `origin/main`** (jamais de code non fusionné, branche ou fork), et son propre
+  hook porte un `KIT_PIN_FLOOR` au moins égal au courant (**socle** : aucun retour à une version qui ne sait pas épingler ;
+  le retour à la v1 est la procédure de `docs/rollback-v1.md`, pas l'épinglage). Le hook ne bouge pas non plus avec un arbre
+  modifié, pendant un bisect, un rebase, un merge, un cherry-pick ou un revert, ni si le kit est sur une autre branche
+  que `main` ou détaché ailleurs que sur le dernier SHA qu'il a épinglé (`autoupdate.pinned`). Un fichier sans SHA de 40
+  caractères est signalé une fois et ignoré. `kit update` ne fait pas de `git pull` tant que le fichier existe ;
+  `kit autoupdate unpin` le retire (puis `git -C <kit> checkout main` pour suivre `main` de nouveau),
+  `kit autoupdate status` montre l'état.
+- `kit --version` affiche le tag (ou la révision, `git describe`) et la date du commit ; `kit doctor` l'ajoute à ses
+  contrôles, avec l'état de la mise à jour automatique.
 - Les réglages s'appliquent tout de suite ; `CLAUDE.md` et les commandes, au démarrage de session suivant.
 
 ## Skills et profils
@@ -306,12 +351,16 @@ git add -A && git commit && git push
 |---|---|
 | `/new-project <brief>` | nouveau projet : cadrage, stack, équipement, **plan** (agent `architect`) et **équipe** (skill `team-builder`), gabarit, design, déploiement, puis exécution orchestrée lot par lot |
 | `/adopt` | projet existant (Tandem, CSM…) : ajoute mémoire, relais, plan, équipe et hook de démarrage, sans rien écraser, en PR |
-| `/resume` | début de session : relit relais, état, plan, tâches, vérifie le dépôt, propose la suite |
+| `/resume` | début de session : relit relais, état et plan, vérifie le dépôt, propose la suite |
 | `/handoff` | fin de session : écrit `docs/memory/handoff.md`, met à jour état et plan, commite et pousse |
 
 - **Équipe** : selon la taille (S : fil principal et 1 ou 2 agents ; M : `architect` et 3 à 5 ; L : `architect` et 4 à 7,
   avec relecteurs), copiée dans `.claude/agents/` (`model` et `effort` de l'en-tête, réglables par `kit project effort`), listée dans la rubrique « Équipe » de `CLAUDE.md`. La session principale orchestre.
-- **Hook de démarrage** du gabarit (`.claude/settings.json`) : affiche `handoff.md` et `state.md` en tête de session.
+- **Hook de démarrage** du gabarit (`.claude/settings.json`) : affiche `docs/memory/state.md` seul en tête de session,
+  1 500 caractères au plus (coupé à une fin de ligne, avec un renvoi au fichier ; `handoff.md` est lu à la demande par
+  `/resume`). Budget appliqué par `scripts/test/run.sh` (`project_sessionstart.chars`), contre 8 129 caractères en v1.
+- **Plan** : `docs/plan.md` est la seule liste de tâches (lots, `Agent / Parallel with / Done when`, cases à cocher, format
+  écrit par le skill `writing-plans`) ; il n'y a plus d'outil de tâches ni de validation en dehors du chat.
 - **Contexte d'infra** (skill `infra-context`) : `KNOWLEDGE.md` de fs0ciety-ops, lu dans `~/.kit/context/fs0ciety-ops`
   (copie en lecture seule tenue par `kit sync`, liste dans `global/context-repos.txt`) ou, en cloud, dans le dépôt
   attaché à la session.
@@ -330,8 +379,9 @@ git add -A && git commit && git push
 Le kit met Claude Code en mode **`auto`** : un classifieur juge chaque action au lieu de te la demander. Le bloc
 `autoMode` de `global/settings.json` lui décrit ton infra de confiance, en phrases :
 
-- `environment` : tes dépôts (`fs0ciety7000/*`, claude-kit public), tes domaines, Coolify, Cloudflare, Tailscale, le
-  dashboard, la gestion des secrets, les registres de paquets ;
+- `environment` : tes dépôts (`fs0ciety7000/*`, claude-kit public), Coolify, Cloudflare, Tailscale, la gestion des
+  secrets, les registres de paquets ; tes domaines internes n'y sont pas (dépôt public) : ils viennent de la surcharge
+  locale de chaque poste (voir « Réglages gérés ») ;
 - `allow` : installer les dépendances et lancer les scripts d'un projet, les outils de build (Quartz…), cloner un dépôt
   public pour le lire, `kit api` en création, modification et déploiement, branches `claude/*` et PR ;
 - `soft_deny` : pas de `tofu apply` (c'est toi qui l'appliques), pas de modification de ses propres permissions ;

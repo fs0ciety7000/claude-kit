@@ -66,7 +66,7 @@ report="$(jq -n --argjson m "$main" --argjson s "$subs" --arg file "$(basename "
               total: (tot("input") + tot("cache_write") + tot("cache_read") + tot("output")) },
     main_messages: $m.messages, subagents: ($s | length), subagent_messages: ([$s[].messages] | add // 0),
     user_prompts: $m.user_prompts,
-    validations: ([$m.tools[] | select(test("AskUserQuestion|checkpoint|kit-control__ask|kit-control__equip|ExitPlanMode"))] | length),
+    validations: ([$m.tools[] | select(test("AskUserQuestion|ExitPlanMode"))] | length),
     agents_spawned: ([$m.tools[] | select(. == "Agent" or . == "Task")] | length),
     models: (($m.models + [$s[].models[]]) | unique),
     top_tools: ($m.tools | group_by(.) | map({(.[0]): length}) | add // {})
@@ -79,6 +79,6 @@ jq -r '
   "tokens           : total \(.tokens.total)  (entrée \(.tokens.input), cache écrit \(.tokens.cache_write), cache lu \(.tokens.cache_read), sortie \(.tokens.output))",
   "messages         : \(.main_messages) (session) + \(.subagent_messages) (\(.subagents) sous-agents)",
   "messages humains : \(.user_prompts)",
-  "validations      : \(.validations) (questions, checkpoints, plans)",
+  "validations      : \(.validations) (questions, plans)",
   "agents lancés    : \(.agents_spawned)",
   "modèles          : \(.models | join(", "))"' <<<"$report"

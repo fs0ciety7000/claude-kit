@@ -108,9 +108,38 @@ link_global() {
   link_file "$KIT_HOME/global/CLAUDE.md"          "$CLAUDE_HOME/CLAUDE.md"
   link_file "$KIT_HOME/global/skills-registry.md" "$CLAUDE_HOME/skills-registry.md"
   ln -sfn "$KIT_HOME/scripts/hooks/guard-secrets.sh" "$KIT_CONFIG/hooks/guard-secrets.sh"
-  ln -sfn "$KIT_HOME/scripts/hooks/kit-emit.sh" "$KIT_CONFIG/hooks/kit-emit.sh"
   ln -sfn "$KIT_HOME/scripts/hooks/kit-autoupdate.sh" "$KIT_CONFIG/hooks/kit-autoupdate.sh"
   ln -sfn "$KIT_HOME/scripts/hooks/kit-dockerd.sh" "$KIT_CONFIG/hooks/kit-dockerd.sh"
+  retire_dashboard
+}
+
+# Variables du tableau de bord encore présentes dans l'environnement : leurs NOMS seulement, jamais les valeurs.
+dashboard_env_left() {
+  local v found=""
+  for v in KIT_DASH_TOKEN KIT_DASH_URL; do
+    if [[ -n ${!v:-} ]]; then found="$found${found:+ }$v"; fi
+  done
+  [[ -n $found ]] && echo "$found"
+}
+dashboard_hook_left() { # settings.json : vrai si un hook du tableau de bord y figure encore
+  [[ -f $1 ]] && jq -e '[.. | .command? // empty | select(type == "string" and test("kit-emit"))] | length > 0' "$1" >/dev/null 2>&1
+}
+# The kit-control dashboard was abandoned (sessions are followed with `claude remote-control`). Removes what earlier
+# versions of `kit sync` left on this machine: the kit-emit hook link, its URL file and the user-scope MCP server
+# declaration. The settings entries (hooks, permissions) are retired by the managed-settings merge. Never fatal.
+retire_dashboard() {
+  local cj="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json" h="$KIT_CONFIG/hooks/kit-emit.sh"
+  # Le lien du hook seulement s'il pointe dans ce kit : un fichier ordinaire ou un lien ailleurs n'est pas à nous.
+  if [[ -L $h && $(readlink "$h") == "$KIT_HOME"/* ]]; then rm -f "$h"; fi
+  rm -f "$KIT_CONFIG/dash.url"
+  [[ -f $cj ]] || return 0
+  jq -e '(.mcpServers // {}) | has("kit-control")' "$cj" >/dev/null 2>&1 || return 0
+  if command -v claude >/dev/null 2>&1 && claude mcp remove --scope user kit-control >/dev/null 2>&1; then
+    ok "serveur MCP kit-control retiré (tableau de bord abandonné)"
+  else
+    warn "serveur MCP kit-control encore déclaré : claude mcp remove --scope user kit-control"
+  fi
+  return 0
 }
 
 # write_atomic <fichier> <contenu> [droits] : écrit dans un fichier temporaire du même dossier puis mv (jamais de fichier tronqué
@@ -158,9 +187,10 @@ automode_v1_owned() {
 # Clés gérées : permissions.allow|ask|deny|defaultMode, hooks, autoMode.*. Le reste du fichier n'est jamais touché.
 #   K = réglages du kit pour ce poste : global/settings.json, + settings.vps.json (profil vps),
 #       + $KIT_CONFIG/settings.local.json (surcharge propre au poste, jamais dans Git, absente par défaut).
-#   L = registre $KIT_CONFIG/settings.managed.json = le K appliqué la dernière fois (+ le profil). Absent ou illisible
-#       (première exécution après la mise à niveau) : L = K + global/settings.v1.json, instantané des entrées allow,
-#       hooks et autoMode (en empreintes SHA-256) que le kit v1 a écrites.
+#   L = registre $KIT_CONFIG/settings.managed.json = le K appliqué la dernière fois (+ le profil), toujours uni à
+#       global/settings.v1.json, instantané des entrées allow, hooks et autoMode (en empreintes SHA-256) que le kit v1 a
+#       écrites : ce que la v1 réécrit après coup est retiré au sync suivant. Registre absent ou illisible (première
+#       exécution après la mise à niveau) : L = K + cet instantané.
 #   U = ajouts de l'utilisateur = C (fichier actuel) moins L, pour allow et autoMode.environment|allow.
 #   deny, ask, autoMode.soft_deny|hard_deny ne sont JAMAIS retirés automatiquement : seules les règles listées dans
 #   global/settings.retired.json le sont. Hooks : seules les entrées exactement <dossier des hooks du kit>/<script du
@@ -174,10 +204,12 @@ automode_v1_owned() {
 # Variables : KIT_LOCK_WAIT (secondes d'attente du verrou, 10 par défaut).
 _AMS_TMPD=""
 _AMS_LOCK=""
+_AMS_OVSIM=""
 _ams_cleanup() {
   if [[ -n $_AMS_TMPD ]]; then rm -rf "$_AMS_TMPD"; fi
   if [[ -n $_AMS_LOCK ]]; then rm -rf "$_AMS_LOCK"; fi
-  _AMS_TMPD="" _AMS_LOCK=""
+  if [[ -n $_AMS_OVSIM ]]; then rm -f "$_AMS_OVSIM"; fi
+  _AMS_TMPD="" _AMS_LOCK="" _AMS_OVSIM=""
   return 0
 }
 
@@ -215,8 +247,8 @@ _ams_rank() {
 }
 
 # Contrôle de la surcharge locale : refuse bypassPermissions et les règles allow trop larges, affiche ce qu'elle apporte.
-_ams_check_overlay() { # fichier
-  local f=$1 bad line
+_ams_check_overlay() { # fichier [nom affiché]
+  local f=$1 shown=${2:-$1} bad line
   bad=$(jq -r '
     [(.permissions.allow // [])[] | select(type == "string"
         and test("^(\\*|Bash|Bash\\(\\*{1,2}\\)|Bash\\(:\\*\\)|(Edit|Write|MultiEdit|NotebookEdit)(\\(\\*{0,2}\\))?)$"))
@@ -224,11 +256,11 @@ _ams_check_overlay() { # fichier
     + (if .permissions.defaultMode == "bypassPermissions" then ["permissions.defaultMode : bypassPermissions"] else [] end)
     | .[]' "$f") || die "lecture de $f échouée"
   if [[ -n $bad ]]; then
-    warn "surcharge refusée ($f) : une surcharge locale ne peut pas contenir"
+    warn "surcharge refusée ($shown) : une surcharge locale ne peut pas contenir"
     while IFS= read -r line; do warn "  $line"; done <<<"$bad"
-    die "retire ces entrées de $f (règles larges et bypassPermissions : à décider dans global/settings.json, par PR)"
+    die "retire ces entrées de $shown (règles larges et bypassPermissions : à décider dans global/settings.json, par PR)"
   fi
-  info "surcharge locale ($f) :"
+  info "surcharge locale ($shown) :"
   jq -r 'def short: tojson | if length > 120 then .[0:117] + "..." else . end;
     ((.permissions // {}) | to_entries[] | select(.value | type == "array")
       | "  permissions." + .key + " : +" + (.value | length | tostring)
@@ -236,6 +268,70 @@ _ams_check_overlay() { # fichier
     (if .permissions.defaultMode then "  permissions.defaultMode : " + (.permissions.defaultMode | tostring) else empty end),
     ((.hooks // {}) | to_entries[] | "  hooks." + .key + " : +" + (.value | length | tostring) + " groupe(s)"),
     ((.autoMode // {}) | to_entries[] | "  autoMode." + .key + " : +" + (.value | length | tostring) + " entrée(s)")' "$f"
+}
+
+# Phrases autoMode.environment propres au poste (domaines et hôtes internes : le dépôt est public, elles n'y figurent pas).
+#   Source : fichier texte hors dépôt, une phrase par ligne ($KIT_CONFIG/environment.local.txt par défaut ; lignes vides et
+#   lignes commençant par # ignorées). Cible : autoMode.environment de $KIT_CONFIG/settings.local.json (600), seule clé
+#   que cette fonction touche ; le reste du fichier est conservé. Fichier vide ou --clear : la clé est retirée.
+#   Session cloud : la variable KIT_LOCAL_ENVIRONMENT (même format) est d'abord écrite dans le fichier par défaut.
+#   Refusés (message sur stderr, code 1, rien n'est écrit, les phrases précédentes restent) : source ou cible qui est un
+#   lien symbolique, source qui n'appartient pas à l'utilisateur ou modifiable par d'autres, NUL, plus de 50 phrases, une
+#   phrase de plus de 800 caractères, un caractère de contrôle (C0, DEL, C1), U+2028/2029, un contrôle bidirectionnel
+#   (U+202A-202E, U+2066-2069) ou U+FFFD, une phrase qui ressemble à un secret (clé age ou privée, jetons GitHub, sk-,
+#   xoxb/xoxp, suite de 40 caractères base64 ou hexadécimaux). Ces phrases finissent dans ~/.claude/settings.json : elles
+#   ne sont pas secrètes. Le contenu n'est jamais affiché.
+#   overlay_sync <fichier|""> <dry 0|1> [--verbose]. Écrit seulement si le contenu change. En simulation (dry=1), le résultat
+#   est écrit dans un fichier temporaire (_AMS_OVSIM) que apply_managed_settings lit à la place de la surcharge.
+overlay_sync() {
+  local src=${1:-} dry=${2:-0} verbose=${3:-} overlay="$KIT_CONFIG/settings.local.json" arr bad base new n mode
+  if [[ -z $src ]]; then
+    src="$KIT_CONFIG/environment.local.txt"
+    if [[ -n ${KIT_LOCAL_ENVIRONMENT:-} ]] && ((!dry)); then
+      if [[ -L $src ]]; then warn "$src est un lien symbolique : refusé (KIT_LOCAL_ENVIRONMENT non écrit)"; return 1; fi
+      if [[ ! -d $KIT_CONFIG ]]; then mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; fi
+      write_atomic "$src" "$KIT_LOCAL_ENVIRONMENT" 600
+    fi
+  fi
+  if [[ -L $src ]]; then warn "$src est un lien symbolique : refusé"; return 1; fi
+  [[ -f $src ]] || return 0
+  if [[ ! -O $src ]]; then warn "$src n'appartient pas à l'utilisateur courant : refusé"; return 1; fi
+  mode=$(file_mode "$src")
+  if (( 8#${mode:-0} & 8#022 )); then warn "$src est modifiable par d'autres (droits $mode) : refusé"; return 1; fi
+  if ! tr -d '\000' <"$src" | cmp -s - "$src"; then warn "$src contient un octet NUL : refusé"; return 1; fi
+  arr=$(jq -R -s 'split("\n") | map(gsub("\r"; "") | gsub("^\\s+|\\s+$"; "")) | map(select(length > 0 and (startswith("#") | not)))' "$src") \
+    || { warn "lecture de $src échouée"; return 1; }
+  n=$(jq 'length' <<<"$arr")
+  if ((n > 50)); then warn "$src : $n phrases, 50 au plus : refusé"; return 1; fi
+  bad=$(jq -r 'map(select(length > 800
+      or test("[\u0001-\u001f\u007f-\u009f  ‪-‮⁦-⁩�]")
+      or test("AGE-SECRET-KEY|BEGIN .*KEY|ghp_|github_pat_|(^|[^A-Za-z0-9])sk-|xox[bp]-|[A-Za-z0-9+/=_-]{40,}"))) | length' <<<"$arr")
+  if [[ $bad != 0 ]]; then
+    warn "$src : $bad ligne(s) refusée(s) (plus de 800 caractères, caractère de contrôle ou invisible, ou secret probable) : refusé, rien n'est écrit"
+    return 1
+  fi
+  if [[ -L $overlay ]]; then warn "$overlay est un lien symbolique : refusé"; return 1; fi
+  base='{}'
+  if [[ -f $overlay ]]; then
+    _ams_valid "$overlay" || { warn "$overlay n'est pas un objet JSON de réglages valide : phrases locales non appliquées"; return 1; }
+    base=$(cat "$overlay")
+  fi
+  new=$(jq --argjson e "$arr" 'if ($e | length) > 0 then .autoMode.environment = $e
+    else del(.autoMode.environment) | (if .autoMode == {} then del(.autoMode) else . end) end' <<<"$base") \
+    || { warn "fusion de $src échouée"; return 1; }
+  if [[ "$(jq -S -c . <<<"$base")" == "$(jq -S -c . <<<"$new")" ]]; then
+    [[ -z $verbose ]] || ok "autoMode.environment local : déjà à jour ($n phrase(s))"
+    return 0
+  fi
+  if ((dry)); then
+    info "autoMode.environment local : $n phrase(s) de $src seraient appliquées à $overlay"
+    _AMS_OVSIM=$(mktemp) || { warn "mktemp échoué"; return 1; }
+    printf '%s\n' "$new" >"$_AMS_OVSIM"
+    return 0
+  fi
+  if [[ ! -d $KIT_CONFIG ]]; then mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; fi
+  write_atomic "$overlay" "$(jq . <<<"$new")" 600
+  ok "autoMode.environment local : $n phrase(s) de $src écrites dans $overlay (600)"
 }
 
 apply_managed_settings() {
@@ -252,6 +348,13 @@ apply_managed_settings() {
   done
   need jq "Installe jq."
   [[ -f $jqf ]] || die "$jqf introuvable"
+  # Les nettoyages (fichier temporaire de la simulation, dossier de travail, verrou) tournent aussi si le programme meurt.
+  trap '_ams_cleanup' EXIT
+  trap '_ams_cleanup; exit 130' INT
+  trap '_ams_cleanup; exit 143' TERM
+  # Une erreur dans environment.local.txt n'arrête pas le sync : message sur stderr (donc dans autoupdate.log), phrases locales
+  # précédentes conservées.
+  overlay_sync "" "$dry" || warn "environment.local.txt ignoré : les phrases locales précédentes restent appliquées"
 
   # Profil : fichier profile ; à défaut, celui du registre (un profil vps ne retombe pas silencieusement sur local).
   profile=$(cat "$KIT_CONFIG/profile" 2>/dev/null || true)
@@ -267,7 +370,11 @@ apply_managed_settings() {
 
   local frags=("$KIT_HOME/global/settings.json")
   if [[ $profile == vps ]]; then frags+=("$KIT_HOME/global/settings.vps.json"); fi
-  if [[ -f $overlay ]]; then
+  if [[ -n $_AMS_OVSIM ]]; then
+    # Simulation : la surcharge telle que le sync la produirait.
+    _ams_check_overlay "$_AMS_OVSIM" "$overlay"
+    frags+=("$_AMS_OVSIM")
+  elif [[ -f $overlay ]]; then
     chmod 600 "$overlay" 2>/dev/null || true
     _ams_valid "$overlay" || die "$overlay n'est pas un objet JSON de réglages valide"
     _ams_check_overlay "$overlay"
@@ -284,7 +391,7 @@ apply_managed_settings() {
 
   if ((!dry)); then
     if [[ ! -d $KIT_CONFIG ]]; then mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; fi
-    _ams_lock || { warn "réglages non appliqués : $KIT_CONFIG/settings.lock est tenu par un autre kit sync (réessaie)"; return 0; }
+    _ams_lock || { warn "réglages non appliqués : $KIT_CONFIG/settings.lock est tenu par un autre kit sync (réessaie)"; _ams_cleanup; trap - EXIT INT TERM; return 0; }
   fi
   tmpd=$(mktemp -d) || { _ams_cleanup; die "mktemp échoué"; }
   _AMS_TMPD=$tmpd
@@ -316,6 +423,17 @@ apply_managed_settings() {
       warn "$snap introuvable : les anciennes entrées du kit ne seront pas retirées"
       cp "$tmpd/k.json" "$tmpd/l.json"
     fi
+  fi
+  # L contient toujours l'instantané v1 (union avec le registre) : un sync de la v1 (retour arrière, autre poste) réécrit
+  # des entrées que le kit v2 ne livre plus (hooks, autorisations, phrases) ; le sync v2 suivant les retire. Seuls allow,
+  # hooks et autoMode.environment|allow en dépendent : deny, ask, soft_deny et hard_deny restent régis par
+  # global/settings.retired.json.
+  if ((!migrating)) && [[ -f $snap ]]; then
+    jq --arg p "$profile" '.profiles[$p] // {}' "$snap" >"$tmpd/snapprof.json" || die "lecture de $snap échouée"
+    jq -s --arg mode build -f "$jqf" "$tmpd/l.json" "$snap" "$tmpd/snapprof.json" >"$tmpd/l1.json" || die "lecture de $snap échouée"
+    automode_v1_owned "$snap" "$tmpd/c.json" >"$tmpd/lx.json" \
+      && jq -s --arg mode build -f "$jqf" "$tmpd/l1.json" "$tmpd/lx.json" >"$tmpd/l.json" \
+      || die "lecture des empreintes autoMode de $snap échouée"
   fi
   # Règles que le kit a explicitement retirées (deny, ask, autoMode.soft_deny|hard_deny).
   if [[ -f $retired ]] && jq -e 'type == "object"' "$retired" >/dev/null 2>&1; then cp "$retired" "$tmpd/r.json"; else echo '{}' >"$tmpd/r.json"; fi
@@ -349,7 +467,8 @@ apply_managed_settings() {
         .changes[]
         | "  " + .name + " : +" + (.added | length | tostring) + " -" + (.removed | length | tostring)
           + (if .duplicates > 0 then " (doublons exacts retirés : " + (.duplicates | tostring) + ")" else "" end),
-          (.added[] | "    + " + short), (.removed[] | "    - " + short)' "$tmpd/res.json"
+          (if .name == "autoMode.environment" then "    (phrases non affichées : elles décrivent l'"'"'infra du poste)"
+           else ((.added[] | "    + " + short), (.removed[] | "    - " + short)) end)' "$tmpd/res.json"
       if ((nb_add + nb_rm == 0)); then echo "  (ordre ou doublons exacts seulement)"; fi
     else
       echo "  aucun changement"
@@ -375,6 +494,11 @@ apply_managed_settings() {
       _ams_backup "$cur"
       write_atomic "$cur" "$(cat "$tmpd/new.json")"
       ok "réglages mis à jour : $cur (+$nb_add -$nb_rm entrées)"
+      # Phrases d'environnement retirées du kit (domaines internes sortis du dépôt public) et rien en local pour les remplacer.
+      if (($(jq '[.changes[] | select(.name == "autoMode.environment") | .removed | length] | add // 0' "$tmpd/res.json") > 0)) \
+        && ! jq -e '(.autoMode.environment // []) | length > 0' "$overlay" >/dev/null 2>&1; then
+        warn "autoMode.environment : des phrases du kit ont été retirées. Si elles décrivaient tes domaines internes, déclare-les sur ce poste : kit overlay env (voir README) ; l'ancien contenu est dans $cur.pre-kit.<date>"
+      fi
       # Ce que le kit a retiré et qui peut compter : hooks, deny, ask (nommés, jamais silencieux).
       jq -r 'def short: tojson | if length > 160 then .[0:157] + "..." else . end;
         .changes[] | select(.name | test("^hooks[.]|^permissions[.](deny|ask)$|^autoMode[.](soft_deny|hard_deny)$"))

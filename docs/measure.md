@@ -103,4 +103,23 @@ Hooks lancés par appel d'outil (`PreToolUse` + `PostToolUse` de `global/setting
 | Bash, Read, Edit, Write, MultiEdit, NotebookEdit | 3 | 1 (Bash) |
 | Grep, Glob, Task, WebFetch, outils MCP | 2 | |
 
-Les 3 hooks d'un appel `Bash` : `guard-secrets.sh` et `kit-emit.sh` avant, `kit-emit.sh` après.
+Les 3 hooks d'un appel `Bash` : `guard-secrets.sh` et le hook d'émission du tableau de bord avant, ce dernier après (retiré en v2, sous-lot 2c).
+
+### v2, état après le sous-lot 2c (arbre du dépôt, 13/11/2026)
+
+Même commande (`scripts/context-budget.sh`), mêmes méthodes qu'en v1. 2c retire le tableau de bord (hook d'émission,
+outils de tâches) et réduit le démarrage de projet à `state.md`.
+
+| Élément | v1 mots | v1 caractères | 2c mots | 2c caractères | Budget |
+|---|---|---|---|---|---|
+| SessionStart du kit (2 hooks, 0 mesuré) | 15 | 177 | 0 | 0 | |
+| SessionStart du projet, mémoire pleine | 1 273 | 8 129 | 228 | 1 359 | 1 500 caractères (tenu, appliqué) |
+| Hooks par appel `Bash` (avant + après) | 3 | | 1 | | 1 (tenu) |
+| Hooks par appel `Read`, `Edit`, `Write` | 3 | | 1 | | |
+| Hooks par appel `Grep`, `Glob`, `Task`, `WebFetch`, MCP | 2 | | 0 | | |
+| **Total au démarrage** | **4 586** | **29 894** | **1 768** | **11 233** | ≤ 40 % de la v1 (38 % des mots, 38 % des caractères) |
+
+Le SessionStart du projet : `state.md` seul, coupé à une fin de ligne à 1 300 caractères au plus, plus l'en-tête et un
+renvoi au fichier ; 265 caractères pour un projet neuf. Les mesures des sous-lots 2e et 2f (CLAUDE.md global,
+descriptions) sont dans le tableau ci-dessus : 391 mots (CLAUDE.md), 322 (agents), 402 (skills et commandes).
+Le parcours `/new-project` (5 052 mots, dont Superpowers) n'est pas touché par 2c.

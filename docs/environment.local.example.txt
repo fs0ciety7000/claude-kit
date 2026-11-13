@@ -1,0 +1,6 @@
+# Model for ~/.config/claude-kit/environment.local.txt (copy it there, then run: kit overlay env).
+# One sentence per line, in English (the auto-mode classifier reads them). Blank lines and lines starting with # are
+# ignored. Keep this file OUT of any repository: it names your internal domains and hosts.
+# Placeholders below: replace example.org, example.net and the host names with your own.
+Trusted internal domains: *.example.org (including *.in.example.org on the tailnet), example.net and their subdomains: the user's own sites and services.
+Key internal services: the user's Coolify API (coolify.example.org), reached through `kit api` or the kit tools.
