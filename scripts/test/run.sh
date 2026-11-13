@@ -651,6 +651,7 @@ declare -a EFFORT_OF=(
   "qa-tester=medium" "researcher=medium" "security-reviewer=xhigh" "ui-designer=high"
   "rust-dev=medium" "go-cli=medium" "pocketbase=medium")
 want_effort() { local e; for e in "${EFFORT_OF[@]}"; do [[ ${e%%=*} == "$1" ]] && { echo "${e#*=}"; return; }; done; }
+wcw() { awk '{n += NF} END {print n + 0}'; } # words, independent of the locale (wc -w splits on byte 0xA0 in the C locale)
 fm() { awk -v k="$2" 'NR == 1 && $0 != "---" {exit} NR > 1 && $0 == "---" {exit} NR > 1 && index($0, k ":") == 1 {sub("^" k ":[[:space:]]*", ""); print; exit}' "$1"; }
 bad_model="" bad_effort="" bad_desc="" bad_name="" n_agents=0
 for f in "$ROOT"/global/agents/*.md; do
@@ -659,7 +660,7 @@ for f in "$ROOT"/global/agents/*.md; do
   [[ $(fm "$f" model) == opus ]] || bad_model="$bad_model $n"
   e=$(fm "$f" effort); w=$(want_effort "$n")
   [[ $e =~ ^(low|medium|high|xhigh|max)$ && -n $w && $e == "$w" ]] || bad_effort="$bad_effort $n($e)"
-  [[ $(fm "$f" description | wc -w | tr -d ' ') -le 25 ]] || bad_desc="$bad_desc $n"
+  [[ $(fm "$f" description | wcw) -le 25 ]] || bad_desc="$bad_desc $n"
 done
 [[ -z $bad_name ]] && ok_ "agents : name = nom du fichier ($n_agents agents)" || ko_ "agents : name" "$bad_name"
 [[ -z $bad_model ]] && ok_ "agents : model: opus partout" || ko_ "agents : model" "$bad_model"
@@ -702,11 +703,11 @@ reviewers_in_registry=$(awk -F'|' '/^\| `/ {print $6}' "$ROOT/global/skills-regi
 [[ $reviewers_in_registry == 0 ]] && ok_ "registre : aucun relecteur dans la colonne des agents" || ko_ "registre : relecteurs dans la colonne des agents" "$reviewers_in_registry lignes"
 
 # team-builder is short; every skill and command description stays short.
-tbw=$(wc -w <"$ROOT/global/skills/team-builder/SKILL.md" | tr -d ' ')
+tbw=$(wcw <"$ROOT/global/skills/team-builder/SKILL.md")
 [[ $tbw -le 250 ]] && ok_ "team-builder : $tbw mots (<= 250)" || ko_ "team-builder : $tbw mots (> 250)"
 longdesc=""
 for f in "$ROOT"/global/skills/*/SKILL.md "$ROOT"/global/commands/*.md; do
-  [[ $(fm "$f" description | wc -w | tr -d ' ') -le 30 ]] || longdesc="$longdesc $(basename "$(dirname "$f")")/$(basename "$f")"
+  [[ $(fm "$f" description | wcw) -le 30 ]] || longdesc="$longdesc $(basename "$(dirname "$f")")/$(basename "$f")"
 done
 [[ -z $longdesc ]] && ok_ "skills et commandes : description <= 30 mots" || ko_ "description > 30 mots" "$longdesc"
 

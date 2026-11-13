@@ -1,6 +1,6 @@
 ---
 name: dependency-hygiene
-description: Choisir et tenir à jour les dépendances (paquets, images, actions, runtimes) : dernière version stable et sans faille, vérifiée auprès des registres. À utiliser à chaque ajout, mise à jour ou Dockerfile.
+description: Choisir et tenir à jour les dépendances (paquets, images, actions, runtimes) en dernière version stable sans faille, vérifiée aux registres. À utiliser à chaque ajout, mise à jour ou Dockerfile.
 ---
 
 # Dépendances : à jour et sans faille connue

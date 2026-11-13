@@ -1,6 +1,6 @@
 ---
 name: team-builder
-description: Composer l'équipe d'agents d'un projet selon sa taille (S, M, L) à partir du brief et du plan. À utiliser dans /new-project, /adopt, ou quand le travail change de nature.
+description: Composer l'équipe d'agents d'un projet selon sa taille (S, M, L), à partir du brief et du plan. Dans /new-project, /adopt, ou si le travail change de nature.
 ---
 
 # Équipe d'un projet
@@ -15,7 +15,7 @@ description: Composer l'équipe d'agents d'un projet selon sa taille (S, M, L) �
 | M | `architect` + 3 à 5 agents |
 | L | `architect` + 4 à 7 agents, avec relecteurs |
 
-Un agent par rôle utile à ce brief, jamais tous.
+Choisis seulement les rôles que ce brief exige.
 
 ## Effectif
 
@@ -33,8 +33,7 @@ Rôle sans agent : `kit equip search`, sinon `kit new-agent`.
 1. `kit project add <type>` copie les agents du type dans `.claude/agents/` ; les autres :
    `kit add-agent <nom> --project` (les optionnels aussi).
 2. Effort : celui de l'en-tête ; autre niveau : `kit project effort <agent> <niveau>`.
-3. Restreins `tools` au strict nécessaire.
-4. Déclare l'équipe (rubrique « Équipe » de `CLAUDE.md`, tableau de `docs/plan.md`) ; commite `.claude/agents/`.
+3. Déclare l'équipe (rubrique « Équipe » de `CLAUDE.md`, tableau de `docs/plan.md`) ; commite `.claude/agents/`.
 
 ## Travailler
 
