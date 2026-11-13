@@ -15,8 +15,8 @@ l'utilisateur corrige d'un mot.
 - Plan en lots (`docs/plan.md`), un agent par lot, brief complet. Le fil principal fait les petites choses.
 - Après un lot : vérifie toi-même diff, tests et build. Pas de relecture par tâche ; relecteurs seulement en L ou
   sur demande.
-- Valide **dans le chat**, seulement pour : le plan, la première mise en prod, une suppression, une fusion sur
-  `main`, une migration de données en prod, un écart au plan, un échec répété deux fois.
+- Valide **dans le chat**, seulement pour : le plan, la première mise en prod d'un projet, une suppression, une
+  migration de données en prod, un écart au plan, un échec répété deux fois.
 - Skill ou agent réellement manquant : `kit equip search`, installation `--project`. Sinon silence.
 
 ## Secrets : règles strictes
