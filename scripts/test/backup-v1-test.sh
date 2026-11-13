@@ -25,7 +25,13 @@ FROM bash:3.2@sha256:2556c2da19c32c1614d318645c73a7bf64d38be21cf69e98e3ca51f0539
 RUN apk add --no-cache tar findutils grep coreutils git jq libarchive-tools diffutils
 EOF
   fi
-  exec docker run --rm -v "$ROOT:/kit:ro" "$IMAGE" bash /kit/scripts/test/backup-v1-test.sh --inner
+  # Copy the kit into the container instead of a bind mount: works too when the Docker daemon does not share this
+  # filesystem (CI job talking to a Docker-in-Docker daemon).
+  cid=$(docker create "$IMAGE" bash /kit/scripts/test/backup-v1-test.sh --inner) || exit 2
+  trap 'docker rm -f "$cid" >/dev/null 2>&1' EXIT
+  docker cp -q "$ROOT/." "$cid:/kit" || exit 2
+  docker start -a "$cid"
+  exit $?
 fi
 
 # ---------------------------------------------------------------------------------------------------------------------

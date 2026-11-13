@@ -3,6 +3,8 @@
 # Usage : scripts/test/run.sh        (code de sortie non nul au moindre échec)
 # HOME et les dossiers de config sont redirigés vers un dossier temporaire : rien ne touche ~/.claude ni ~/.config.
 set -uo pipefail
+# Usual user umask: some CI runners start jobs with umask 000, and the kit rightly refuses world-writable local files.
+umask 022
 
 ROOT=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)
 TMP=$(mktemp -d)
