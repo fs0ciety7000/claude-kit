@@ -311,7 +311,7 @@ ship_infra() { # mode: plan | dry | real
   load_infra_conf
   echo "Infra : branche $branch sur $INFRA_REPO"
   if [[ $mode == real ]]; then
-    need gh "Installe GitHub CLI (gh)."
+    need "$GH" "Installe GitHub CLI (gh)."
     git -C "$INFRA_DIR" fetch -q origin || die "git fetch du dépôt d'infra en échec"
   fi
   ref=$(infra_ref)
