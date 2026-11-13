@@ -1,6 +1,7 @@
 # Context budgets of the v2 harness (lot 2). Read by scripts/context-budget.sh --budget.
 # item (metric of context-budget.sh --json, dotted path)<TAB>max<TAB>what it bounds
-# Overruns are warnings; they fail only with BUDGET_ENFORCE=1 (planned from sub-lot 2e).
+# Overruns are warnings; they fail only with BUDGET_ENFORCE=1. scripts/test/run.sh enforces the budgets of the sub-lots
+# already delivered (ENFORCED list there) and leaves the others as warnings until their sub-lot lands.
 global_claude_md.words	400	words of the global CLAUDE.md (+ imports)
 agent_descriptions.words	400	words of all agent descriptions
 skill_command_descriptions.words	450	words of all skill and command descriptions
@@ -8,3 +9,4 @@ project_sessionstart.chars	1500	characters injected at the start of a project se
 hooks_per_tool_call.Bash	1	hook processes per Bash call (PreToolUse + PostToolUse)
 new_project_command.words	900	words of the /new-project command
 superpowers_path.words	4000	words of the Superpowers skills loaded on the /new-project path
+skills_registry.words	600	words of the skills registry (+ generated profiles table)

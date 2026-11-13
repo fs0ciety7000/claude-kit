@@ -10,7 +10,7 @@ nouvelle, ajoute seulement le rôle qui manque (étapes 2 à 4 pour ce rôle) ; 
 change de nature (ex. une app web qui devient un jeu ou une app mobile).
 
 ## 1. Rôles nécessaires
-À partir de `docs/brief.md`, `docs/memory/stack.md` et `docs/plan.md`, choisis **2 à 3 rôles** pour un petit projet (site vitrine, outil privé, prototype), **4 à 7** pour un gros, jamais tous. Les relecteurs (`code-reviewer`, `qa-tester`, `security-reviewer`, `design-critic`) n'entrent dans l'équipe que si le projet déclare `Rigueur : renforcée` dans son `CLAUDE.md` ou si l'utilisateur le demande. Base :
+À partir de `docs/brief.md`, `docs/memory/stack.md` et `docs/plan.md`, choisis **2 à 3 rôles** pour un petit projet (site vitrine, outil privé, prototype), **4 à 7** pour un gros, jamais tous. Les relecteurs (`code-reviewer`, `qa-tester`, `security-reviewer`, `design-critic`) n'entrent dans l'équipe que pour un projet de taille L (`project.yaml`) ou si l'utilisateur le demande. Base :
 
 | Rôle | Quand |
 |---|---|
@@ -25,7 +25,7 @@ change de nature (ex. une app web qui devient un jeu ou une app mobile).
 | domaine (jeu, marque, contenu, science…) | selon le brief |
 
 ## 2. Source de chaque agent, dans cet ordre
-1. **Agent du kit** (`~/.claude/skills-registry.md`, table « Agents ») ;
+1. **Agent du kit** (`kit list`, colonne « Agents utiles » du registre) ;
 2. **Agent d'une collection relue** : `kit equip search <rôle> <stack>`, lis le fichier, vérifie ses outils (`tools:`)
    et sa licence ; écarte tout ce qui demande des secrets, lance des scripts distants ou contredit le kit ;
 3. **Agent écrit pour le projet** : `kit new-agent <nom> "<description>" --tools … --model … --effort …` puis
@@ -52,5 +52,5 @@ Copie l'agent dans `.claude/agents/<nom>.md` (jamais en global pour un besoin de
 - Tâches indépendantes : agents lancés en parallèle ; tâches liées : à la suite, avec le résultat de la précédente
   dans le brief de la suivante.
 - Brief d'un agent : objectif, fichiers concernés, contraintes, critère de fin, ce qui a déjà été écarté.
-- Après chaque lot : tes vérifications (diff, tests, build) ; les relecteurs seulement en rigueur renforcée ou sur demande.
+- Après chaque lot : tes vérifications (diff, tests, build) ; les relecteurs seulement en taille L ou sur demande.
 - Ne fais jamais confiance à un rapport sans vérifier le résultat (diff, tests, build).

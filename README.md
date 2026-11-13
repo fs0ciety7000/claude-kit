@@ -59,7 +59,7 @@ kit mcp setup                             # déclare le MCP Coolify, jeton injec
 ```
 
 - **Sauvegarde ta clé privée** (`~/.config/sops/age/keys.txt`) dans ton gestionnaire de mots de passe : sans elle, les secrets sont perdus. Ne la mets jamais dans git.
-- Nouveau projet : `kit project new mon-projet && cd mon-projet && claude`, puis `/new-project "<description>"` (ajoute `--rapide` pour enchaîner sans pause). Le flux guidé passe par cadrage, stack, design (`DESIGN.md`), gabarit, déploiement Coolify + sous-domaine Cloudflare (`DEPLOY.md`), secrets, puis plan de travail. Projet existant : `kit project init`.
+- Nouveau projet : `kit project new mon-projet && cd mon-projet && claude`, puis `/new-project "<description>"` Deux validations dans le chat : le plan (brief, taille, stack, équipe, direction visuelle, brouillon de `DEPLOY.md`), puis la première mise en prod (Coolify + sous-domaine Cloudflare). Projet existant : `kit project init`.
 - Dépôt GitHub : `kit repo create mon-projet` (dans le dossier du projet) crée le dépôt privé, une clé de déploiement propre à ce dépôt (écriture) et configure `origin`. Prérequis : `git config --global user.name/user.email` et `kit secrets add GITHUB_TOKEN -g` (droits : création de dépôts + Administration pour la clé). `/new-project` l'appelle tout seul.
 - Par projet : remplis `.env.example`, puis `kit secrets add NOM` (fichier `secrets/dev.enc.json`, commitable car chiffré). `kit secrets check` compare les deux.
 - Lancer une commande avec secrets : `kit secrets run -g -- wrangler deploy`. Les valeurs n'existent que dans ce processus.
@@ -83,6 +83,21 @@ Session claude.ai/code : ajoute la variable `KIT_DASH_URL=https://kit.fs0ciety.o
 `kit dash setup` déclare aussi le serveur MCP **kit-control** (`/mcp`) : Claude y demande les validations de phase (`checkpoint`) et pose ses questions (`ask`), auxquelles tu réponds depuis le dashboard, et tient le tableau de tâches. En local, le jeton est fourni par `headersHelper` (`kit secrets run`), jamais écrit en clair ; en cloud, `install.sh --cloud` le déclare si `KIT_DASH_URL` est défini, et le proxy injecte le jeton.
 
 `kit detect [--json]` devine les types de projet à partir des fichiers (`global/detect-rules.tsv`) et en déduit profils, skills et agents ; `/new-project` s'en sert et note le choix dans `docs/memory/stack.md`.
+
+## Taille du projet (S, M, L)
+
+La taille règle ce qu'un projet exige : relecteurs, tests, CI, durcissement, équipe. Claude la choisit au cadrage
+d'après une grille (skill `project-size`) et l'annonce avec une ligne de justification ; tu la corriges d'un mot.
+Elle vit dans `project.yaml` (paires `clé: valeur`, lisibles sans `yq`).
+
+```bash
+kit project size M --reason "boutique pour quelques proches, accès restreint"   # ou S, L ; relançable
+kit project effort devops high     # effort d'un agent pour ce projet (copie dans .claude/agents/)
+```
+
+`kit project size` écrit `project.yaml`, copie `docs/rules/size-M.md` (et `size-L.md` en L) depuis `templates/rules/`,
+et ajoute leurs lignes `@docs/rules/size-*.md` au `CLAUDE.md` du projet ; en S, rien n'est importé. Revenir à une
+taille plus petite retire règles et imports. Les règles copiées sont à toi : adapte-les dans le projet.
 
 ## Équiper un projet selon son domaine et sa stack
 
@@ -298,5 +313,6 @@ claude-kit/
 │   ├── CLAUDE.md, settings.json, settings.vps.json, skills-registry.md
 │   ├── agents/  commands/  skills/
 ├── profiles/                   listes de skills par domaine
-└── templates/project/          gabarit copié par « kit project new/init »
+├── templates/project/          gabarit copié par « kit project new/init » (dont `project.yaml`)
+└── templates/rules/            règles de taille M et L, copiées par « kit project size »
 ```

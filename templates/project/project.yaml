@@ -1,0 +1,6 @@
+# Taille et réglages du projet. Une paire `clé: valeur` par ligne. Voir le skill `project-size`.
+# Changer de taille : kit project size S|M|L --reason "..."   Effort d'un agent : kit project effort <agent> <niveau>
+name: TODO
+size: TODO
+size_reason: TODO
+stack: TODO
