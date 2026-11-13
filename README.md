@@ -11,7 +11,7 @@ Environnement Claude Code réutilisable : 14 sous-agents, skills routés par pro
 | `global/skills/` (3) | `~/.claude/skills/` | `pocketbase`, `secrets-handling`, `deploy-coolify-cloudflare` |
 | `global/commands/` | `~/.claude/commands/` | `/new-project`, `/add-skill`, `/add-agent`, `/env-check` |
 | `global/skills-registry.md` | `~/.claude/skills-registry.md` | type de projet → profils, skills, agents |
-| `global/settings.json` | fusionné dans `~/.claude/settings.json` | permissions + hook anti-fuite |
+| `global/settings.json` (+ `settings.vps.json`, `settings.v1.json`) | appliqué à `~/.claude/settings.json` (réglages gérés, voir plus bas) | permissions + hook anti-fuite ; `settings.v1.json` : instantané des entrées écrites par la v1 |
 | `profiles/*.txt` | utilisés par `kit skills install` | listes de skills par domaine (web, design, brand, android, game, threejs, go, rust, shopify, cloud, media, meta, custom) |
 | `scripts/` | `~/.local/bin/kit` | CLI : secrets, skills, agents, MCP |
 
@@ -127,6 +127,37 @@ Le script valide sur une **liste blanche** (tableaux commentés en tête de `scr
 - `WebFetch(domain:<hôte>)`.
 
 Tout le reste est refusé : `Edit`/`Write`, écritures `kit api`, outils MCP qui écrivent, règles larges, secrets, suppression, déploiement, `push`, fusion. Ces cas refusés, et toute règle globale, passent par une PR sur ce dépôt.
+
+## Réglages gérés
+
+`kit sync` (aussi lancé par `install.sh` et par `kit update`) applique les réglages du kit à `~/.claude/settings.json`
+par une **fusion à trois points** : une règle retirée du kit disparaît, tes ajouts restent, les doublons sont fusionnés.
+
+- **Clés gérées** : `permissions.allow|ask|deny|defaultMode`, `hooks`, `autoMode.*`. Le reste du fichier (`model`,
+  `statusLine`, `enabledPlugins`, `env`, `permissions.additionalDirectories`…) n'est jamais lu ni modifié.
+- **K, réglages du kit pour ce poste** : `global/settings.json`, plus `global/settings.vps.json` (profil `vps`), plus
+  la surcharge locale ci-dessous.
+- **Registre** `~/.config/claude-kit/settings.managed.json` : le K appliqué la dernière fois. Tes ajouts sont ce qui est
+  dans `settings.json` sans être dans le registre ; la nouvelle liste est K puis tes ajouts, sans doublon, ordre gardé.
+  Un groupe de hooks dont la commande pointe dans `~/.config/claude-kit/hooks/` appartient toujours au kit, ce qui
+  retire les groupes dupliqués. Le fichier n'est réécrit (de façon atomique, droits et lien symbolique conservés) que
+  si son contenu change ; l'ancien est copié en `settings.json.pre-kit.<date>` (les 3 dernières sont gardées).
+- **Première exécution après la mise à niveau** (pas de registre) : tout ce que le kit v1 écrivait
+  (`global/settings.v1.json`, instantané des entrées des profils local et vps) compte comme venant du kit : ces entrées
+  disparaissent si le kit ne les a plus, les tiennes restent. Les phrases d'`autoMode.*` y sont stockées en empreintes
+  SHA-256 (`autoModeSha256`, empreinte de la chaîne exacte), pas en clair : le dépôt est public et ces phrases décrivent
+  l'infra interne.
+- **Surcharge propre au poste** : `~/.config/claude-kit/settings.local.json` (jamais dans Git, absente par défaut,
+  à créer à la main ; à ne pas confondre avec le `~/.claude/settings.local.json` de Claude Code). Même forme que
+  `global/settings.json`, limitée aux clés gérées : ses entrées s'ajoutent à K sur ce poste seulement (par exemple des
+  entrées `autoMode.environment` décrivant des domaines internes) ; supprimer le fichier retire ses entrées au sync
+  suivant.
+- **Simulation** : `kit sync --dry-run` affiche, par clé, les entrées qui seraient ajoutées (`+`) et retirées (`-`) et
+  n'écrit rien (ni réglages, ni sauvegarde, ni registre, ni liens). Les tests et les HOME temporaires utilisent aussi
+  `KIT_SYNC_CONTEXT=0` (pas de clonage des dépôts de contexte) et `KIT_SYNC_REGISTRY=0` (pas de régénération de
+  `global/skills-registry.md` dans le dépôt du kit).
+- **Retour à la v1** : voir `docs/rollback-v1.md` (restaurer le `settings.json` de l'archive, supprimer le registre,
+  lancer le `kit sync` de la v1).
 
 ## Mise à jour automatique
 
@@ -265,8 +296,8 @@ Le kit met Claude Code en mode **`auto`** : un classifieur juge chaque action au
 - `soft_deny` : pas de `tofu apply` (c'est toi qui l'appliques), pas de modification de ses propres permissions ;
 - `hard_deny` : jamais la valeur d'un secret, nulle part.
 
-`kit sync` le fusionne dans `~/.claude/settings.json` (machines et sessions cloud) : le mode vient du kit, et les
-listes s'additionnent avec tes propres entrées. Le classifieur **ignore** `autoMode` dans le `.claude/settings.json`
+`kit sync` l'applique à `~/.claude/settings.json` (machines et sessions cloud) : le mode vient du kit, et tes propres
+entrées sont conservées (voir « Réglages gérés »). Le classifieur **ignore** `autoMode` dans le `.claude/settings.json`
 d'un projet (un dépôt ne peut pas s'autoriser lui-même).
 
 **Quand Claude est bloqué à répétition** sur une action de routine, il ne change pas ses réglages : il ouvre une PR
@@ -292,10 +323,11 @@ claude-kit/
 │   ├── kit.sh                  CLI kit
 │   ├── secrets.sh              sops + age
 │   ├── lib.sh                  fonctions communes
+│   ├── managed-settings.jq     fusion à trois points des réglages (appelée par lib.sh)
 │   ├── backup-v1.sh            sauvegarde d'un poste avant la v2 (docs/rollback-v1.md)
 │   └── hooks/guard-secrets.sh  hook PreToolUse
 ├── global/                     lié dans ~/.claude
-│   ├── CLAUDE.md, settings.json, settings.vps.json, skills-registry.md
+│   ├── CLAUDE.md, settings.json, settings.vps.json, settings.v1.json, skills-registry.md
 │   ├── agents/  commands/  skills/
 ├── profiles/                   listes de skills par domaine
 └── templates/project/          gabarit copié par « kit project new/init »

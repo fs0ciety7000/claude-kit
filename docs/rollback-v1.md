@@ -14,7 +14,7 @@ l'ouverture d'une vraie session `claude` restent à faire sur un poste : la sect
 |---|---|---|
 | Dépôt du kit (git) | un clone, par ex. `~/claude-kit` (lien `~/.local/bin/kit` vers `scripts/kit.sh`) | non : c'est `legacy/v1` ; l'état local (diff, commits non poussés, fichiers non suivis) est dans le manifeste |
 | `CLAUDE.md`, `skills-registry.md`, agents, commandes, skills du kit | `~/.claude/*`, liens symboliques vers le clone | liens et cibles notés ; le contenu est dans `legacy/v1` |
-| Réglages | `~/.claude/settings.json` (fusion par union de `global/settings.json`) | oui |
+| Réglages | `~/.claude/settings.json` (v1 : fusion par union de `global/settings.json` ; v2 : réglages gérés, registre `~/.config/claude-kit/settings.managed.json`) | oui (le fichier ; pas le registre) |
 | Hooks | `~/.config/claude-kit/hooks/*` (liens vers `scripts/hooks/`), profil (`profile`) | oui (liens et profil) |
 | Copies de contexte | `~/.kit/context/<dépôt>` (sans `.git` dans l'archive) | oui (fichiers) ; origine et commit dans le manifeste |
 | Clé age | `~/.config/sops/age/keys.txt` | **jamais** : à garder dans le gestionnaire de mots de passe |
@@ -124,9 +124,14 @@ réglages, registre, copies de contexte. Les liens vers des fichiers qui n'exist
 commandes de la v2) sont supprimés (`link_dir` retire les liens cassés qui pointent vers le kit). Un fichier ordinaire
 qui porte le même nom qu'un élément du kit n'est jamais écrasé : il est signalé « non géré par le kit, ignoré ».
 
-**Les réglages ne reviennent pas tout seuls.** `apply_settings` fusionne par union (`permissions.allow|ask|deny`,
-hooks) : tout ce que la v2 a ajouté à `~/.claude/settings.json` y reste. Pour retrouver exactement la v1, restaure
-le fichier de l'archive (section suivante) **avant** de relancer `kit sync`.
+**Les réglages ne reviennent pas tout seuls.** Le `kit sync` de la v1 fusionne par union (`permissions.allow|ask|deny`,
+hooks) et ne lit pas le registre de la v2 : tout ce que la v2 a écrit dans `~/.claude/settings.json` y reste. En v2,
+`kit sync` applique les réglages gérés (fusion à trois points, voir ci-dessous) ; le registre
+`~/.config/claude-kit/settings.managed.json` garde en mémoire ce que le kit a posé la dernière fois. Pour retrouver
+exactement la v1 : restaure le `settings.json` de l'archive, **supprime le registre**, puis lance le `kit sync` de la
+v1 (section suivante). Le `settings.json` de l'archive reste la référence ; les sauvegardes
+`settings.json.pre-kit.<date>` (les trois dernières, écrites par la v2 avant chaque changement) ne servent qu'à
+revenir d'un état v2 à un état v2 plus ancien.
 
 ### 1.4 Restaurer depuis l'archive
 
@@ -149,9 +154,14 @@ mkdir -p ~/restore-v1 && tar -xzf ~/claude-kit-backups/v1-<hôte>-<date>.tar.gz 
 cat ~/restore-v1/.claude-kit-backup-v1/MANIFEST.txt                  # ce qui est dedans, ce qui a été écarté
 cp ~/.claude/settings.json ~/.claude/settings.json.v2-avant-retour   # garde la version v2 pour y revenir
 cp ~/restore-v1/.claude/settings.json ~/.claude/settings.json        # remplace la fusion par les réglages v1
+rm -f ~/.config/claude-kit/settings.managed.json                     # oublie le registre de la v2 (la v1 ne le lit pas)
 diff -r ~/restore-v1/.claude ~/.claude | head -50                    # le reste : à reprendre au cas par cas
-"$KIT/scripts/kit.sh" sync
+"$KIT/scripts/kit.sh" sync                                           # kit sur legacy/v1 : fusion par union, comme avant
 ```
+
+Le `settings.json` restauré est celui de la v1 : le `kit sync` de la v1 n'y ajoute que ce que `global/settings.json` de
+la v1 contient déjà, donc rien ne change. Si tu avais une surcharge `~/.config/claude-kit/settings.local.json` (propre
+à la v2, voir le README), la v1 l'ignore : elle ne fait aucun mal, laisse-la en place pour le retour vers la v2.
 
 À restaurer en général : `settings.json` (+ `settings.local.json` s'il existait), `keybindings.json`, la statusline,
 `plugins/installed_plugins.json` et `known_marketplaces.json`, les agents, commandes et skills qui sont des **fichiers
@@ -192,12 +202,14 @@ les réglages restaurés.
 git -C "$KIT" status --porcelain                          # propre
 git -C "$KIT" checkout main && git -C "$KIT" pull --ff-only
 "$KIT/install.sh"                                         # même profil qu'avant
-cp ~/.claude/settings.json.v2-avant-retour ~/.claude/settings.json   # si tu l'as gardé : réglages exacts de la v2
+"$KIT/scripts/kit.sh" sync --dry-run                      # écart par clé sur les réglages, rien d'écrit
 "$KIT/scripts/kit.sh" sync
 ```
 
-Sans la copie de `settings.json.v2-avant-retour`, la fusion par union laisse les règles v1 dans le fichier jusqu'à
-l'arrivée du bloc géré (lot 2).
+Le registre ayant été supprimé au retour vers la v1, le premier `kit sync` de la v2 refait la migration : il
+considère comme venant du kit tout ce que la v1 écrivait (instantané `global/settings.v1.json`), le remplace par les
+réglages de la v2 et garde les ajouts de l'utilisateur. Il n'y a donc plus besoin de recopier
+`settings.json.v2-avant-retour` ; la copie reste possible si tu veux retrouver tes réglages exacts d'avant le retour.
 
 ## 2. Session claude.ai/code : revenir à la v1
 
@@ -235,7 +247,8 @@ remets l'ancien script de démarrage et supprime `KIT_AUTOUPDATE`.
   référence épinglée (`KIT_PIN=<branche|tag>` ou fichier), lus aussi par `kit update`.
 - `kit doctor` ne signale pas que le kit est volontairement hors de `main` ni la valeur de `KIT_AUTOUPDATE`, et
   `kit --version` n'existe pas en v1 : la version se lit dans le commit du dépôt.
-- Les réglages fusionnent par union (`merge_settings`) : un retour arrière exige la restauration manuelle de
-  `settings.json`. Le bloc géré du lot 2 supprime ce besoin.
+- ~~Les réglages fusionnent par union~~ : traité par le lot 2b (`apply_managed_settings`). Le retour vers la v1
+  reste à faire à la main (restaurer `settings.json`, supprimer le registre, section 1.4), parce que le `kit sync` de
+  la v1 ne connaît pas le registre.
 - Un clone `--depth 1` (script cloud) ne connaît que `main` : toute documentation de retour doit passer par
   `git remote set-branches --add`.
