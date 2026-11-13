@@ -111,52 +111,6 @@ link_global() {
   ln -sfn "$KIT_HOME/scripts/hooks/kit-dockerd.sh" "$KIT_CONFIG/hooks/kit-dockerd.sh"
 }
 
-# merge_settings <fichier-existant> <réglages-kit> <current|kit>
-# Fusionne en union les listes allow/ask/deny et les hooks de chaque événement.
-# "current" : les valeurs scalaires existantes gagnent ; "kit" : celles du kit gagnent.
-merge_settings() {
-  local cur=$1 kit=$2 winner=${3:-current} out base created=0
-  need jq "Installe jq."
-  if [[ -f $cur ]]; then
-    jq -e . "$cur" >/dev/null 2>&1 || die "$cur n'est pas du JSON valide"
-    base=$cur
-  else
-    # Fichier absent : on part de {} pour obtenir la même forme normalisée qu'à la fusion suivante.
-    created=1
-    base=$(mktemp)
-    echo '{}' >"$base"
-  fi
-  if ! out=$(jq -s --arg w "$winner" '
-    .[0] as $cur | .[1] as $kit
-    | (if $w == "kit" then ($cur * $kit) else ($kit * $cur) end)
-    | .permissions.allow = ((($cur.permissions.allow // []) + ($kit.permissions.allow // [])) | unique)
-    | .permissions.ask   = ((($cur.permissions.ask   // []) + ($kit.permissions.ask   // [])) | unique)
-    | .permissions.deny  = ((($cur.permissions.deny  // []) + ($kit.permissions.deny  // [])) | unique)
-    # The kit decides the permission mode (auto); the autoMode lists are unions, kit entries first, order kept.
-    | (if $kit.permissions.defaultMode then .permissions.defaultMode = $kit.permissions.defaultMode else . end)
-    | reduce ("environment", "allow", "soft_deny", "hard_deny") as $k (.;
-        if ($cur.autoMode[$k] // $kit.autoMode[$k]) == null then .
-        else .autoMode[$k] = ((($kit.autoMode[$k] // []) + ($cur.autoMode[$k] // []))
-                              | reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end))
-        end)
-    | reduce ((($cur.hooks // {}) + ($kit.hooks // {})) | keys[]) as $e (.;
-        .hooks[$e] = ((($cur.hooks[$e] // []) + ($kit.hooks[$e] // [])) | unique))
-  ' "$base" "$kit"); then
-    if ((created)); then rm -f "$base"; fi
-    die "fusion des réglages échouée"
-  fi
-  if ((created)); then
-    rm -f "$base"
-    mkdir -p "$(dirname "$cur")"
-    write_atomic "$cur" "$out"
-    ok "réglages créés : $cur"
-  elif [[ "$out" != "$(cat "$cur")" ]]; then
-    cp "$cur" "$cur.pre-kit.$(date +%Y%m%d%H%M%S)"
-    write_atomic "$cur" "$out"
-    ok "réglages mis à jour : $cur"
-  fi
-}
-
 # write_atomic <fichier> <contenu> : écrit dans un fichier temporaire du même dossier puis mv (jamais de fichier tronqué
 # si le processus est interrompu). Suit un lien symbolique (réglages versionnés ailleurs) et garde les droits existants.
 write_atomic() {
@@ -167,10 +121,136 @@ write_atomic() {
   printf '%s\n' "$content" >"$tmp" && chmod "$mode" "$tmp" && mv "$tmp" "$real" || { rm -f "$tmp"; die "écriture de $real échouée"; }
 }
 
-apply_settings() {
-  mkdir -p "$CLAUDE_HOME"
-  merge_settings "$CLAUDE_HOME/settings.json" "$KIT_HOME/global/settings.json" current
-  if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null || echo local)" == vps ]]; then
-    merge_settings "$CLAUDE_HOME/settings.json" "$KIT_HOME/global/settings.vps.json" kit
+# Empreinte SHA-256 (hexadécimal) de l'entrée standard.
+sha256_hex() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 | cut -d' ' -f1
+  else openssl dgst -sha256 -r | cut -d' ' -f1; fi
+}
+
+# automode_v1_owned <instantané v1> <réglages actuels> : écrit {"autoMode": {<liste>: [entrées]}} avec les entrées
+# autoMode.* des réglages actuels dont l'empreinte SHA-256 (de la chaîne exacte) figure dans autoModeSha256 de
+# l'instantané. L'instantané ne contient pas ces phrases en clair (elles décrivent l'infra interne, le dépôt est
+# public). Les entrées sur plusieurs lignes ne sont pas comparées : aucune entrée du kit n'en a.
+automode_v1_owned() {
+  local snap=$1 cur=$2 rows k line rc
+  rows=$(mktemp) || return 1
+  while IFS= read -r k; do
+    while IFS= read -r line; do
+      printf '%s\t%s\t%s\n' "$k" "$(printf '%s' "$line" | sha256_hex)" "$line" >>"$rows"
+    done < <(jq -r --arg k "$k" '(.autoMode[$k] // []) | if type == "array" then .[] else empty end
+      | select(type == "string" and (contains("\n") | not))' "$cur")
+  done < <(jq -r '(.autoMode // {}) | keys_unsorted[]' "$cur")
+  rc=0
+  jq -R -s --slurpfile s "$snap" '
+    ($s[0].autoModeSha256 // {}) as $m
+    | split("\n") | map(select(length > 0) | split("\t"))
+    | map(select(. as $r | any(($m[$r[0]] // [])[]; . == $r[1])))
+    | reduce .[] as $r ({}; .autoMode[$r[0]] += [$r[2:] | join("\t")])' "$rows" || rc=$?
+  rm -f "$rows"
+  return $rc
+}
+
+# Réglages gérés : fusion à trois points de ~/.claude/settings.json (programme jq : scripts/managed-settings.jq).
+# Clés gérées : permissions.allow|ask|deny|defaultMode, hooks, autoMode.*. Le reste du fichier n'est jamais touché.
+#   K = réglages du kit pour ce poste : global/settings.json, + settings.vps.json (profil vps),
+#       + $KIT_CONFIG/settings.local.json (surcharge propre au poste, jamais dans Git, absente par défaut).
+#   L = registre $KIT_CONFIG/settings.managed.json = le K appliqué la dernière fois. Absent (première exécution après
+#       la mise à niveau) : L = K + global/settings.v1.json, instantané de toutes les entrées que le kit v1 a écrites
+#       (autoMode.* y figure en empreintes SHA-256, pas en clair).
+#   U = ajouts de l'utilisateur = C (fichier actuel) moins L, par liste. Un groupe de hooks dont une commande pointe
+#       dans $KIT_CONFIG/hooks appartient toujours au kit (retire les doublons).
+#   Nouveau fichier : chaque liste = K puis U, sans doublon, ordre gardé ; defaultMode vient de K. Écriture atomique
+#   seulement si le contenu change, sauvegarde settings.json.pre-kit.<date> (les 3 dernières gardées), puis L := K.
+# Option --dry-run : affiche l'écart par clé, n'écrit rien (ni fichier, ni sauvegarde, ni registre).
+apply_managed_settings() {
+  local dry=0 cur="$CLAUDE_HOME/settings.json" reg="$KIT_CONFIG/settings.managed.json"
+  local jqf="$KIT_HOME/scripts/managed-settings.jq" snap="$KIT_HOME/global/settings.v1.json"
+  local overlay="$KIT_CONFIG/settings.local.json" tmpd f created=0 migrating=0 nb_add nb_rm
+  [[ ${1:-} == --dry-run ]] && dry=1
+  need jq "Installe jq."
+  [[ -f $jqf ]] || die "$jqf introuvable"
+  local frags=("$KIT_HOME/global/settings.json")
+  if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null || echo local)" == vps ]]; then frags+=("$KIT_HOME/global/settings.vps.json"); fi
+  [[ -f $overlay ]] && frags+=("$overlay")
+  for f in "${frags[@]}"; do
+    jq -e 'type == "object"' "$f" >/dev/null 2>&1 || die "$f n'est pas un objet JSON valide"
+  done
+  if [[ -f $cur ]]; then
+    jq -e 'type == "object"' "$cur" >/dev/null 2>&1 || die "$cur n'est pas du JSON valide (objet attendu)"
+  else
+    created=1
   fi
+
+  tmpd=$(mktemp -d) || die "mktemp échoué"
+  # K : réglages du kit pour ce poste.
+  jq -s --arg mode build -f "$jqf" "${frags[@]}" >"$tmpd/k.json" || { rm -rf "$tmpd"; die "calcul des réglages du kit échoué"; }
+  # C : fichier actuel.
+  if ((created)); then echo '{}' >"$tmpd/c.json"; else cp "$cur" "$tmpd/c.json"; fi
+  # L : registre, ou K + instantané v1 à la première exécution.
+  if [[ -f $reg ]] && jq -e 'type == "object"' "$reg" >/dev/null 2>&1; then
+    jq --arg mode project -f "$jqf" "$reg" >"$tmpd/l.json" || { rm -rf "$tmpd"; die "lecture de $reg échouée"; }
+  else
+    migrating=1
+    [[ -f $reg ]] && warn "$reg illisible : traité comme absent"
+    if [[ -f $snap ]]; then
+      jq -s --arg mode build -f "$jqf" "$tmpd/k.json" "$snap" >"$tmpd/l.json" || { rm -rf "$tmpd"; die "lecture de $snap échouée"; }
+      # autoMode.* est stocké en empreintes SHA-256 dans l'instantané : les entrées de C qui y figurent viennent du kit.
+      automode_v1_owned "$snap" "$tmpd/c.json" >"$tmpd/lx.json" \
+        && jq -s --arg mode build -f "$jqf" "$tmpd/l.json" "$tmpd/lx.json" >"$tmpd/l2.json" \
+        && mv "$tmpd/l2.json" "$tmpd/l.json" \
+        || { rm -rf "$tmpd"; die "lecture des empreintes autoMode de $snap échouée"; }
+    else
+      warn "$snap introuvable : les anciennes entrées du kit ne seront pas retirées"
+      cp "$tmpd/k.json" "$tmpd/l.json"
+    fi
+  fi
+  jq -n --arg mode merge --arg kitdir "$KIT_CONFIG/hooks" \
+    --slurpfile c "$tmpd/c.json" --slurpfile k "$tmpd/k.json" --slurpfile l "$tmpd/l.json" \
+    -f "$jqf" >"$tmpd/res.json" || { rm -rf "$tmpd"; die "fusion des réglages échouée"; }
+  jq '.new' "$tmpd/res.json" >"$tmpd/new.json"
+
+  local changed=0
+  if ((created)) || [[ "$(jq -S -c . "$tmpd/c.json")" != "$(jq -S -c . "$tmpd/new.json")" ]]; then changed=1; fi
+  nb_add=$(jq '[.changes[].added | length] | add // 0' "$tmpd/res.json")
+  nb_rm=$(jq '[.changes[].removed | length] | add // 0' "$tmpd/res.json")
+
+  if ((dry)); then
+    info "réglages gérés ($cur) : simulation, rien n'est écrit"
+    if ((migrating)); then info "registre absent : première migration (entrées du kit = K + instantané v1)"; fi
+    if ((changed)); then
+      jq -r 'def short: tojson | if length > 160 then .[0:157] + "..." else . end;
+        .changes[]
+        | "  " + .name + " : +" + (.added | length | tostring) + " -" + (.removed | length | tostring)
+          + (if .duplicates > 0 then " (doublons exacts retirés : " + (.duplicates | tostring) + ")" else "" end),
+          (.added[] | "    + " + short), (.removed[] | "    - " + short)' "$tmpd/res.json"
+      if ((nb_add + nb_rm == 0)); then echo "  (ordre ou doublons exacts seulement)"; fi
+    else
+      echo "  aucun changement"
+    fi
+    rm -rf "$tmpd"
+    return 0
+  fi
+
+  if ((changed)); then
+    if ((created)); then
+      mkdir -p "$(dirname "$cur")"
+      write_atomic "$cur" "$(cat "$tmpd/new.json")"
+      ok "réglages créés : $cur"
+    else
+      cp "$cur" "$cur.pre-kit.$(date +%Y%m%d%H%M%S)"
+      write_atomic "$cur" "$(cat "$tmpd/new.json")"
+      ok "réglages mis à jour : $cur (+$nb_add -$nb_rm entrées)"
+      # Garde les 3 dernières sauvegardes (l'horodatage trie dans l'ordre chronologique).
+      local bks=() b i
+      for b in "$cur".pre-kit.*; do [[ -e $b ]] && bks+=("$b"); done
+      for ((i = 0; i < ${#bks[@]} - 3; i++)); do rm -f "${bks[i]}"; done
+    fi
+  fi
+  # Registre : L := K, seulement si son contenu change.
+  if [[ ! -f $reg ]] || [[ "$(jq -S -c . "$tmpd/k.json")" != "$(jq -S -c --arg mode project -f "$jqf" "$reg" 2>/dev/null)" ]]; then
+    mkdir -p "$KIT_CONFIG"
+    write_atomic "$reg" "$(cat "$tmpd/k.json")"
+  fi
+  rm -rf "$tmpd"
 }
