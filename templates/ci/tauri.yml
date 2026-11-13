@@ -15,6 +15,7 @@ concurrency:
 
 env:
   CI: "true"
+  NODE_DEFAULT_VERSION: "26" # current Node LTS (Lithium), checked on nodejs.org 2026-11-13
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   RUSTUP_INIT_VERSION: 1.29.3
@@ -38,7 +39,7 @@ jobs:
           $sudo apt-get install -y -q --no-install-recommends build-essential curl wget file pkg-config \
             libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       # Node version, first found: the Dockerfile (FROM node:<v>), .nvmrc, .node-version, package.json engines.node;
-      # otherwise the current LTS.
+      # otherwise NODE_DEFAULT_VERSION (an exact major: `lts/*` needs the GitHub API, rate-limited without a token).
       - name: node version
         id: node
         run: |
@@ -50,7 +51,7 @@ jobs:
             for c in .nvmrc .node-version; do if [ -f "$c" ]; then f=$c; break; fi; done
           fi
           if [ -z "$v$f" ] && jq -e '.engines.node // empty' package.json >/dev/null 2>&1; then f=package.json; fi
-          if [ -z "$v$f" ]; then v='lts/*'; fi
+          if [ -z "$v$f" ]; then v=$NODE_DEFAULT_VERSION; fi
           echo "version=$v" >>"$GITHUB_OUTPUT"
           echo "file=$f" >>"$GITHUB_OUTPUT"
       - uses: https://data.forgejo.org/actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

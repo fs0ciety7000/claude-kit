@@ -85,5 +85,5 @@ jobs:
       - name: govulncheck (binary, report only)
         continue-on-error: true
         run: |
-          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          GOTOOLCHAIN=auto go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
           "$(go env GOPATH)/bin/govulncheck" -mode=binary "$RUNNER_TEMP/pb/pocketbase"

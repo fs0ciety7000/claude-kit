@@ -33,12 +33,13 @@ jobs:
           if [ -n "$out" ]; then printf 'not gofmt-ed:\n%s\n' "$out"; exit 1; fi
       - name: vet
         run: go vet ./...
-      # No -race: the race detector needs a C compiler, which the default runner image does not ship.
+      # The race detector needs cgo and a C compiler: the act images ship gcc.
       - name: test
-        run: go test -count=1 ./...
+        run: go test -race -count=1 ./...
       - name: build
         run: go build -trimpath ./...
+      # setup-go sets GOTOOLCHAIN=local; a tool may need a newer Go than go.mod: GOTOOLCHAIN=auto for its install only.
       - name: govulncheck
         run: |
-          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          GOTOOLCHAIN=auto go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
           "$(go env GOPATH)/bin/govulncheck" ./...

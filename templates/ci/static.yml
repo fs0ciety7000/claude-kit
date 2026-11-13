@@ -25,11 +25,10 @@ jobs:
         shell: bash
     steps:
       - uses: https://data.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: https://data.forgejo.org/actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: lts/*
+      # Node of the runner image (the act images ship a current LTS, which html-validate needs: >= 22.22).
       - name: html-validate
         run: |
+          node --version
           mapfile -t files < <(find . \( -name node_modules -o -name .git \) -prune -o \( -name '*.html' -o -name '*.htm' \) -type f -print | sort)
           if [ "${#files[@]}" -eq 0 ]; then echo "no HTML file found"; exit 1; fi
           cfg=()

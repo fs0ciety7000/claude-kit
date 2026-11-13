@@ -3,8 +3,8 @@
 # them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate bumps the
 # SHA from the version comment. No secret is used. Cargo.lock must be committed (every cargo call is --locked).
 # Rust version, first found: rust-toolchain.toml (or rust-toolchain), the Dockerfile (FROM rust:<v>), else stable.
-# The default runner image has neither rustup nor a C linker: both are installed here (rustup-init pinned by
-# version and SHA-256 from static.rust-lang.org; build-essential from apt).
+# The default runner image (act) has gcc but no rustup: rustup-init is installed here, pinned by version and SHA-256
+# from static.rust-lang.org; build-essential comes from apt only on an image without a C compiler.
 name: ci-rust
 on: [push]
 

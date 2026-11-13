@@ -11,6 +11,7 @@ concurrency:
 
 env:
   CI: "true"
+  NODE_DEFAULT_VERSION: "26" # current Node LTS (Lithium), checked on nodejs.org 2026-11-13
   ASTRO_TELEMETRY_DISABLED: "1"
 
 jobs:
@@ -23,7 +24,7 @@ jobs:
     steps:
       - uses: https://data.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Node version, first found: the Dockerfile (FROM node:<v>), .nvmrc, .node-version, package.json engines.node;
-      # otherwise the current LTS.
+      # otherwise NODE_DEFAULT_VERSION (an exact major: `lts/*` needs the GitHub API, rate-limited without a token).
       - name: node version
         id: node
         run: |
@@ -35,7 +36,7 @@ jobs:
             for c in .nvmrc .node-version; do if [ -f "$c" ]; then f=$c; break; fi; done
           fi
           if [ -z "$v$f" ] && jq -e '.engines.node // empty' package.json >/dev/null 2>&1; then f=package.json; fi
-          if [ -z "$v$f" ]; then v='lts/*'; fi
+          if [ -z "$v$f" ]; then v=$NODE_DEFAULT_VERSION; fi
           echo "version=$v" >>"$GITHUB_OUTPUT"
           echo "file=$f" >>"$GITHUB_OUTPUT"
       - uses: https://data.forgejo.org/actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
