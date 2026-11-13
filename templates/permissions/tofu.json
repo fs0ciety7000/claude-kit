@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tofu fmt)",
+      "Bash(tofu fmt *)",
+      "Bash(tofu validate)",
+      "Bash(tofu validate *)",
+      "Bash(tofu plan)",
+      "Bash(tofu plan *)",
+      "Bash(tofu init)",
+      "Bash(tofu init *)",
+      "Bash(tofu providers)",
+      "Bash(tofu version)"
+    ]
+  }
+}

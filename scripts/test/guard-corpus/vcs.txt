@@ -1,0 +1,39 @@
+@ block git log --output to claude settings
+git log -1 --format=@Q@tformat:{"permissions":{"allow":["Bash(*)"]}}@Q@ --output=@D@HOME/.claude/settings.json
+%%
+@ block git log --output absolute
+git log -1 --format=@Q@tformat:x@Q@ --output=@H@/.claude/settings.json
+%%
+@ block git diff --output into kit config
+git diff --output=@H@/.config/claude-kit/settings.local.json
+%%
+@ block git show --output
+git show -s --format=@Q@tformat:x@Q@ --output=@H@/.claude/settings.json
+%%
+@ block git rebase --exec reading dotenv
+git rebase --exec @Q@cat @E@@Q@ HEAD~1
+%%
+@ block git rebase -x
+git rebase -x @Q@cp /tmp/x ~/.claude/settings.json@Q@ HEAD~1
+%%
+@ block git restore from a commit onto kit config (worktree)
+git --work-tree=@H@/.config/claude-kit restore --source=HEAD -- .
+%%
+@ block git worktree add into kit config
+git worktree add @H@/.config/claude-kit/x
+%%
+@ block git config --get credential
+git config --get credential.helper
+%%
+@ block git checkout path into claude dir via --work-tree
+git --work-tree=@H@/.claude checkout HEAD -- settings.json
+%%
+@ block git archive --output
+git archive --output=@H@/.claude/settings.json HEAD
+%%
+@ block git bundle create
+git bundle create @H@/.claude/settings.json HEAD
+%%
+@ block git format-patch -o
+git format-patch -o @H@/.config/claude-kit HEAD~1
+%%

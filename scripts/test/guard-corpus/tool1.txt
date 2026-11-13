@@ -1,0 +1,72 @@
+@T block Read symlink to private key
+{"tool_name":"Read","cwd":"@CWD@","tool_input":{"file_path":"@CWD@/klink"}}
+%%
+@T block Read file in symlinked aws dir
+{"tool_name":"Read","cwd":"@CWD@","tool_input":{"file_path":"@CWD@/awsdir/credentials"}}
+%%
+@T block Write through symlink to settings
+{"tool_name":"Write","cwd":"@CWD@","tool_input":{"file_path":"@CWD@/slink","content":"{}"}}
+%%
+@T block Write into symlinked claude dir
+{"tool_name":"Write","cwd":"@CWD@","tool_input":{"file_path":"@CWD@/cdir/settings.json","content":"{}"}}
+%%
+@T block Edit hook via config path
+{"tool_name":"Edit","cwd":"@CWD@","tool_input":{"file_path":"@HOME@/.config/claude-kit/hooks/guard-secrets.sh","old_string":"a","new_string":"b"}}
+%%
+@T block Edit hook at KIT_HOME (symlink target)
+{"tool_name":"Edit","cwd":"@CWD@","tool_input":{"file_path":"@K@/scripts/hooks/guard-secrets.sh","old_string":"a","new_string":"b"}}
+%%
+@T block Write kit repo global settings
+{"tool_name":"Write","cwd":"@CWD@","tool_input":{"file_path":"@K@/global/settings.json","content":"{}"}}
+%%
+@T block Write claude settings dotdot
+{"tool_name":"Write","cwd":"@CWD@","tool_input":{"file_path":"@HOME@/.claude/../.claude/settings.json","content":"{}"}}
+%%
+@T block Write claude settings tilde
+{"tool_name":"Write","cwd":"@CWD@","tool_input":{"file_path":"~/.claude/settings.json","content":"{}"}}
+%%
+@T block MultiEdit settings.local
+{"tool_name":"MultiEdit","cwd":"@CWD@","tool_input":{"file_path":"@HOME@/.claude/settings.local.json","edits":[]}}
+%%
+@T block Write project settings.local.json
+{"tool_name":"Write","cwd":"@CWD@","tool_input":{"file_path":"@CWD@/.claude/settings.local.json","content":"{\"permissions\":{\"allow\":[\"Bash(*)\"]}}"}}
+%%
+@T block NotebookEdit dotenv
+{"tool_name":"NotebookEdit","cwd":"@CWD@","tool_input":{"notebook_path":"@CWD@/@E@","new_source":"x"}}
+%%
+@T block Grep path ssh dir
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":"x","path":"@HOME@/.ssh"}}
+%%
+@T block Grep glob star-env (rg semantics match dotfile)
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":".","path":"@CWD@","glob":"*env"}}
+%%
+@T block Grep glob star-dot-env
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":".","path":"@CWD@","glob":"@SE@"}}
+%%
+@T block Grep glob braces
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":".","path":"@CWD@","glob":"{@E@,x}"}}
+%%
+@T block Grep recursive on project (reads dotenv if not ignored)
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":"TOKEN","path":"@CWD@","output_mode":"content"}}
+%%
+@T block Grep type param
+{"tool_name":"Grep","cwd":"@CWD@","tool_input":{"pattern":"x","path":"@HOME@","glob":"**/.a*s/*"}}
+%%
+@T block Read proc environ
+{"tool_name":"Read","cwd":"@CWD@","tool_input":{"file_path":"@P@/self/environ"}}
+%%
+@T block Read proc task environ
+{"tool_name":"Read","cwd":"@CWD@","tool_input":{"file_path":"@P@/self/task/1/environ"}}
+%%
+@T block Read claude.json
+{"tool_name":"Read","cwd":"@CWD@","tool_input":{"file_path":"@HOME@/.claude.json"}}
+%%
+@T block Read uppercase dotenv
+{"tool_name":"Read","cwd":"@CWD@","tool_input":{"file_path":"@CWD@/@EU@"}}
+%%
+@T block Read with newline in path
+{"tool_name":"Read","cwd":"@CWD@","tool_input":{"file_path":"@CWD@/x\n@CWD@/@E@"}}
+%%
+@T block Glob tool not in matcher (names only)
+{"tool_name":"Glob","cwd":"@CWD@","tool_input":{"pattern":"**/@E@"}}
+%%

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest)",
+      "Bash(pytest *)",
+      "Bash(python -m pytest)",
+      "Bash(python -m pytest *)",
+      "Bash(uv run pytest)",
+      "Bash(uv run pytest *)",
+      "Bash(ruff check)",
+      "Bash(ruff check *)",
+      "Bash(ruff format --check *)",
+      "Bash(ruff format *)",
+      "Bash(mypy *)",
+      "Bash(pyright)",
+      "Bash(pip list)",
+      "Bash(pip check)",
+      "Bash(pip-audit)"
+    ]
+  }
+}

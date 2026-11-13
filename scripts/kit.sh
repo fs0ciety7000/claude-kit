@@ -31,8 +31,12 @@ PROJETS
   kit project init [dossier]              copie le gabarit dans un dossier existant (n'écrase rien)
         gabarit : CLAUDE.md, AGENTS.md, DESIGN.md, DEPLOY.md, .env.example, .gitignore, secrets/
   kit project types                       types de projet du registre (profils et agents de chacun)
-  kit project add <type>... [--dir d] [--no-skills]
-        copie dans .claude/ du projet les agents et skills maison du type, installe ses profils de skills
+  kit project add <type|pile>... [--dir d] [--no-skills] [--no-permissions]
+        copie dans .claude/ du projet les agents et skills maison du type, installe ses profils de skills et pose
+        les autorisations de sa pile (templates/permissions/<pile>.json, fusionnées dans .claude/settings.json) ;
+        une pile (python, tofu...) peut être donnée à la place d'un type
+  kit project perms [pile|type]... [--dir d]
+        pose seulement les autorisations de pile ; sans argument, détecte la pile d'après les fichiers du projet
   kit project size S|M|L --reason "<une ligne>" [--dir d]
         fixe la taille : project.yaml, règles docs/rules/size-*.md et leurs imports dans CLAUDE.md (relançable)
   kit project effort <agent> <low|medium|high|xhigh|max> [--dir d]
@@ -156,10 +160,12 @@ cmd_skills() {
   esac
 }
 
-regen_registry() {
-  local reg="$KIT_HOME/global/skills-registry.md" tmp blk p content
-  [[ -f $reg ]] || return 0
-  grep -q 'kit:profiles:start' "$reg" || { warn "marqueurs absents dans $reg : table non régénérée"; return 0; }
+# render_registry <source> <destination> : copies the registry with its generated profiles table rebuilt from
+# profiles/*.txt; writes only when the content changes. Returns 1 when the markers are missing.
+render_registry() {
+  local src=$1 dst=$2 tmp blk p content
+  [[ -f $src ]] || return 0
+  grep -q 'kit:profiles:start' "$src" || { warn "marqueurs absents dans $src : table non régénérée"; return 1; }
   tmp=$(mktemp)
   blk=$(mktemp)
   {
@@ -178,10 +184,27 @@ regen_registry() {
     /<!-- kit:profiles:start -->/ { while ((getline l < blk) > 0) print l; skip = 1; next }
     /<!-- kit:profiles:end -->/   { skip = 0; next }
     !skip { print }
-  ' "$reg" >"$tmp"
-  cmp -s "$tmp" "$reg" || cat "$tmp" >"$reg"   # n'écrit que si le contenu change
+  ' "$src" >"$tmp"
+  if [[ ! -f $dst ]] || ! cmp -s "$tmp" "$dst"; then cat "$tmp" >"$dst"; fi   # n'écrit que si le contenu change
   rm -f "$tmp" "$blk"
+}
+
+# kit registry / kit add-skill : regenerates the table in the TRACKED registry of the kit (the user then commits it).
+regen_registry() {
+  local reg="$KIT_HOME/global/skills-registry.md"
+  [[ -f $reg ]] || return 0
+  render_registry "$reg" "$reg" || return 0
   ok "registre mis à jour"
+}
+
+# kit sync : the registry Claude reads is a copy in $KIT_CONFIG, so the kit clone stays clean.
+sync_registry() {
+  local reg="$KIT_HOME/global/skills-registry.md" dst="$KIT_CONFIG/skills-registry.md"
+  [[ -f $reg ]] || return 0
+  [[ -d $KIT_CONFIG ]] || { mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; }
+  render_registry "$reg" "$dst" || return 0
+  chmod 644 "$dst" 2>/dev/null || true
+  ok "registre mis à jour (${dst/#$HOME/~})"
 }
 
 cmd_add_skill() {
@@ -430,23 +453,136 @@ project_types() {
 # kit project add <type>... : pose dans .claude/ du projet les agents et skills maison du type,
 # puis installe ses profils de skills au niveau projet. Tout est copié (pas de liens) pour être commité :
 # le projet garde ses outils même dans une session cloud sans le kit.
+# Fragments d'autorisations (templates/permissions/types.tsv) d'un type du registre : « node astro »... (vide si aucun).
+stacks_for_type() {
+  awk -F'\t' -v t="$1" '$1 !~ /^#/ && $1 == t { print $2 }' "$KIT_HOME/templates/permissions/types.tsv" 2>/dev/null || true
+}
+# Piles détectées d'après les fichiers du dossier (pour « kit project perms » sans argument).
+detect_stacks() { # dossier
+  local d=$1 st=()
+  if [[ -f $d/package.json ]]; then
+    st+=(node)
+    if grep -qE '"astro"' "$d/package.json"; then st+=(astro); fi
+    if grep -qE '"next"' "$d/package.json"; then st+=(next); fi
+  fi
+  if [[ -f $d/go.mod ]]; then
+    st+=(go)
+    if grep -qi pocketbase "$d/go.mod"; then st+=(pocketbase); fi
+  fi
+  if [[ -d $d/pb_migrations || -d $d/pb_hooks ]]; then st+=(pocketbase); fi
+  if [[ -f $d/Cargo.toml ]]; then st+=(rust); fi
+  if [[ -f $d/pyproject.toml || -f $d/requirements.txt || -f $d/setup.py ]]; then st+=(python); fi
+  if [[ -n $(find "$d" -maxdepth 3 \( -name node_modules -o -name .git -o -name .terraform \) -prune -o -name '*.tf' -print -quit 2>/dev/null) ]]; then st+=(tofu); fi
+  printf '%s\n' ${st[@]+"${st[@]}"}
+}
+# project_permissions <dossier> <pile>... : fusionne les `permissions.allow` de templates/permissions/<pile>.json dans
+# <dossier>/.claude/settings.json (rien d'autre n'est lu ni écrit : pas de deny, ask ni hooks ; sans doublon, ordre gardé,
+# relançable). Journal : docs/memory/permissions.md. Les règles des fragments passent toutes `kit perms check` (test).
+project_permissions() {
+  local dir=$1 s f frags=() names=() settings log base="" new before after added
+  shift
+  settings="$dir/.claude/settings.json"; log="$dir/docs/memory/permissions.md"
+  need jq "Installe jq."
+  for s in "$@"; do
+    [[ $s =~ ^[a-z0-9][a-z0-9-]*$ ]] || { warn "pile inconnue : $s"; continue; }
+    f="$KIT_HOME/templates/permissions/$s.json"
+    [[ -f $f ]] || { warn "pas de fragment d'autorisations pour : $s"; continue; }
+    jq -e '(.permissions.allow // []) | type == "array" and all(type == "string")' "$f" >/dev/null 2>&1 || { warn "fragment illisible : $f"; continue; }
+    case " ${names[*]-} " in *" $s "*) continue ;; esac
+    frags+=("$f"); names+=("$s")
+  done
+  ((${#frags[@]})) || return 0
+  # Never the user's own settings: not $HOME (its .claude/settings.json is ~/.claude/settings.json), not /, and not any
+  # project whose settings file is the user settings (a link, or CLAUDE_HOME elsewhere).
+  local rdir home_phys
+  rdir=$(cd -P -- "$dir" 2>/dev/null && pwd -P) || rdir=$dir
+  home_phys=$(cd -P -- "$HOME" 2>/dev/null && pwd -P) || home_phys=$HOME
+  if [[ $rdir == / || $rdir == "$home_phys" || $rdir == "$HOME" || $rdir == "$CLAUDE_HOME" || $settings -ef $CLAUDE_HOME/settings.json ]]; then
+    die "dossier de projet refusé ($dir) : c'est le dossier personnel ou il contient les réglages de l'utilisateur ; lance la commande dans un projet"
+  fi
+  [[ ! -L $dir/.claude && ! -L $settings ]] || die "$settings (ou .claude) est un lien : refusé (aucune écriture hors du projet)"
+  if [[ -f $settings ]]; then
+    jq -e 'type == "object"' "$settings" >/dev/null 2>&1 || die "$settings n'est pas un objet JSON valide"
+    base=$settings
+  else
+    base=$(mktemp) || die "mktemp échoué"
+    echo '{}' >"$base"
+  fi
+  new=$(jq -s '.[0] as $c
+    | (reduce (.[1:][] | (.permissions.allow // [])[]) as $r ($c.permissions.allow // []; if any(.[]; . == $r) then . else . + [$r] end)) as $a
+    | $c | .permissions = ((.permissions // {}) | .allow = $a)' "$base" "${frags[@]}") || die "fusion des autorisations échouée"
+  before=$(jq '(.permissions.allow // []) | length' "$base")
+  after=$(jq '.permissions.allow | length' <<<"$new")
+  if [[ $base != "$settings" ]]; then rm -f "$base"; fi
+  added=$((after - before))
+  if ((added == 0)) && [[ -f $settings ]]; then
+    ok "autorisations de ${names[*]} déjà présentes dans ${settings/#$HOME/~}"
+    return 0
+  fi
+  mkdir -p "$dir/.claude"
+  write_atomic "$settings" "$new"
+  ok "$added règle(s) allow ajoutée(s) à ${settings/#$HOME/~} (piles : ${names[*]})"
+  if [[ ! -L $dir/docs && ! -L $dir/docs/memory && ! -L $log ]]; then
+    mkdir -p "$dir/docs/memory"
+    if [[ ! -f $log ]]; then
+      printf '%s\n' '# Permissions accordées par Claude' '' \
+        'Règles `permissions.allow` ajoutées à `.claude/settings.json` (`kit perms allow`, `kit project add`).' \
+        'Une ligne par ajout : date, règle ou piles, raison. Pour en retirer une, édite `.claude/settings.json` à la main.' '' >"$log"
+    fi
+    [[ -z $(tail -c1 "$log") ]] || echo >>"$log"
+    printf -- '- %s `kit project add` — autorisations de pile (%s) : %s règle(s) allow (templates/permissions)\n' "$(date +%F)" "${names[*]}" "$added" >>"$log"
+  fi
+}
+# kit project perms [pile|type]... [--dir d] : seulement les autorisations de pile (détection sans argument).
+project_perms() {
+  local dir=. stacks=() all=() t row st
+  while (($#)); do
+    case $1 in
+      --dir) dir=${2:?"dossier manquant"}; shift ;;
+      -*) die "option inconnue : $1" ;;
+      *) stacks+=("$1") ;;
+    esac
+    shift
+  done
+  [[ -d $dir ]] || die "dossier introuvable : $dir"
+  if ((${#stacks[@]} == 0)); then
+    while IFS= read -r st; do if [[ -n $st ]]; then stacks+=("$st"); fi; done < <(detect_stacks "$dir")
+    if ((${#stacks[@]} == 0)); then
+      info "aucune pile détectée dans $dir : kit project perms <pile> (node, astro, next, go, rust, pocketbase, python, tofu)"
+      return 0
+    fi
+    info "piles détectées : ${stacks[*]}"
+  fi
+  for t in "${stacks[@]}"; do
+    row=$(stacks_for_type "$t")
+    if [[ -n $row ]]; then for st in $row; do all+=("$st"); done; else all+=("$t"); fi
+  done
+  project_permissions "$dir" "${all[@]}"
+}
+
 project_add() {
-  local dir=. skills=1 types=() t
+  local dir=. skills=1 perms=1 types=() t stacks=()
   while (($#)); do
     case $1 in
       --dir) dir=${2:?"dossier manquant"}; shift ;;
       --no-skills) skills=0 ;;
+      --no-permissions) perms=0 ;;
       -*) die "option inconnue : $1" ;;
       *) types+=("$1") ;;
     esac
     shift
   done
-  ((${#types[@]})) || die "usage : kit project add <type>... [--dir d] [--no-skills]   (types : kit project types)"
+  ((${#types[@]})) || die "usage : kit project add <type|pile>... [--dir d] [--no-skills] [--no-permissions]   (types : kit project types)"
   local rows profiles=() agents=() kskills=() row p a k
   rows=$(registry_rows)
   for t in "${types[@]}"; do
     row=$(awk -F';' -v t="$t" '$1 == t' <<<"$rows")
-    [[ -n $row ]] || die "Type inconnu : $t (types : $(cut -d';' -f1 <<<"$rows" | paste -sd' ' -))"
+    if [[ -z $row ]]; then
+      # Une pile qui n'est pas un type du registre (python, tofu...) : seulement ses autorisations.
+      if [[ $t =~ ^[a-z0-9][a-z0-9-]*$ && -f $KIT_HOME/templates/permissions/$t.json ]]; then stacks+=("$t"); continue; fi
+      die "Type inconnu : $t (types : $(cut -d';' -f1 <<<"$rows" | paste -sd' ' -) ; piles : $(cd "$KIT_HOME/templates/permissions" && ls ./*.json | sed 's#^\./##; s#\.json$##' | paste -sd' ' -))"
+    fi
+    for p in $(stacks_for_type "$t"); do stacks+=("$p"); done
     IFS=';' read -r _ p k a <<<"$row"
     mapfile -t -O "${#profiles[@]}" profiles < <(backticked "$p")
     mapfile -t -O "${#kskills[@]}" kskills < <(backticked "$k")
@@ -454,7 +590,7 @@ project_add() {
   done
   mkdir -p "$dir/.claude/agents" "$dir/.claude/skills"
   local placed=()
-  for a in $(printf '%s\n' "${agents[@]}" | sort -u); do
+  for a in $(printf '%s\n' ${agents[@]+"${agents[@]}"} | sort -u); do
     if [[ -f $KIT_HOME/global/agents/$a.md ]]; then
       cp "$KIT_HOME/global/agents/$a.md" "$dir/.claude/agents/$a.md"
     elif [[ -f $KIT_HOME/extras/agents/$a.md ]]; then
@@ -465,7 +601,7 @@ project_add() {
     placed+=("agent:$a")
   done
   # Skills maison du kit cités par le type (pocketbase, deploy-coolify-cloudflare, secrets-handling).
-  for k in $(printf '%s\n' "${kskills[@]}" | sort -u); do
+  for k in $(printf '%s\n' ${kskills[@]+"${kskills[@]}"} | sort -u); do
     [[ -d $KIT_HOME/global/skills/$k ]] || continue
     rm -rf "${dir:?}/.claude/skills/$k"
     cp -r "$KIT_HOME/global/skills/$k" "$dir/.claude/skills/$k"
@@ -473,16 +609,18 @@ project_add() {
   done
   ((${#placed[@]})) && ok "copiés dans $dir/.claude : ${placed[*]}"
   local uprof
-  uprof=$(printf '%s\n' "${profiles[@]}" | sort -u | paste -sd' ' -)
+  uprof=$(printf '%s\n' ${profiles[@]+"${profiles[@]}"} | sort -u | paste -sd' ' -)
   if [[ -z $uprof ]]; then
-    info "aucun profil de skills pour : ${types[*]}"
+    ((${#placed[@]})) || info "aucun profil de skills pour : ${types[*]}"
   elif ((skills)); then
     # shellcheck disable=SC2086
     (cd "$dir" && cmd_skills install $uprof) || warn "certaines lignes ont échoué (voir ci-dessus)"
   else
     echo "Profils à installer ensuite : kit skills install $uprof"
   fi
-  echo "Commite .claude/ : le projet retrouvera ses agents et skills à chaque session, y compris sur claude.ai/code."
+  # Autorisations de la pile (allow seulement, fusionnées sans doublon : voir project_permissions).
+  if ((perms && ${#stacks[@]})); then project_permissions "$dir" "${stacks[@]}"; fi
+  echo "Commite .claude/ : le projet retrouvera ses agents, ses skills et ses autorisations à chaque session, y compris sur claude.ai/code."
 }
 
 # Écrit `clé: valeur` dans un fichier plat (remplace la ligne de la clé, sinon l'ajoute en fin de fichier).
@@ -815,6 +953,7 @@ cmd_project() {
       rows=$(registry_rows)
       for t in "${@:3}"; do
         [[ $t == -* ]] && continue
+        [[ $t =~ ^[a-z0-9][a-z0-9-]*$ && -f $KIT_HOME/templates/permissions/$t.json ]] && continue   # pile : autorisations seulement
         awk -F';' -v t="$t" '$1 == t { f = 1 } END { exit !f }' <<<"$rows" || die "Type inconnu : $t (kit project types)"
       done
       mkdir -p "$dir"
@@ -828,11 +967,12 @@ cmd_project() {
       echo "  puis : /new-project \"<description du projet>\""
       ;;
     add) shift; project_add "$@" ;;
+    perms) shift; project_perms "$@" ;;
     size) shift; project_size "$@" ;;
     effort) shift; project_effort "$@" ;;
     types) project_types ;;
     template) shift; project_template "$@" ;;
-    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type>... | size S|M|L | effort <agent> <niveau> | types | template [nom]" ;;
+    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type|pile>... | perms [pile]... | size S|M|L | effort <agent> <niveau> | types | template [nom]" ;;
   esac
 }
 
@@ -953,7 +1093,7 @@ cmd_sync() {
   if ((dry)); then apply_managed_settings --dry-run ${opts[@]+"${opts[@]}"}; return 0; fi
   link_global
   apply_managed_settings ${opts[@]+"${opts[@]}"}
-  [[ ${KIT_SYNC_REGISTRY:-1} == 0 ]] || regen_registry
+  [[ ${KIT_SYNC_REGISTRY:-1} == 0 ]] || sync_registry
   sync_context
   ok "liens et réglages à jour"
 }
@@ -1078,6 +1218,8 @@ cmd_update() {
   if [[ -f $KIT_CONFIG/autoupdate.pin ]]; then
     warn "kit épinglé ($KIT_CONFIG/autoupdate.pin) : pas de git pull ; kit autoupdate unpin pour suivre main"
   else
+    # A registry modified only in its generated table (left by kit sync of older versions) is restored: it would stop the pull.
+    restore_generated_registry "$KIT_HOME"
     git -C "$KIT_HOME" pull --ff-only
   fi
   cmd_sync

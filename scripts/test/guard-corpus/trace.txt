@@ -1,0 +1,15 @@
+@ block kit secrets run curl -v with bearer
+kit secrets run -- sh -c @Q@curl -v -H "Authorization: Bearer @D@X" https://example.invalid@Q@
+%%
+@ block kit secrets run bash -x trace
+kit secrets run -- bash -xc @Q@curl -s -H "Authorization: Bearer @D@X" https://example.invalid@Q@
+%%
+@ block kit secrets run set -x trace
+kit secrets run -- sh -c @Q@set -x; curl -s -H "Authorization: Bearer @D@X" https://example.invalid@Q@
+%%
+@ block kit secrets run curl --trace-ascii -
+kit secrets run -- sh -c @Q@curl --trace-ascii - -H "Authorization: Bearer @D@X" https://example.invalid@Q@
+%%
+@ block kit secrets run bad URL echoing header via httpbin-like reflect
+kit secrets run -- sh -c @Q@curl -s -d "t=@D@X" https://example.invalid/anything@Q@
+%%

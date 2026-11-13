@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx next lint)",
+      "Bash(npx next lint *)",
+      "Bash(npx next build)"
+    ]
+  }
+}

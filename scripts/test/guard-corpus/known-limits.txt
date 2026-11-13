@@ -1,0 +1,27 @@
+# Limites connues du hook guard-secrets : cas du corpus où le relecteur attendait « block » et où le hook laisse passer.
+# Format : <fichier du corpus>: <description>. Chaque ligne est épinglée par un test (guard-secrets-test.sh) : si le hook
+# se met à bloquer le cas, le test échoue et la ligne doit disparaître d'ici et du README (« Garde-fous et leurs limites »).
+misc: docker compose build (context in compose file)
+misc: git reset -q --hard (permission ask bypass, hook n/a)
+nest: hard link then cat
+nest: git stash show (allowed rule)
+quote: ANSI-C quoting
+quote: ANSI-C hex escape
+quote: locale quoting
+read1: variable f=X; cat $f
+read1: variable quoted cat "$f"
+read1: cmd subst name
+read1: cmd subst printf
+read1: symlink then cat
+read2: python -c concat
+read2: grep -r TOKEN .
+read2: rg -uuu
+read2: grep -rh empty pattern
+read2: xargs cat from find
+tool1: Grep recursive on project (reads dotenv if not ignored)
+tool1: Glob tool not in matcher (names only)
+trace: kit secrets run bad URL echoing header via httpbin-like reflect
+vcs: git config --get credential
+write1: python write
+write1: node writeFileSync
+write1: xargs cp

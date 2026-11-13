@@ -1,0 +1,82 @@
+@ block python -c open
+python3 -c "print(open(@Q@@E@@Q@).read())"
+%%
+@ block python -c concat
+python3 -c "print(open(@Q@.e@Q@+@Q@nv@Q@).read())"
+%%
+@ block python heredoc stdin
+python3 - <<@Q@EOF@Q@
+print(open(@Q@@E@@Q@).read())
+EOF
+%%
+@ block node heredoc stdin
+node <<@Q@EOF@Q@
+console.log(require(@Q@fs@Q@).readFileSync(@Q@@E@@Q@,@Q@utf8@Q@))
+EOF
+%%
+@ block node --eval
+node --eval "console.log(require(@Q@fs@Q@).readFileSync(@Q@@E@@Q@,@Q@utf8@Q@))"
+%%
+@ block node -e
+node -e "console.log(require(@Q@fs@Q@).readFileSync(@Q@@E@@Q@,@Q@utf8@Q@))"
+%%
+@ block perl -e
+perl -e @Q@open F, "@E@"; print <F>@Q@
+%%
+@ block perl -ne file
+perl -ne print @E@
+%%
+@ block awk print file
+awk @Q@{print}@Q@ @E@
+%%
+@ block awk getline in program
+awk @Q@BEGIN{while((getline l < "@E@")>0) print l}@Q@
+%%
+@ block grep -r TOKEN .
+grep -r TOKEN .
+%%
+@ block grep -r include
+grep -r --include=@E@ . .
+%%
+@ block rg -uuu
+rg -uuu -i token
+%%
+@ block grep -rh empty pattern
+grep -rh @Q@@Q@ .
+%%
+@ block sed -n p
+sed -n p @E@
+%%
+@ block find -exec cat with *nv
+find . -name @Q@*nv@Q@ -exec cat {} +
+%%
+@ block find -exec cat with ?env
+find . -name @Q@?env@Q@ -exec cat {} \;
+%%
+@ block cat star-dot-env (prod-style)
+cat @SE@
+%%
+@ block cat config/star-dot-env
+cat config/@SE@
+%%
+@ block xargs cat from find
+find . -name @E@ | xargs cat
+%%
+@ block trap code
+trap @Q@cat @E@@Q@ EXIT; true
+%%
+@ block source
+source @E@
+%%
+@ block dot builtin
+. ./@E@ && echo ok
+%%
+@ block while read loop
+while read l; do echo "$l"; done < @E@
+%%
+@ block docker compose config
+docker compose config
+%%
+@ block docker compose config --environment
+docker compose config --environment
+%%
