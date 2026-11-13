@@ -69,6 +69,17 @@ if [[ $gs_rc != 0 && ${gs_f:-0} == 0 ]]; then ko_ "guard-secrets-test.sh a écho
 ((${gs_p:-0} >= 25)) && ok_ "guard-secrets : au moins 25 cas de test (${gs_p:-0})" || ko_ "guard-secrets : moins de 25 cas (${gs_p:-0})"
 
 # ---------------------------------------------------------------------------
+# kit ship: fake kit api, gh, curl and infra repository (cases in scripts/test/ship-test.sh).
+sh_out=$(bash "$ROOT/scripts/test/ship-test.sh" 2>&1)
+sh_rc=$?
+grep -E '^(==|  FAIL|       )' <<<"$sh_out"
+sh_p=$(sed -n 's/^ship: \([0-9][0-9]*\) passed, \([0-9][0-9]*\) failed$/\1/p' <<<"$sh_out")
+sh_f=$(sed -n 's/^ship: \([0-9][0-9]*\) passed, \([0-9][0-9]*\) failed$/\2/p' <<<"$sh_out")
+pass=$((pass + ${sh_p:-0}))
+fail=$((fail + ${sh_f:-0}))
+if [[ $sh_rc != 0 && ${sh_f:-0} == 0 ]]; then ko_ "ship-test.sh a échoué sans résumé" "$(tail -3 <<<"$sh_out")"; fi
+
+# ---------------------------------------------------------------------------
 section "kit perms : règles acceptées"
 PROJ="$TMP/proj"
 mkdir -p "$PROJ"
