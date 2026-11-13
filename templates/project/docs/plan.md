@@ -1,13 +1,15 @@
 # Plan
 
-> Écrit par `/new-project` (phase « Plan ») ou `/adopt`, tenu à jour à chaque fin de tâche. Une ligne par tâche :
-> case, intitulé, agent responsable, critère de fin, numéro de la tâche du dashboard (`#n`). Les tâches indépendantes
-> d'un même lot peuvent avancer en parallèle. Toute demande nouvelle s'ajoute ici et au dashboard avant d'être faite.
-> Feuille de route déjà tenue ailleurs : ce fichier se réduit à un lien vers elle et aux tâches en cours.
+> Seule liste de tâches du projet. Écrit par `/new-project` (skill `writing-plans`) ou `/adopt`, tenu à jour : une case
+> cochée = son critère de fin vérifié. Un lot est confié à un agent, avec un brief complet. Les lots indépendants
+> peuvent avancer en parallèle. Toute demande nouvelle s'ajoute ici avant d'être faite. Feuille de route déjà tenue
+> ailleurs : ce fichier se réduit à un lien vers elle et aux tâches en cours.
 
 ## Lot 1 — TODO
 
-- [ ] TODO — agent : `TODO` — fini quand : TODO — `#TODO`
+Agent: `TODO` · Parallel with: aucun · Done when: TODO
+
+- [ ] TODO — fini quand : TODO
 
 ## Équipe
 

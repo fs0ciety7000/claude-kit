@@ -6,7 +6,7 @@ argument-hint: "[note libre à transmettre]"
 Prépare la prochaine session de ce projet. Note de l'utilisateur à transmettre, s'il y en a une : $ARGUMENTS
 
 1. **État réel** : `git status`, branche courante, commits non poussés, PR ouvertes de la branche (si un outil GitHub
-   est disponible), tâches du dashboard (`task_list` si kit-control est là).
+   est disponible), cases ouvertes de `docs/plan.md`.
 2. **`docs/memory/handoff.md`** (créé depuis le gabarit du kit s'il manque) : réécris chaque ligne, concrètement :
    - fait cette session (résultats, pas le récit) ;
    - en cours : tâche, branche, PR ;
@@ -15,9 +15,8 @@ Prépare la prochaine session de ce projet. Note de l'utilisateur à transmettre
    - à savoir : pièges rencontrés, hypothèses prises ; un sujet sensible est nommé, jamais détaillé.
 3. **`docs/memory/state.md`** : fait, en cours, bloquant, 3 prochaines étapes. **`decisions.md`** : ajoute toute
    décision durable prise cette session (date, décision, raison).
-4. **`docs/plan.md` et tâches** : coche ce qui est fini, ajoute ce qui a été découvert ou demandé ; le dashboard
-   suit à l'identique (`task_create` pour le nouveau, `task_update` `done`/`blocked` + note). Aucune tâche ne reste
-   `doing` sans travail en cours.
+4. **`docs/plan.md`**, seule liste de tâches : coche ce qui est fini, ajoute ce qui a été découvert ou demandé,
+   note « bloqué : raison » sur une tâche qui attend. Aucune case n'est cochée sans que le critère de fin soit vérifié.
 5. **Engram** : seulement si l'utilisateur l'a demandé (skill `engram`). Sinon, si la session a produit un savoir
    réutilisable ailleurs, propose-le en une ligne dans ta réponse.
 6. **Visibilité du dépôt** : vérifie-la (outil GitHub, ou `gh repo view --json visibility` si disponible) ; inconnue

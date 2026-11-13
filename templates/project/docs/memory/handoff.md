@@ -1,6 +1,6 @@
 # Relais
 
-> Réécrit à la fin de chaque session (`/handoff`), relu au début de la suivante (`/resume`, hook de démarrage).
+> Réécrit à la fin de chaque session (`/handoff`), relu au début de la suivante (`/resume`).
 > Court et concret : la prochaine session doit pouvoir repartir sans rien relire d'autre.
 
 - **Date** : —
