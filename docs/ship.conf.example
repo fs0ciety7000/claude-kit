@@ -8,6 +8,9 @@ INFRA_BASE=main
 # Zones gérées (fichier <DNS_DIR>/<zone>.yaml, bloc records:) ; vide = tous les fichiers du dossier.
 ZONES=example.org example.net
 DNS_DIR=infra/cloudflare/dns
+# Suffixe des noms du tailnet : requis pour expose: tailnet, interdit pour public et access (un joker DNS et l'entrée
+# joker du tunnel publieraient le nom sans Access).
+TAILNET_SUFFIX=in.example.org
 # Cible des CNAME proxifiés (tunnel Cloudflare).
 TUNNEL_TARGET=00000000-0000-0000-0000-000000000000.cfargotunnel.com
 # Applications Access (bloc applications:) et policies réutilisables à leur attacher.

@@ -8,6 +8,7 @@
 #                                         path), env var NAMES checked against .env.example, .fs0/bridge.yaml deploy:,
 #                                         owner/repo=uuid added to the bridge's DEPLOY_ALLOW
 #   kit ship status [--dir D] [--wait S]  last deployment and HTTPS answer of the domain (--wait: poll up to S seconds)
+#   --apex                                allow a zone apex as domain (refused otherwise)
 #   kit project get [key] [--dir D]       read the project.yaml fields used here (defaults applied)
 #
 # Machine-local settings (identifiers of the infra, never in a repository): ~/.config/claude-kit/ship.conf, see
@@ -16,8 +17,9 @@ set -euo pipefail
 SELF=$(readlink -f "${BASH_SOURCE[0]}")
 # shellcheck source=lib.sh
 source "$(dirname "$SELF")/lib.sh"
+set -f # no pathname expansion: word lists here (ZONES, policies) come from configuration, never from file names
 
-usage() { sed -n '2,14p' "$SELF" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,15p' "$SELF" | sed 's/^# \{0,1\}//'; }
 
 # Test seams: the commands used for the Coolify API, GitHub and HTTPS checks.
 API=${KIT_SHIP_API:-$KIT_HOME/scripts/api.sh}
@@ -26,9 +28,14 @@ CURL=${KIT_SHIP_CURL:-curl}
 CONF="$KIT_CONFIG/ship.conf"
 RESERVED_RE='^COOLIFY_(URL|FQDN|BRANCH|RESOURCE_UUID|CONTAINER_NAME)$'
 
-DIR=$PWD DRY=0 WAIT=0
-TMPS=()
-cleanup() { local t; for t in "${TMPS[@]+"${TMPS[@]}"}"; do rm -rf "$t"; done; }
+DIR=$PWD DRY=0 WAIT=0 APEX=0
+TMPS=() WT_DIR="" LOCK_DIR=""
+cleanup() {
+  local t
+  if [[ -n $WT_DIR ]]; then git -C "$INFRA_DIR" worktree remove --force "$WT_DIR" >/dev/null 2>&1 || true; fi
+  if [[ -n $LOCK_DIR ]]; then rmdir "$LOCK_DIR" 2>/dev/null || true; fi
+  for t in "${TMPS[@]+"${TMPS[@]}"}"; do rm -rf "$t"; done
+}
 trap cleanup EXIT
 tmpd() { local d; d=$(mktemp -d); TMPS+=("$d"); echo "$d"; }
 announce() { echo "→ écriture : $*"; } # target, effect, rollback (global rule: one line before every write)
@@ -52,6 +59,7 @@ kv_set() { # file key value : replaces the key's line, else appends it
   rm -f "$tmp"
 }
 
+has_key() { [[ -f $1 ]] && grep -q "^$2:" "$1"; } # file key : key present, whatever its value (inline or block list)
 # project.yaml field with its default; "", "-" and "TODO" mean unset.
 pget() { # key
   local v
@@ -103,7 +111,7 @@ load_project() {
     [[ -n $P_DOMAIN ]] || die "project.yaml : domain requis avec expose: $P_EXPOSE"
   fi
   if [[ -n $P_DOMAIN ]]; then
-    [[ ${#P_DOMAIN} -le 253 && $P_DOMAIN =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]] \
+    [[ ${#P_DOMAIN} -le 253 && $P_DOMAIN =~ $DOMAIN_RE ]] \
       || die "project.yaml : domain invalide (nom DNS en minuscules, sans https://)"
   fi
   P_REPO=$(pget repo)
@@ -141,6 +149,7 @@ conf_req() { # key regex
   printf '%s' "$v"
 }
 UUID_RE='^[a-z0-9]{8,40}$'
+DOMAIN_RE='^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$'
 RELPATH_RE='^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$'
 
 # ---------- infra repository edits (YAML as text, idempotent) ----------
@@ -168,30 +177,76 @@ block_append() { # file topkey snippet
   rm -f "$tmp"
 }
 
-zone_of() { # domain -> longest configured zone that contains it
-  local z best="" zones
+zones_list() { # configured zones (ZONES), else the zone files of the scratch tree; each one validated
+  local zones z
   zones=$(conf ZONES)
-  if [[ -z $zones && -d $INFRA_SRC/$DNS_DIR ]]; then
-    zones=$(cd "$INFRA_SRC/$DNS_DIR" && ls -- *.yaml 2>/dev/null | sed 's/\.yaml$//' | tr '\n' ' ')
+  if [[ -z $zones && -n $INFRA_SRC && -d $INFRA_SRC/$DNS_DIR ]]; then
+    zones=$(find "$INFRA_SRC/$DNS_DIR" -maxdepth 1 -type f -name '*.yaml' -exec basename {} .yaml \; | tr '\n' ' ')
   fi
   for z in $zones; do
+    [[ $z =~ $DOMAIN_RE ]] || die "zone invalide : $z (ZONES de ship.conf ou fichier de $DNS_DIR)"
+    echo "$z"
+  done
+}
+zone_of() { # domain -> longest configured zone that contains it
+  local z best="" zl
+  zl=$(zones_list)
+  for z in $zl; do
     if [[ $1 == "$z" || $1 == *".$z" ]] && ((${#z} > ${#best})); then best=$z; fi
   done
   printf '%s' "$best"
 }
 
-# Each step prints "+ ..." (added), "= ..." (already there) or "- ..." (not applicable). CHANGES counts additions.
+# Uncommented entries of a top-level block of a map of maps (`  "key":` then `    field: value`), one line per
+# field: key<TAB>field<TAB>value, plus key<TAB><TAB> for the key line itself. Comments never count as declarations.
+yaml_entries() { # file block
+  awk -v blk="$2" '
+    /^[^ \t#]/ { inb = ($0 == blk ":" || index($0, blk ": ") == 1); key = ""; next }
+    !inb || /^[ \t]*#/ { next }
+    /^  "[^"]+":[ \t]*$/ { key = $0; sub(/^  "/, "", key); sub(/":[ \t]*$/, "", key); print key "\t\t"; next }
+    /^  [^ ]/ { key = ""; next }
+    key != "" && /^    [a-z_]+:/ {
+      f = substr($0, 5); n = index(f, ":"); v = substr(f, n + 1); sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v)
+      print key "\t" substr(f, 1, n - 1) "\t" v
+    }' "$1"
+}
+entry_field() { awk -F'\t' -v k="$2" -v f="$3" '$1 == k && $2 == f { print $3; exit }' <<<"$1"; } # entries key field
+# Uncommented `url:` values of the list items of a top-level block (Gatus endpoints).
+block_urls() { # file block
+  awk -v blk="$2" '
+    /^[^ \t#]/ { inb = ($0 == blk ":" || index($0, blk ": ") == 1); next }
+    inb && /^    url:[ \t]/ { v = $0; sub(/^    url:[ \t]+/, "", v); sub(/[ \t]+$/, "", v); print v }' "$1"
+}
+taken() { die "$1 : nom déjà utilisé : à régler à la main (rien n'a été écrit)"; }
+
+# Each step prints "+ ..." (added), "= ..." (already there, exactly as kit ship writes it) or "- ..." (not
+# applicable); anything else under the same name stops the run before any commit. CHANGES counts additions.
 CHANGES=0 SUMMARY=()
 step_dns() { # root
-  local root=$1 zone f sub key snip
+  local root=$1 zone f sub key snip ents keys k
   zone=$(zone_of "$P_DOMAIN")
   [[ -n $zone ]] || die "aucune zone de ship.conf (ZONES) ne contient $P_DOMAIN"
   f="$root/$DNS_DIR/$zone.yaml"
   [[ -f $f ]] || die "fichier de zone absent : $DNS_DIR/$zone.yaml"
-  if grep -qF "name: \"$P_DOMAIN\"" "$f"; then echo "  = DNS : $P_DOMAIN déjà déclaré ($DNS_DIR/$zone.yaml)"; return; fi
-  if [[ $P_DOMAIN == "$zone" ]]; then sub="@"; else sub=${P_DOMAIN%".$zone"}; fi
+  if [[ $P_DOMAIN == "$zone" ]]; then
+    ((APEX)) || die "$P_DOMAIN est l'apex de la zone : refusé sans --apex"
+    sub="@"
+  else
+    sub=${P_DOMAIN%".$zone"}
+  fi
   key="$sub CNAME"
-  if grep -qF "\"$key\":" "$f"; then die "$DNS_DIR/$zone.yaml : la clé « $key » existe avec un autre nom : à régler à la main"; fi
+  ents=$(yaml_entries "$f" records)
+  keys=$(awk -F'\t' -v n="\"$P_DOMAIN\"" '$2 == "name" && $3 == n { print $1 }' <<<"$ents")
+  if [[ -n $keys ]]; then
+    k=$keys
+    if [[ $k != *$'\n'* && $(entry_field "$ents" "$k" type) == '"CNAME"' && $(entry_field "$ents" "$k" content) == "\"$TUNNEL\"" \
+      && $(entry_field "$ents" "$k" proxied) == true ]]; then
+      echo "  = DNS : CNAME $P_DOMAIN vers le tunnel, proxifié, déjà déclaré ($DNS_DIR/$zone.yaml)"
+      return
+    fi
+    taken "DNS $P_DOMAIN ($DNS_DIR/$zone.yaml)"
+  fi
+  if awk -F'\t' -v k="$key" '$1 == k { f = 1 } END { exit !f }' <<<"$ents"; then taken "DNS, clé « $key » ($DNS_DIR/$zone.yaml)"; fi
   snip=$(mktemp)
   printf '  "%s":\n    name: "%s"\n    type: "CNAME"\n    content: "%s"\n    proxied: true\n    ttl: 1\n    comment: "%s (kit ship, %s)"\n' \
     "$key" "$P_DOMAIN" "$TUNNEL" "$P_NAME" "$P_EXPOSE" >"$snip"
@@ -201,10 +256,17 @@ step_dns() { # root
   CHANGES=$((CHANGES + 1)) SUMMARY+=("DNS")
 }
 step_access() {
-  local f="$1/$ACCESS_FILE" snip pol="" p
+  local f="$1/$ACCESS_FILE" snip pol="" p ents
   [[ -f $f ]] || die "fichier Access absent : $ACCESS_FILE"
-  if grep -qF "  \"$P_DOMAIN\":" "$f"; then echo "  = Access : application $P_DOMAIN déjà déclarée"; return; fi
   for p in ${POLICIES//,/ }; do pol+="${pol:+, }\"$p\""; done
+  ents=$(yaml_entries "$f" applications)
+  if awk -F'\t' -v k="$P_DOMAIN" '$1 == k { f = 1 } END { exit !f }' <<<"$ents"; then
+    if [[ $(entry_field "$ents" "$P_DOMAIN" policies) == "[$pol]" ]]; then
+      echo "  = Access : application $P_DOMAIN déjà déclarée (policies : ${POLICIES//,/ })"
+      return
+    fi
+    taken "Access $P_DOMAIN ($ACCESS_FILE, policies différentes de ACCESS_POLICIES)"
+  fi
   snip=$(mktemp)
   printf '  "%s":\n    name: "%s"\n    session_duration: "24h"\n    app_launcher_visible: false\n    auto_redirect_to_identity: false\n    http_only_cookie_attribute: true\n    enable_binding_cookie: false\n    options_preflight_bypass: false\n    policies: [%s]\n' \
     "$P_DOMAIN" "$P_NAME" "$pol" >"$snip"
@@ -214,10 +276,14 @@ step_access() {
   CHANGES=$((CHANGES + 1)) SUMMARY+=("Access")
 }
 step_gatus() {
-  local f="$1/$GATUS_FILE" snip alert url="https://$P_DOMAIN${P_HEALTH%/}"
+  local f="$1/$GATUS_FILE" snip alert url="https://$P_DOMAIN${P_HEALTH%/}" u
   [[ $P_HEALTH == / ]] && url="https://$P_DOMAIN"
   [[ -f $f ]] || die "fichier Gatus absent : $GATUS_FILE"
-  if grep -qF "url: \"https://$P_DOMAIN" "$f"; then echo "  = Gatus : sonde de $P_DOMAIN déjà déclarée"; return; fi
+  while IFS= read -r u; do
+    [[ -n $u ]] || continue
+    if [[ $u == "\"$url\"" ]]; then echo "  = Gatus : sonde $url déjà déclarée"; return; fi
+    case $u in "\"https://$P_DOMAIN\"" | "\"https://$P_DOMAIN/"* | "\"https://$P_DOMAIN:"* | "\"https://$P_DOMAIN?"*) taken "Gatus, sonde de $P_DOMAIN ($GATUS_FILE)" ;; esac
+  done < <(block_urls "$f" endpoints)
   alert=$(conf GATUS_ALERT)
   snip=$(mktemp)
   {
@@ -247,7 +313,7 @@ step_backup() {
 infra_steps() { # root
   case $P_EXPOSE in
     public) step_dns "$1"; echo "  - Access : non (expose public)"; step_gatus "$1" ;;
-    access) step_dns "$1"; step_access "$1"; echo "  - Gatus : non (Access répond à la place de l'origine)" ;;
+    access) step_access "$1"; step_dns "$1"; echo "  - Gatus : non (Access répond à la place de l'origine)" ;;
     tailnet) echo "  - DNS, Access, Gatus : non (expose tailnet : nom du tailnet, aucun enregistrement public)" ;;
     none) echo "  - DNS, Access, Gatus : non (expose none)" ;;
   esac
@@ -256,7 +322,7 @@ infra_steps() { # root
 infra_files() { # relative paths an expose mode may touch
   local f b
   if [[ $P_EXPOSE == public || $P_EXPOSE == access ]]; then
-    for f in $(conf ZONES); do echo "$DNS_DIR/$f.yaml"; done
+    for f in $(zones_list); do echo "$DNS_DIR/$f.yaml"; done
     if [[ -z $(conf ZONES) ]]; then git -C "$INFRA_DIR" ls-tree --name-only "$1" "$DNS_DIR/" 2>/dev/null || true; fi
   fi
   [[ $P_EXPOSE == access ]] && echo "$ACCESS_FILE"
@@ -286,6 +352,32 @@ load_infra_conf() {
     POLICIES=$(conf_req ACCESS_POLICIES '^[a-z0-9_]+([ ,]+[a-z0-9_]+)*$')
   fi
   [[ -d $INFRA_DIR/.git || -f $INFRA_DIR/.git ]] || die "INFRA_REPO_DIR n'est pas un clone git : $INFRA_DIR"
+}
+# Exposure rules: a tailnet name lives under TAILNET_SUFFIX, a public or Access name never does (a wildcard record and
+# the tunnel's wildcard ingress would publish it without Access); expose none has no name; no zone apex without --apex.
+check_exposure() {
+  local sfx z
+  sfx=$(conf TAILNET_SUFFIX)
+  [[ -z $sfx || $sfx =~ $DOMAIN_RE ]] || die "ship.conf : TAILNET_SUFFIX invalide"
+  case $P_EXPOSE in
+    none) [[ -z $P_DOMAIN ]] || die "expose: none : domain doit rester vide (ou choisis tailnet, access ou public)" ;;
+    tailnet)
+      [[ -n $sfx ]] || die "ship.conf : TAILNET_SUFFIX manquant (requis pour expose: tailnet)"
+      [[ $P_DOMAIN == *".$sfx" ]] || die "expose: tailnet : $P_DOMAIN doit finir par .$sfx (TAILNET_SUFFIX)"
+      ;;
+    public|access)
+      if [[ -n $sfx && ( $P_DOMAIN == "$sfx" || $P_DOMAIN == *".$sfx" ) ]]; then
+        die "expose: $P_EXPOSE : $P_DOMAIN est sous le suffixe du tailnet ($sfx) : refusé"
+      fi
+      ;;
+  esac
+  if [[ -n $P_DOMAIN ]] && ((!APEX)); then
+    for z in $(conf ZONES); do
+      [[ $z =~ $DOMAIN_RE ]] || die "ship.conf : zone invalide dans ZONES : $z"
+      [[ $P_DOMAIN != "$z" ]] || die "$P_DOMAIN est l'apex de la zone : refusé sans --apex"
+    done
+  fi
+  return 0
 }
 infra_needed() { [[ $P_EXPOSE == public || $P_EXPOSE == access || $P_VOLUMES == yes ]]; }
 
@@ -332,8 +424,7 @@ ship_infra() { # mode: plan | dry | real
   # Real run: a detached disposable worktree, so the owner's clone (branches, working tree) is left alone.
   wt="$(tmpd)/wt"
   git -C "$INFRA_DIR" worktree add -q --detach "$wt" "$ref" >/dev/null 2>&1 || die "git worktree add en échec dans $INFRA_DIR"
-  # shellcheck disable=SC2064
-  trap "git -C '$INFRA_DIR' worktree remove --force '$wt' >/dev/null 2>&1 || true; cleanup" EXIT
+  WT_DIR=$wt
   INFRA_SRC=$wt
   infra_steps "$wt"
   if ((CHANGES)); then
@@ -422,11 +513,43 @@ settings_payload() { # JSON of the PATCH that keeps an existing application in l
   jq -n --arg d "$domains" --arg h "$P_HEALTH" '{is_auto_deploy_enabled: false, health_check_enabled: true, health_check_path: $h}
     + (if $d == "" then {} else {domains: $d} end)'
 }
-jsonfile() { # stdin -> private temporary file (request bodies are passed by file, never in argv)
+jsonfile() { # stdin -> private temporary file, given to kit api as --json @file (api.sh hands the path, not the body, to its inner process)
   local f
   f="$(tmpd)/body.json"
   (umask 077 && cat >"$f")
   echo "$f"
+}
+
+lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+norm_repo() { # git_repository as Coolify stores it (owner/repo or a URL) -> lowercase owner/repo
+  local r=$1
+  r=${r#https://github.com/} r=${r#http://github.com/} r=${r#ssh://git@github.com/} r=${r#git@github.com:}
+  r=${r%/} r=${r%.git}
+  lc "$r"
+}
+# Stops unless the application is built from this project's repository (before any PATCH or DEPLOY_ALLOW change).
+app_owned() { # uuid
+  local r
+  r=$(api "/applications/$1" --jq '.git_repository // ""' | jq -r .) || die "lecture de l'application $1 en échec"
+  [[ $(norm_repo "$r") == "$(lc "$P_REPO")" ]] \
+    || die "l'application $1 n'est pas construite depuis $P_REPO : rien n'a été modifié (corrige coolify_uuid dans project.yaml)"
+}
+# Application of the same name built from this repository; one of the same name from another repository stops the run.
+find_by_name() {
+  local line u r mine="" other=0 out
+  out=$(api /applications --jq 'map(select(.name == "'"$P_NAME"'")) | map(.uuid + " " + (.git_repository // "")) | .[]' | jq -r .) \
+    || die "lecture des applications Coolify en échec"
+  while IFS= read -r line; do
+    [[ -n $line ]] || continue
+    u=${line%% *} r=${line#* }
+    [[ $u =~ $UUID_RE ]] || die "uuid Coolify inattendu"
+    if [[ $(norm_repo "$r") == "$(lc "$P_REPO")" ]]; then mine+="${mine:+ }$u"; else other=$((other + 1)); fi
+  done <<<"$out"
+  [[ $mine != *" "* ]] || die "plusieurs applications Coolify $P_NAME pour $P_REPO : coolify_uuid à fixer dans project.yaml"
+  if [[ -z $mine ]] && ((other)); then
+    die "une application Coolify nommée $P_NAME est construite depuis un autre dépôt : rien n'a été modifié ; fixe coolify_uuid dans project.yaml ou renomme le projet"
+  fi
+  printf '%s' "$mine"
 }
 
 ship_app() { # mode: plan | dry | real
@@ -437,16 +560,14 @@ ship_app() { # mode: plan | dry | real
   bp=${bpp% *} port=${bpp#* }
   echo "Coolify : application $P_NAME depuis $P_REPO@$P_BRANCH (GitHub App), build $bp, port $port"
   echo "  domaine : ${dom:-aucun (expose none)} ; santé : $P_HEALTH ; auto-déploiement Coolify coupé (le pont déploie)"
-  if [[ -z $uuid && $mode != plan ]]; then
-    found=$(api /applications --jq "map(select(.name == \"$P_NAME\")) | map(.uuid) | join(\" \")" | jq -r .) \
-      || die "lecture des applications Coolify en échec"
-    if [[ $found == *" "* ]]; then die "plusieurs applications Coolify nommées $P_NAME : coolify_uuid à fixer dans project.yaml"; fi
-    if [[ -n $found ]]; then
-      [[ $found =~ $UUID_RE ]] || die "uuid Coolify inattendu"
-      uuid=$found
-      info "application existante reprise (même nom)"
-    fi
+  # Read-only checks first (plan included): which application, and whether DEPLOY_ALLOW accepts it.
+  if [[ -n $uuid ]]; then
+    app_owned "$uuid"
+  else
+    found=$(find_by_name)
+    if [[ -n $found ]]; then uuid=$found; info "application existante reprise (même nom, même dépôt) : $uuid"; fi
   fi
+  [[ $mode == plan ]] || bridge_prepare "$mode" "$uuid"
   if [[ -z $uuid ]]; then
     case $mode in
       plan) echo "  + création de l'application (POST /applications/private-github-app)" ;;
@@ -462,7 +583,7 @@ ship_app() { # mode: plan | dry | real
     esac
   else
     case $mode in
-      plan) echo "  = application existante ($uuid) : domaine, santé et auto-déploiement remis en ligne avec project.yaml" ;;
+      plan) echo "  = reprise de l'application existante ($uuid, même dépôt) : domaine, santé et auto-déploiement remis en ligne avec project.yaml" ;;
       dry) echo "  ~ PATCH /applications/$uuid, corps :"; settings_payload | jq . | sed 's/^/    /' ;;
       real)
         body=$(settings_payload | jsonfile)
@@ -522,7 +643,11 @@ bridge_file() { # mode uuid : deploy: and branches: in .fs0/bridge.yaml, other k
   local mode=$1 uuid=$2 f="$DIR/.fs0/bridge.yaml" cur
   [[ ! -L $DIR/.fs0 && ! -L $f ]] || die ".fs0/bridge.yaml est un lien symbolique : refusé"
   cur=$(kv_get "$f" deploy)
-  if [[ $cur == "$uuid" && -n $(kv_get "$f" branches) ]]; then echo "  = .fs0/bridge.yaml : deploy: $uuid"; return 0; fi
+  [[ $(kv_get "$f" enabled) != false ]] || warn ".fs0/bridge.yaml : enabled: false, le pont ignore ce dépôt (ni CI ni déploiement)"
+  if ! find "$DIR/.forgejo/workflows" -maxdepth 1 -type f -name '*.y*ml' 2>/dev/null | grep -q .; then
+    warn "pas de .forgejo/workflows/ : le pont ne lance aucune CI, donc ne déploie jamais (kit project ci)"
+  fi
+  if [[ $cur == "$uuid" ]] && has_key "$f" branches; then echo "  = .fs0/bridge.yaml : deploy: $uuid"; return 0; fi
   if [[ -n $cur && $cur != "$uuid" && $uuid != "<uuid>" ]]; then warn ".fs0/bridge.yaml visait $cur : remplacé par $uuid"; fi
   if [[ $mode != real ]]; then echo "  + .fs0/bridge.yaml : deploy: $uuid, branches: [$P_BRANCH]"; return 0; fi
   announce ".fs0/bridge.yaml (deploy: $uuid ; retour arrière : git checkout .fs0/bridge.yaml)"
@@ -531,42 +656,73 @@ bridge_file() { # mode uuid : deploy: and branches: in .fs0/bridge.yaml, other k
     printf '%s\n' '# fs0-bridge: per-repository settings (keys and rules in the bridge README).' 'enabled: true' >"$f"
   fi
   kv_set "$f" deploy "$uuid"
-  [[ -n $(kv_get "$f" branches) ]] || kv_set "$f" branches "[$P_BRANCH]"
+  has_key "$f" branches || kv_set "$f" branches "[$P_BRANCH]"
   ok ".fs0/bridge.yaml : deploy: $uuid"
 }
 
-# DEPLOY_ALLOW of the bridge application: owner/repo=uuid added, existing entries kept, value never printed.
-bridge_allow() { # mode uuid
-  local mode=$1 uuid=$2 bridge cur new entry e found=0 body method
-  bridge=$(conf BRIDGE_APP_UUID)
-  if [[ -z $bridge ]]; then warn "BRIDGE_APP_UUID absent de ship.conf : DEPLOY_ALLOW non modifié"; return 0; fi
-  [[ $bridge =~ $UUID_RE ]] || die "ship.conf : BRIDGE_APP_UUID au format inattendu"
-  entry="$P_REPO=$uuid"
-  if [[ $mode == plan || $uuid == "<uuid>" ]]; then echo "  + pont : $P_REPO=$uuid dans DEPLOY_ALLOW (entrées existantes gardées), puis redéploiement du pont"; return 0; fi
-  # The filter returns the value as a JSON string (null when the variable is absent); it stays in this process.
-  cur=$(api "/applications/$bridge/envs" --jq '[.[] | select(.key == "DEPLOY_ALLOW" and (.is_preview | not)) | .value][0]') \
-    || die "lecture de DEPLOY_ALLOW du pont en échec"
-  if [[ $cur == null || -z $cur ]]; then method=POST cur=""; else method=PATCH cur=$(jq -r '. // ""' <<<"$cur"); fi
-  new=""
-  local parts=()
-  IFS=, read -r -a parts <<<"$cur"
+# DEPLOY_ALLOW of the bridge application: owner/repo=uuid added, existing entries kept, value never printed. The bridge
+# compares in lowercase (last entry wins): entries are lowercased here too, and checked before the application changes.
+BA_BRIDGE="" BA_METHOD="" BA_PREV="" BA_FOUND=0
+allow_entries() { # value -> one lowercase entry per line, blanks dropped, duplicates removed (first kept)
+  local parts=() e seen=$'\n'
+  IFS=, read -r -a parts <<<"$1"
   for e in "${parts[@]+"${parts[@]}"}"; do
-    e=${e//[[:space:]]/}
-    [[ -n $e ]] || continue
-    if [[ ${e%%=*} == "$P_REPO" ]]; then
-      [[ ${e#*=} == "$uuid" ]] || die "DEPLOY_ALLOW autorise déjà $P_REPO vers une autre application : à régler à la main (rien n'a été modifié)"
-      found=1
-    fi
-    new+="${new:+,}$e"
+    e=$(lc "${e//[[:space:]]/}")
+    [[ -n $e && $seen != *$'\n'"$e"$'\n'* ]] || continue
+    seen+="$e"$'\n'
+    printf '%s\n' "$e"
   done
-  if ((found)); then echo "  = pont : $P_REPO déjà autorisé dans DEPLOY_ALLOW"; return 0; fi
-  new+="${new:+,}$entry"
-  if [[ $mode == dry ]]; then echo "  + pont : $entry ajouté à DEPLOY_ALLOW ($method /applications/$bridge/envs), puis redéploiement du pont"; return 0; fi
+}
+bridge_read() { # -> sets BA_N and BA_VAL (raw value, stays in this process)
+  local res
+  res=$(api "/applications/$BA_BRIDGE/envs" --jq '[.[] | select(.key == "DEPLOY_ALLOW" and (.is_preview | not))] | {n: length, v: (.[0].value)}') \
+    || die "lecture de DEPLOY_ALLOW du pont en échec"
+  BA_N=$(jq -r '.n' <<<"$res")
+  BA_VAL=$(jq -r 'if .v == null then "__kit_null__" else .v end' <<<"$res")
+}
+bridge_prepare() { # mode uuid ("" = application still to create)
+  local mode=$1 uuid=$2 repo e
+  BA_BRIDGE=$(conf BRIDGE_APP_UUID)
+  [[ -n $BA_BRIDGE ]] || return 0
+  [[ $BA_BRIDGE =~ $UUID_RE ]] || die "ship.conf : BRIDGE_APP_UUID au format inattendu"
+  if [[ $mode == real ]]; then
+    LOCK_DIR="$KIT_CONFIG/ship-deploy-allow.lock"
+    mkdir "$LOCK_DIR" 2>/dev/null || { LOCK_DIR=""; die "un autre kit ship modifie DEPLOY_ALLOW (verrou $KIT_CONFIG/ship-deploy-allow.lock ; s'il est périmé, retire ce dossier)"; }
+  fi
+  bridge_read
+  if ((BA_N > 1)); then die "DEPLOY_ALLOW défini plusieurs fois sur le pont : à régler à la main (rien n'a été modifié)"; fi
+  if ((BA_N == 1)) && [[ $BA_VAL == __kit_null__ ]]; then
+    die "DEPLOY_ALLOW existe sur le pont mais sa valeur n'est pas lisible (masquée) : rien n'a été modifié ; ajoute l'entrée de $P_REPO à la main"
+  fi
+  if ((BA_N == 0)); then BA_METHOD=POST BA_PREV=""; else BA_METHOD=PATCH BA_PREV=$(allow_entries "$BA_VAL"); fi
+  repo=$(lc "$P_REPO") BA_FOUND=0
+  while IFS= read -r e; do
+    [[ -n $e && ${e%%=*} == "$repo" ]] || continue
+    [[ -n $uuid && ${e#*=} == "$uuid" ]] \
+      || die "DEPLOY_ALLOW autorise déjà $P_REPO vers une autre application : à régler à la main (rien n'a été modifié)"
+    BA_FOUND=1
+  done <<<"$BA_PREV"
+  return 0
+}
+bridge_allow() { # mode uuid
+  local mode=$1 uuid=$2 entry new body e now
+  if [[ -z $(conf BRIDGE_APP_UUID) ]]; then warn "BRIDGE_APP_UUID absent de ship.conf : DEPLOY_ALLOW non modifié"; return 0; fi
+  entry="$(lc "$P_REPO")=$uuid"
+  if [[ $mode == plan || $uuid == "<uuid>" ]]; then echo "  + pont : $entry dans DEPLOY_ALLOW (entrées existantes gardées), puis redéploiement du pont"; return 0; fi
+  if ((BA_FOUND)); then echo "  = pont : $P_REPO déjà autorisé dans DEPLOY_ALLOW"; return 0; fi
+  new=$(printf '%s\n%s\n' "$BA_PREV" "$entry" | grep -v '^$' | paste -sd, -)
+  if [[ $mode == dry ]]; then echo "  + pont : $entry ajouté à DEPLOY_ALLOW ($BA_METHOD /applications/$BA_BRIDGE/envs), puis redéploiement du pont"; return 0; fi
   body=$(V=$new jq -n '{key: "DEPLOY_ALLOW", value: env.V, is_preview: false, is_literal: true}' | jsonfile)
   announce "DEPLOY_ALLOW du pont : ajout de $entry (retour arrière : retirer l'entrée, redéployer le pont)"
-  api "$method" "/applications/$bridge/envs" --json "@$body" --jq '{uuid: (.uuid // null)}' >/dev/null || die "écriture de DEPLOY_ALLOW refusée"
+  api "$BA_METHOD" "/applications/$BA_BRIDGE/envs" --json "@$body" --jq '{uuid: (.uuid // null)}' >/dev/null || die "écriture de DEPLOY_ALLOW refusée"
+  # Read back: every previous entry and the new one must be there (the value is compared here, never printed).
+  bridge_read
+  now=$'\n'$(allow_entries "$BA_VAL")$'\n'
+  while IFS= read -r e; do
+    [[ -z $e || $now == *$'\n'"$e"$'\n'* ]] || die "vérification de DEPLOY_ALLOW en échec : une entrée manque après l'écriture ; à contrôler dans l'interface du pont (valeur non affichée), pont non redéployé"
+  done <<<"$(printf '%s\n%s\n' "$BA_PREV" "$entry")"
   announce "redéploiement du pont pour charger DEPLOY_ALLOW (retour arrière : redéployer après correction)"
-  api TRIGGER "/deploy?uuid=$bridge" --jq '{deployments: ((.deployments // []) | length)}' >/dev/null || die "redéploiement du pont en échec"
+  api TRIGGER "/deploy?uuid=$BA_BRIDGE" --jq '{deployments: ((.deployments // []) | length)}' >/dev/null || die "redéploiement du pont en échec"
   ok "pont : $entry autorisé, redéploiement lancé"
 }
 
@@ -613,6 +769,7 @@ main() {
     case $1 in
       --dir) DIR=${2:?"dossier manquant"}; shift ;;
       --dry-run) DRY=1 ;;
+      --apex) APEX=1 ;;
       --wait) WAIT=${2:?"durée manquante (secondes)"}; shift; [[ $WAIT =~ ^[0-9]+$ ]] || die "--wait : secondes" ;;
       *) die "option inconnue : $1" ;;
     esac
@@ -627,15 +784,15 @@ main() {
   case $sub in
     status) ship_status ;;
     plan)
-      load_conf
+      load_conf; check_exposure
       echo "kit ship plan : $P_NAME (expose $P_EXPOSE${P_DOMAIN:+, $P_DOMAIN}, serveur ${P_SERVER:-$(conf DEFAULT_SERVER)})"
       if [[ -z $P_UUID ]]; then echo "Première mise en prod : validation du propriétaire avant toute écriture."; fi
       ship_infra plan
       ship_app plan
       echo "Rien n'a été écrit."
       ;;
-    infra) load_conf; ship_infra "$mode"; ((DRY)) && echo "Rien n'a été écrit (--dry-run)." ;;
-    app) load_conf; ship_app "$mode"; ((DRY)) && echo "Rien n'a été écrit (--dry-run)." ;;
+    infra) load_conf; check_exposure; ship_infra "$mode"; ((DRY)) && echo "Rien n'a été écrit (--dry-run)." ;;
+    app) load_conf; check_exposure; ship_app "$mode"; ((DRY)) && echo "Rien n'a été écrit (--dry-run)." ;;
   esac
   return 0
 }

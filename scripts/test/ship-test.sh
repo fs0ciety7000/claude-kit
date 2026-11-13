@@ -40,6 +40,12 @@ echo "HTTP 200 ($m $p)" >&2
 f="$FAKE_DIR/$k.json"
 [[ -f $f ]] || f=/dev/null
 if [[ -f $FAKE_DIR/$k.fail ]]; then echo "HTTP 422" >&2; exit 1; fi
+if [[ ($m == POST || $m == PATCH) && $p == */envs && -n $body ]]; then
+  g="$FAKE_DIR/$(printf 'GET %s' "$p" | tr -c 'A-Za-z0-9' '_').json"
+  [[ -f $g ]] || echo '[]' >"$g"
+  if [[ -f $FAKE_DIR/envs_lossy ]]; then body=$(jq -c '.value = (.value | split(",") | last)' <<<"$body"); fi
+  jq -c --argjson b "$body" '[.[] | select(.key != $b.key or .is_preview == true)] + [$b + {is_preview: false}]' "$g" >"$g.tmp" && mv "$g.tmp" "$g"
+fi
 if [[ $f == /dev/null ]]; then echo '{}' | jq -c "$filter"; else jq -c "$filter" "$f"; fi
 EOF
 cat >"$BIN/gh" <<'EOF'
@@ -88,6 +94,7 @@ COOLIFY_GITHUB_APP_UUID=ghappuuid000000000000001
 SERVER_main=serveruuid00000000000001
 DEFAULT_SERVER=main
 BRIDGE_APP_UUID=bridgeuuid00000000000001
+TAILNET_SUFFIX=in.example.org
 EOF
 }
 mkproj() { # dir name expose domain [volumes]
@@ -136,11 +143,13 @@ t "plan : sauvegarde" has "+ Sauvegarde"
 t "plan : création Coolify" has "+ création de l'application"
 t "plan : première mise en prod signalée" has "Première mise en prod"
 t "plan : DEPLOY_ALLOW" has "acme/site=<uuid> dans DEPLOY_ALLOW"
-t "plan : aucun appel d'API" test ! -s "$FAKE_LOG"
+t "plan : lectures seulement (aucune écriture d'API, aucun gh)" test "$(grep -cvE '^coolify GET ' "$FAKE_LOG")" -eq 0
+t "plan : création annoncée (aucune application du même nom)" has "+ création de l'application"
 t "plan : dépôt d'infra intact" test "$(infra_sum)" = "$s0"
 t "plan : projet intact" test "$(proj_sum "$P")" = "$p0"
 
 section "infra --dry-run"
+: >"$FAKE_LOG"
 run infra --dir "$P" --dry-run
 t "dry-run : diff affiché" has '+    name: "site.example.org"'
 t "dry-run : dépôt d'infra intact" test "$(infra_sum)" = "$s0"
@@ -165,7 +174,7 @@ echo "https://github.com/example-owner/example-infra/pull/7" >"$FAKE/gh_pr"
 : >"$FAKE_LOG"
 run infra --dir "$P"
 t "infra relancé : aucun nouveau commit" test "$(git -C "$INFRA_BARE" rev-parse ship/site)" = "$sha1"
-t "infra relancé : entrées déjà présentes" has "= DNS : site.example.org déjà déclaré"
+t "infra relancé : entrées déjà présentes" has "= DNS : CNAME site.example.org vers le tunnel, proxifié, déjà déclaré"
 t "infra relancé : PR existante reprise" has "PR déjà ouverte"
 t "infra relancé : aucune PR créée" test "$(logn 'gh api -X POST')" -eq 0
 t "infra relancé : une seule entrée DNS" test "$(show infra/cloudflare/dns/example.org.yaml | grep -c 'name: "site.example.org"')" -eq 1
@@ -223,7 +232,7 @@ t "app dry-run : projet intact" test "$(proj_sum "$P")" = "$p0"
 section "app : création, variables, pont"
 NEW=newappuuid00000000000001
 fixture POST /applications/private-github-app "{\"uuid\":\"$NEW\"}"
-fixture GET "/applications/$NEW" '{"settings":{"is_auto_deploy_enabled":false}}'
+fixture GET "/applications/$NEW" '{"git_repository":"acme/site","settings":{"is_auto_deploy_enabled":false}}'
 fixture GET "/applications/$NEW/envs" '[{"key":"PRESENT_ONE","value":"v1"},{"key":"OTHER","value":"v2"}]'
 fixture GET /applications/bridgeuuid00000000000001/envs '[{"key":"DEPLOY_ALLOW","value":"acme/other=oldappuuid000000000001","is_preview":false},{"key":"DEPLOY_ALLOW","value":"preview-only","is_preview":true}]'
 : >"$FAKE_LOG"
@@ -274,6 +283,150 @@ run app --dir "$P"
 t "conflit : refus" test "$RC" -ne 0
 t "conflit : rien écrit dans DEPLOY_ALLOW" test "$(logn 'bridgeuuid00000000000001/envs' )" -eq 1 -a "$(logn 'PATCH /applications/bridgeuuid')" -eq 0
 t "conflit : uuid existant non affiché" bash -c '! grep -q someotheruuid <<<"$1"' _ "$OUT"
+
+section "app : DEPLOY_ALLOW masqué, écriture vérifiée, casse"
+fixture GET /applications/bridgeuuid00000000000001/envs '[{"key":"DEPLOY_ALLOW","value":null,"is_preview":false}]'
+: >"$FAKE_LOG"
+run app --dir "$P"
+t "valeur masquée : refus" test "$RC" -ne 0
+t "valeur masquée : aucune écriture" test "$(grep -cE ' (POST|PATCH|TRIGGER) ' "$FAKE_LOG")" -eq 0
+fixture GET /applications/bridgeuuid00000000000001/envs '[{"key":"DEPLOY_ALLOW","value":"acme/other=oldappuuid000000000001","is_preview":false}]'
+touch "$FAKE/envs_lossy"
+: >"$FAKE_LOG"
+run app --dir "$P"
+t "écriture qui perd une entrée : détectée" has "vérification de DEPLOY_ALLOW en échec"
+t "écriture qui perd une entrée : pont non redéployé" test "$(logn TRIGGER)" -eq 0
+rm -f "$FAKE/envs_lossy"
+t "verrou retiré en fin de run" test ! -e "$KIT_CONFIG/ship-deploy-allow.lock"
+mkdir "$KIT_CONFIG/ship-deploy-allow.lock"
+run app --dir "$P"
+t "verrou présent : refus" has "un autre kit ship modifie DEPLOY_ALLOW"
+t "verrou d'un autre run laissé en place" test -d "$KIT_CONFIG/ship-deploy-allow.lock"
+rmdir "$KIT_CONFIG/ship-deploy-allow.lock"
+# Repro: the bridge compares in lowercase; Acme/Site2 must collide with acme/site2, before any application is created.
+P2="$T/site2"
+mkproj "$P2" site2 none '""' no
+git -C "$P2" remote set-url origin git@github.com:Acme/Site2.git
+fixture GET /applications '[]'
+fixture GET /applications/bridgeuuid00000000000001/envs '[{"key":"DEPLOY_ALLOW","value":"acme/site2=otheruuid000000000000009","is_preview":false}]'
+: >"$FAKE_LOG"
+run app --dir "$P2"
+t "casse : conflit détecté (Acme/Site2 contre acme/site2)" has "DEPLOY_ALLOW autorise déjà"
+t "casse : conflit vu avant toute création" test "$(grep -cE ' (POST|PATCH|TRIGGER) ' "$FAKE_LOG")" -eq 0
+fixture GET /applications/bridgeuuid00000000000001/envs '[{"key":"DEPLOY_ALLOW","value":"Acme/Old=oldappuuid000000000001","is_preview":false}]'
+fixture POST /applications/private-github-app '{"uuid":"newuuid00000000000000002"}'
+fixture GET /applications/newuuid00000000000000002 '{"git_repository":"Acme/Site2","settings":{"is_auto_deploy_enabled":false}}'
+: >"$FAKE_LOG"
+run app --dir "$P2"
+allow=$(grep -A1 'PATCH /applications/bridgeuuid00000000000001/envs' "$FAKE_LOG" | sed -n 's/^BODY //p' | jq -r .value)
+t "casse : entrées écrites en minuscules" test "$allow" = "acme/old=oldappuuid000000000001,acme/site2=newuuid00000000000000002"
+
+section "app : application existante d'un autre dépôt (repro)"
+P4="$T/dash"
+mkproj "$P4" dash public dash.example.org no
+fixture GET /applications '[{"name":"dash","uuid":"existinguuid0000000001","git_repository":"someone/else"}]'
+fixture GET /applications/bridgeuuid00000000000001/envs '[]'
+run plan --dir "$P4"
+t "plan : même nom, autre dépôt : arrêt" has "construite depuis un autre dépôt"
+: >"$FAKE_LOG"
+run app --dir "$P4"
+t "app : même nom, autre dépôt : refus" test "$RC" -ne 0
+t "app : même nom, autre dépôt : ni PATCH ni DEPLOY_ALLOW" test "$(grep -cE ' (POST|PATCH|TRIGGER) ' "$FAKE_LOG")" -eq 0
+fixture GET /applications '[{"name":"dash","uuid":"existinguuid0000000002","git_repository":"https://github.com/Acme/dash.git"}]'
+run plan --dir "$P4"
+t "plan : même nom, même dépôt : reprise annoncée" has "= reprise de l'application existante (existinguuid0000000002"
+sed -i.bak 's/^coolify_uuid: .*/coolify_uuid: existinguuid0000000001/' "$P4/project.yaml" && rm -f "$P4/project.yaml.bak"
+fixture GET /applications/existinguuid0000000001 '{"git_repository":"someone/else","name":"dash"}'
+: >"$FAKE_LOG"
+run app --dir "$P4"
+t "coolify_uuid d'un autre dépôt : refus" has "n'est pas construite depuis acme/dash"
+t "coolify_uuid d'un autre dépôt : aucune écriture" test "$(grep -cE ' (POST|PATCH|TRIGGER) ' "$FAKE_LOG")" -eq 0
+
+section "app : .fs0/bridge.yaml (liste en bloc, enabled, CI)"
+P3="$T/site3"
+mkproj "$P3" site3 none '""' no
+mkdir -p "$P3/.fs0"
+printf 'enabled: false\nbranches:\n  - main\n' >"$P3/.fs0/bridge.yaml"
+fixture GET /applications '[]'
+fixture GET /applications/bridgeuuid00000000000001/envs '[]'
+fixture POST /applications/private-github-app '{"uuid":"newuuid00000000000000003"}'
+fixture GET /applications/newuuid00000000000000003 '{"git_repository":"acme/site3","settings":{"is_auto_deploy_enabled":false}}'
+run app --dir "$P3"
+t "liste en bloc gardée intacte" test "$(cat "$P3/.fs0/bridge.yaml")" = "$(printf 'enabled: false\nbranches:\n  - main\ndeploy: newuuid00000000000000003')"
+t "enabled: false signalé" has "enabled: false"
+t "absence de .forgejo/workflows signalée" has "pas de .forgejo/workflows/"
+
+section "infra : nom commenté, nom déjà pris (repro)"
+printf '%s\n' '# disabled 2026-10:' '#  "priv.example.org":' '#    policies: ["me"]' >>"$INFRA/infra/cloudflare/access.yaml"
+git -C "$INFRA" commit -qam commented && git -C "$INFRA" push -q origin main
+PV="$T/priv"
+mkproj "$PV" priv access priv.example.org no
+run infra --dir "$PV" --dry-run
+t "Access commenté : l'application est ajoutée" has "+ Access : application priv.example.org"
+t "Access commenté : DNS ajouté avec" has "+ DNS : CNAME priv.example.org"
+printf '%s\n' '  "priv2.example.org":' '    name: "x"' '    policies: ["other"]' >>"$INFRA/infra/cloudflare/access.yaml"
+printf '%s\n' 'zone_id: "z"' 'records:' '  "pub3 A":' '    name: "pub3.example.org"' '    type: "A"' '    proxied: false' \
+  '  "@ A":' '    name: "example.org"' >"$INFRA/infra/cloudflare/dns/example.org.yaml"
+git -C "$INFRA" commit -qam taken && git -C "$INFRA" push -q origin main
+PV2="$T/priv2"
+mkproj "$PV2" priv2 access priv2.example.org no
+s2=$(infra_sum)
+run infra --dir "$PV2"
+t "Access aux policies différentes : arrêt" has "nom déjà utilisé"
+t "Access refusé : ni commit ni PR (pas de DNS seul)" test "$(infra_sum)" = "$s2"
+P5="$T/pub3"
+mkproj "$P5" pub3 public pub3.example.org no
+run infra --dir "$P5"
+t "nom déjà pris par un autre enregistrement : arrêt" has "nom déjà utilisé"
+
+section "exposition : tailnet, none, apex"
+mkproj "$T/tn2" tn2 tailnet tn2.example.org no
+run plan --dir "$T/tn2"
+t "tailnet hors TAILNET_SUFFIX : refus" has "doit finir par .in.example.org"
+mkproj "$T/pubin" pubin public pubin.in.example.org no
+run plan --dir "$T/pubin"
+t "public sous le suffixe du tailnet : refus" has "sous le suffixe du tailnet"
+mkproj "$T/nod" nod none nod.example.org no
+run plan --dir "$T/nod"
+t "none avec un domaine : refus" has "domain doit rester vide"
+mkproj "$T/apex" apex public example.org no
+run plan --dir "$T/apex"
+t "apex sans --apex : refus" has "apex de la zone"
+grep -v '^TAILNET_SUFFIX=' "$KIT_CONFIG/ship.conf" >"$T/c" && cat "$T/c" >"$KIT_CONFIG/ship.conf"
+run plan --dir "$TN"
+t "tailnet sans TAILNET_SUFFIX : refus" has "TAILNET_SUFFIX manquant"
+write_conf
+printf 'ZONES=example.org *\n' >>"$KIT_CONFIG/ship.conf"
+run plan --dir "$P"
+t "ZONES : joker refusé" has "zone invalide"
+write_conf
+
+section "kit api : corps passé par fichier, jamais en argument"
+AB="$T/apibin"
+mkdir -p "$AB" "$T/apicfg"
+cat >"$AB/curl" <<'EOF'
+#!/usr/bin/env bash
+out=""
+while (($#)); do [[ $1 == -o ]] && out=$2; shift; done
+cfg=$(cat)
+f=$(sed -n 's/^data = "@\(.*\)"$/\1/p' <<<"$cfg")
+[[ -n $f ]] && cat "$f" >"$APIT.body"
+tr '\0' ' ' </proc/$PPID/cmdline >"$APIT.argv" 2>/dev/null || ps -o args= -p "$PPID" >"$APIT.argv"
+echo '{"uuid":"u1"}' >"$out"
+printf 200
+EOF
+chmod +x "$AB/curl"
+echo cloud >"$T/apicfg/profile"
+printf '{"name":"BODYMARK1"}' >"$T/b.json"
+for b in '{"name":"BODYMARK1"}' "@$T/b.json"; do
+  : >"$T/apit.body"
+  out=$(APIT="$T/apit" KIT_CONFIG="$T/apicfg" CLAUDE_CODE_REMOTE=true COOLIFY_BASE_URL=https://c.example.org PATH="$AB:$PATH" \
+    bash "$ROOT/scripts/api.sh" coolify POST /applications --json "$b" --jq '.uuid' 2>/dev/null)
+  t "kit api ${b:0:1}… : corps reçu par curl" grep -q BODYMARK1 "$T/apit.body"
+  t "kit api ${b:0:1}… : corps absent de la ligne de commande interne" bash -c '! grep -q BODYMARK1 "$1"' _ "$T/apit.argv"
+  t "kit api ${b:0:1}… : réponse filtrée" test "$out" = '"u1"'
+done
+t "kit api : fichier source @ gardé" test -f "$T/b.json"
 
 # ---------------------------------------------------------------------------
 section "status"

@@ -410,7 +410,10 @@ kit ship status [--wait s]  # dernier déploiement (trié par created_at) et ré
   (projet, serveurs, GitHub App, application du pont). Ces identifiants ne vont jamais dans un dépôt ; sans ce
   fichier, `kit ship` refuse.
 - **Le propriétaire applique** : `kit ship infra` ne lance jamais tofu ; il fusionne la PR puis lance `tofu apply`.
-  Le clone d'infra n'est pas touché (worktree temporaire) ; relancer n'ajoute pas de doublon.
+  Le clone d'infra n'est pas touché (worktree temporaire) ; relancer n'ajoute pas de doublon. Un nom déjà déclaré
+  autrement (autre enregistrement, autres policies) arrête tout ; `tailnet` exige `TAILNET_SUFFIX`, `public` et
+  `access` le refusent, un apex de zone demande `--apex`.
+- **Application existante** : reprise seulement si elle est construite depuis le dépôt du projet.
 - **Secrets** : seuls les noms des variables sont comparés ; les manquantes sont listées avec `kit secrets add NOM`
   et le `POST …/envs` en `__SECRET:NOM__`. `DEPLOY_ALLOW` est relue et réécrite par fichier, sans jamais être
   affichée ; une entrée du même dépôt vers une autre application bloque tout.
