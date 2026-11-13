@@ -631,19 +631,32 @@ jqc --arg d "$dig" '[.autoModeSha256[][]] | index($d) != null' "$ROOT/global/set
   && ok_ "instantané v1 : l'empreinte d'une entrée connue y figure" || ko_ "instantané v1 : empreinte connue"
 reset_home
 cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
-# Le kit d'aujourd'hui ne livre plus l'entrée « Trusted internal domains… » (cas du lot 2c).
-jq '.autoMode.environment |= map(select(startswith("Trusted internal domains") | not))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
-# Fichier v1 : toutes les entrées autoMode du kit v1 (ici celles de global/settings.json), plus une entrée de l'utilisateur.
-jq '.autoMode as $am | {permissions: {allow: ["Bash(ls*)"]}, autoMode: ($am | .environment += ["Mon serveur de test."])}' "$ROOT/global/settings.json" >"$(cur_settings)"
-jqc '.autoMode.environment | map(select(startswith("Trusted internal domains"))) | length == 1' "$(cur_settings)" \
+# Une phrase v1 de test (empreinte ajoutée à la copie de l'instantané) que le kit d'aujourd'hui ne livre plus (cas du lot 2c :
+# les phrases qui nommaient des domaines internes sont sorties du dépôt public).
+V1SENT="Phrase v1 de test."
+jq --arg h "$(printf '%s' "$V1SENT" | sha256_hex_t)" '.autoModeSha256.environment += [$h]' "$KITC/global/settings.v1.json" >"$TMP/g.json" && cp "$TMP/g.json" "$KITC/global/settings.v1.json"
+# Fichier v1 : toutes les entrées autoMode du kit (ici celles de global/settings.json), la phrase v1 et une entrée de l'utilisateur.
+jq --arg s "$V1SENT" '.autoMode as $am | {permissions: {allow: ["Bash(ls*)"]}, autoMode: ($am | .environment += [$s, "Mon serveur de test."])}' "$ROOT/global/settings.json" >"$(cur_settings)"
+jqc --arg s "$V1SENT" '.autoMode.environment | index($s) != null' "$(cur_settings)" \
   && ok_ "migration autoMode : l'entrée à retirer est d'abord présente" || ko_ "migration autoMode : entrée présente avant"
-msync >/dev/null 2>&1
-jqc '.autoMode.environment | map(select(startswith("Trusted internal domains"))) | length == 0' "$(cur_settings)" \
+dout=$(msync 2>&1)
+jqc --arg s "$V1SENT" '.autoMode.environment | index($s) == null' "$(cur_settings)" \
   && ok_ "migration autoMode : une entrée v1 (empreinte connue) retirée du kit est supprimée" || ko_ "migration autoMode : entrée v1 supprimée"
+grep -q 'autoMode.environment : des phrases du kit ont été retirées' <<<"$dout" && grep -q 'kit overlay env' <<<"$dout" \
+  && ok_ "migration autoMode : sans surcharge locale, le sync dit quoi faire (kit overlay env)" || ko_ "migration autoMode : avertissement" "$dout"
 jqc '.autoMode.environment | index("Mon serveur de test.") != null' "$(cur_settings)" \
   && ok_ "migration autoMode : l'entrée de l'utilisateur reste" || ko_ "migration autoMode : entrée utilisateur"
 jqc '(.autoMode.environment | index("$defaults") != null) and (.autoMode.hard_deny | length == 2)' "$(cur_settings)" \
   && ok_ "migration autoMode : les entrées toujours livrées restent" || ko_ "migration autoMode : entrées livrées"
+# Même migration avec des phrases locales déclarées : plus d'avertissement.
+reset_home
+mkdir -p "$KIT_CONFIG"
+printf 'Phrase locale de test.\n' >"$KIT_CONFIG/environment.local.txt"
+jq --arg s "$V1SENT" '.autoMode as $am | {permissions: {allow: ["Bash(ls*)"]}, autoMode: ($am | .environment += [$s])}' "$ROOT/global/settings.json" >"$(cur_settings)"
+dout=$(msync 2>&1)
+! grep -q 'des phrases du kit ont été retirées' <<<"$dout" && jqc --arg s "$V1SENT" '(.autoMode.environment | index($s) == null) and (.autoMode.environment | index("Phrase locale de test.") != null)' "$(cur_settings)" \
+  && ok_ "migration autoMode : avec phrases locales, pas d'avertissement et la phrase locale est appliquée" || ko_ "migration autoMode : phrases locales" "$dout"
+cp "$ROOT/global/settings.v1.json" "$KITC/global/settings.v1.json"
 cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
 
 # 9. Clés non gérées intactes (y compris une clé inconnue) ; sauvegarde conservant l'ancien contenu.
@@ -1055,6 +1068,79 @@ cp "$ROOT/scripts/hooks/kit-autoupdate.sh" "$NOGIT/scripts/hooks/"
 OUT=$(CLAUDE_CODE_REMOTE=true "$NOGIT/scripts/hooks/kit-autoupdate.sh" </dev/null 2>&1); RC=$?
 [[ $RC == 0 && -z $OUT ]] && ok_ "hors dépôt git : code 0, silencieux" || ko_ "hors dépôt git" "code $RC, sortie : $OUT"
 
+# 10. autoupdate.off : désactive le hook sur ce poste, même avec un commit en attente ; le retirer le réactive.
+push_commit v6
+before=$(head_of)
+touch "$KIT_CONFIG/autoupdate.off"
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && -z $OUT && $(head_of) == "$before" ]] && ok_ "autoupdate.off : désactivé (aucune sortie, kit inchangé)" || ko_ "autoupdate.off : désactivé" "code $RC, sortie : $OUT"
+rm -f "$KIT_CONFIG/autoupdate.off"
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == "kit mis à jour : "* && $(head_of) == "$(git -C "$ORIGIN" rev-parse main)" ]] \
+  && ok_ "autoupdate.off retiré : le hook met à jour de nouveau" || ko_ "autoupdate.off retiré" "code $RC, sortie : $OUT"
+
+# 11. autoupdate.pin : le kit reste sur la référence (tag, branche de origin ou révision) et s'y déplace.
+v6_sha=$(git -C "$ORIGIN" rev-parse main)
+git -C "$SEED" tag rel1 "$v6_sha"
+push_commit v7
+push_commit v8
+v8_sha=$(git -C "$ORIGIN" rev-parse main)
+git -C "$SEED" tag rel2 "$v8_sha"
+git -C "$SEED" push -q origin rel1 rel2
+echo rel1 >"$KIT_CONFIG/autoupdate.pin"
+before=$(head_of)
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && -z $OUT && $(head_of) == "$before" && $before == "$v6_sha" ]] \
+  && ok_ "pin : déjà sur le tag épinglé, origin/main plus récent ignoré (aucune sortie)" || ko_ "pin : déjà sur le tag" "code $RC, sortie : $OUT"
+echo rel2 >"$KIT_CONFIG/autoupdate.pin"
+rm -f "$MARK"
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == "kit sur la version épinglée « rel2 » : "* && $(head_of) == "$v8_sha" ]] \
+  && ok_ "pin : déplacé sur le tag épinglé (message, HEAD détaché)" || ko_ "pin : déplacement sur rel2" "code $RC, sortie : $OUT"
+[[ -z $(git -C "$KITCLONE" symbolic-ref -q HEAD) ]] && ok_ "pin : HEAD détaché sur la révision épinglée" || ko_ "pin : HEAD non détaché"
+for _ in $(seq 1 50); do [[ -s $MARK ]] && break; sleep 0.1; done
+[[ $(cat "$MARK" 2>/dev/null) == "sync" ]] && ok_ "pin : kit sync lancé après le déplacement" || ko_ "pin : kit sync" "$(cat "$MARK" 2>/dev/null)"
+push_commit v9
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && -z $OUT && $(head_of) == "$v8_sha" ]] && ok_ "pin : un nouveau commit sur origin/main ne déplace pas un kit épinglé" || ko_ "pin : nouveau commit" "code $RC, sortie : $OUT"
+echo rel1 >"$KIT_CONFIG/autoupdate.pin"
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"épinglée « rel1 »"* && $(head_of) == "$v6_sha" ]] \
+  && ok_ "pin : retour à une version plus ancienne" || ko_ "pin : retour à rel1" "code $RC, sortie : $OUT"
+echo "$v8_sha" >"$KIT_CONFIG/autoupdate.pin"
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $(head_of) == "$v8_sha" ]] && ok_ "pin : une révision (SHA) fonctionne comme un tag" || ko_ "pin : SHA" "code $RC, sortie : $OUT"
+echo no-such-ref >"$KIT_CONFIG/autoupdate.pin"
+before=$(head_of)
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"introuvable"* && $(head_of) == "$before" ]] && ok_ "pin : référence inconnue, message, kit inchangé" || ko_ "pin : référence inconnue" "code $RC, sortie : $OUT"
+printf '%s\n' 'rel1; touch /tmp/pwned' >"$KIT_CONFIG/autoupdate.pin"
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"référence invalide"* && $(head_of) == "$before" ]] && ok_ "pin : référence de forme invalide refusée, kit inchangé" || ko_ "pin : référence invalide" "code $RC, sortie : $OUT"
+printf '%s\n' '--upload-pack=x' >"$KIT_CONFIG/autoupdate.pin"
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"référence invalide"* ]] && ok_ "pin : une référence qui ressemble à une option est refusée" || ko_ "pin : option" "code $RC, sortie : $OUT"
+echo rel2 >"$KIT_CONFIG/autoupdate.pin"
+git -C "$KITCLONE" checkout -q main
+git -C "$KITCLONE" checkout -q -b feature-pin
+before=$(head_of)
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"épinglée ignorée"*"pas main"* && $(head_of) == "$before" ]] && ok_ "pin : branche de travail autre que main, ignoré" || ko_ "pin : branche de travail" "code $RC, sortie : $OUT"
+git -C "$KITCLONE" checkout -q main
+echo dirty >>"$KITCLONE/VERSION"
+before=$(head_of)
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"modifications locales"* && $(head_of) == "$before" ]] && ok_ "pin : arbre modifié, ignoré" || ko_ "pin : arbre modifié" "code $RC, sortie : $OUT"
+git -C "$KITCLONE" checkout -q -- VERSION
+# Épinglage retiré : le kit détaché reste où il est (message « détachée »), puis suit main après `git checkout main`.
+rm -f "$KIT_CONFIG/autoupdate.pin"
+git -C "$KITCLONE" checkout -q --detach "$v6_sha"
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"détachée"*"pas main"* && $(head_of) == "$v6_sha" ]] && ok_ "épinglage retiré : un kit détaché n'est pas déplacé tout seul" || ko_ "épinglage retiré" "code $RC, sortie : $OUT"
+git -C "$KITCLONE" checkout -q main
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == "kit mis à jour : "* && $(head_of) == "$(git -C "$ORIGIN" rev-parse main)" ]] && ok_ "après git checkout main : le kit suit de nouveau origin/main" || ko_ "retour sur main" "code $RC, sortie : $OUT"
+
 # ---------------------------------------------------------------------------
 section "tailles S/M/L : kit project size, kit project effort"
 KIT="$ROOT/scripts/kit.sh"
@@ -1315,18 +1401,195 @@ EH="$TMP/emptyhome"; mkdir -p "$EH"
 HOME=$EH bash "$CB" --json >/dev/null 2>&1
 [[ -z $(ls -A "$EH") ]] && ok_ "arbre réel : un HOME vide le reste (les hooks tournent dans un bac à sable)" || ko_ "arbre réel : effets de bord des hooks"
 # Budgets owned by delivered sub-lots are enforced (2e: global CLAUDE.md, /new-project, registry; 2f: agent and
-# skill/command descriptions, Superpowers on the /new-project path); the others (hooks 2c/2d, startup memory 2c) stay
-# warnings until their sub-lot lands.
-ENFORCED='global_claude_md.words new_project_command.words skills_registry.words agent_descriptions.words skill_command_descriptions.words superpowers_path.words'
+# skill/command descriptions, Superpowers on the /new-project path; 2c: state.md at session start); the hook budget
+# (2d) stays a warning until its sub-lot lands.
+ENFORCED='global_claude_md.words new_project_command.words skills_registry.words agent_descriptions.words skill_command_descriptions.words superpowers_path.words project_sessionstart.chars'
 grep -E "^($(printf '%s' "$ENFORCED" | tr ' ' '|'))	" "$ROOT/scripts/context-budgets.tsv" >"$TMP/budgets-enforced.tsv"
 if bash_out=$(BUDGET_ENFORCE=1 bash "$CB" --budgets "$TMP/budgets-enforced.tsv" --budget 2>&1); then
-  ok_ "budgets appliqués (CLAUDE.md global, /new-project, registre, agents, skills et commandes, Superpowers) : respectés"
+  ok_ "budgets appliqués (CLAUDE.md global, /new-project, registre, agents, skills et commandes, Superpowers, démarrage de projet) : respectés"
 else
   ko_ "budgets appliqués dépassés" "$(grep 'DÉPASSÉ' <<<"$bash_out" | tr -s ' ' | paste -sd';' -)"
 fi
 echo "  -- autres budgets (avertissements seulement) --"
 bash "$CB" --budget 2>&1 | sed 's/^/  /'
 check "arbre réel : --budget sort 0 hors BUDGET_ENFORCE" bash "$CB" --budget
+
+# ---------------------------------------------------------------------------
+section "2c : tableau de bord retiré, démarrage de projet, mise à jour auto, version"
+# Plus aucune trace du tableau de bord hors des plans, de la mesure, de l'instantané v1 (il en a besoin pour reconnaître
+# les entrées des postes v1) et du code qui nettoie les postes (scripts/lib.sh) et le teste (ce fichier).
+dash_hits=$(grep -rIlE 'kit-control|kit-emit|kit dash|KIT_DASH|task_create|task_update|wait_for_answer|checkpoint' \
+  "$ROOT/global" "$ROOT/templates" "$ROOT/scripts" "$ROOT/install.sh" "$ROOT/README.md" "$ROOT/PLUGINS.md" "$ROOT/docs" "$ROOT/extras" "$ROOT/profiles" 2>/dev/null \
+  | grep -vE '/global/collections-index\.json$|/docs/plans/|/docs/measure\.md$|/global/settings\.v1\.json$|/scripts/lib\.sh$|/scripts/test/run\.sh$' || true)
+[[ -z $dash_hits ]] && ok_ "aucune mention du tableau de bord (kit-control, kit-emit, kit dash, task_*, checkpoint) hors plans et mesure" \
+  || ko_ "mentions du tableau de bord restantes" "$(printf '%s' "$dash_hits" | sed "s#$ROOT/##" | paste -sd' ' -)"
+[[ ! -e $ROOT/scripts/hooks/kit-emit.sh ]] && ok_ "kit-emit.sh supprimé" || ko_ "kit-emit.sh existe encore"
+"$ROOT/scripts/kit.sh" help 2>&1 | grep -qi 'dash' && ko_ "usage : plus de section dashboard" || ok_ "usage : aucune section dashboard"
+"$ROOT/scripts/kit.sh" dash status >/dev/null 2>&1 && ko_ "kit dash : sous-commande supprimée" || ok_ "kit dash : sous-commande supprimée"
+grep -q 'KIT_DASH' "$ROOT/install.sh" "$ROOT/scripts/context-budget.sh" "$ROOT/scripts/kit.sh" && ko_ "KIT_DASH_* : plus géré" || ok_ "KIT_DASH_* : plus géré"
+jqc '[.. | strings | select(test("kit-emit|kit-control|kit dash"))] | length == 0' "$ROOT/global/settings.json" && ok_ "global/settings.json : aucune entrée du tableau de bord" || ko_ "global/settings.json : entrée du tableau de bord"
+jqc '[.hooks.PreToolUse[], .hooks.PostToolUse[]?] | map(.hooks | length) | add == 1' "$ROOT/global/settings.json" \
+  && ok_ "hooks par appel d'outil : un seul (secrets)" || ko_ "hooks par appel d'outil"
+# docs/plan.md est la seule liste de tâches : le gabarit suit le format de writing-plans.
+PT="$ROOT/templates/project/docs/plan.md"
+grep -q 'Agent:' "$PT" && grep -q 'Parallel with:' "$PT" && grep -q 'Done when:' "$PT" && grep -q -- '- \[ \]' "$PT" && ! grep -qiE 'dashboard|`#' "$PT" \
+  && ok_ "gabarit docs/plan.md : lots, Agent / Parallel with / Done when, cases, plus de champ dashboard" || ko_ "gabarit docs/plan.md"
+grep -q 'Agent: `<agent>` · Parallel with: <lot or none> · Done when:' "$ROOT/global/skills/writing-plans/SKILL.md" \
+  && ok_ "writing-plans : la ligne de lot du gabarit est celle que le skill écrit" || ko_ "writing-plans : ligne de lot"
+
+# Hook SessionStart du gabarit : state.md seul, 1 500 caractères au plus, coupé proprement avec un renvoi au fichier.
+PROJ_HOOK=$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$ROOT/templates/project/.claude/settings.json")
+[[ $(jq '.hooks.SessionStart | length' "$ROOT/templates/project/.claude/settings.json") == 1 ]] && ok_ "gabarit : un seul hook de démarrage" || ko_ "gabarit : plusieurs hooks de démarrage"
+ss_run() { # dossier : sortie du hook (stdout) pour ce projet
+  ( cd "$TMP" && env -i PATH="$PATH" HOME="$HOME" CLAUDE_PROJECT_DIR="$1" bash -c "$PROJ_HOOK" 2>/dev/null )
+}
+SSP="$TMP/ss-proj"
+mkdir -p "$SSP/docs/memory"
+printf '# État\n\n- **Fait** : lot 1\n- **Prochaines étapes** : lot 2\n' >"$SSP/docs/memory/state.md"
+printf 'SECRET-HANDOFF-MARKER\n' >"$SSP/docs/memory/handoff.md"
+printf 'SECRET-DECISIONS-MARKER\n' >"$SSP/docs/memory/decisions.md"
+sso=$(ss_run "$SSP")
+[[ $sso == *'- **Fait** : lot 1'* && $sso == *'lot 2'* ]] && ok_ "démarrage : state.md injecté" || ko_ "démarrage : state.md injecté" "$sso"
+[[ $sso != *MARKER* ]] && ok_ "démarrage : ni handoff.md ni decisions.md" || ko_ "démarrage : autre fichier injecté"
+[[ $sso != *tronqué* ]] && ok_ "démarrage : fichier court, pas de renvoi" || ko_ "démarrage : renvoi inutile"
+# Plein : 60 lignes, puis une seule ligne géante, puis du texte accentué en C.UTF-8 : toujours <= 1 500 caractères.
+awk 'BEGIN {for (i = 0; i < 60; i++) printf "- Fait : lot %d terminé, tests verts, prochaine étape documentée.\n", i}' >"$SSP/docs/memory/state.md"
+sso=$(ss_run "$SSP")
+n=$(printf '%s\n' "$sso" | LC_ALL=C.UTF-8 wc -m | tr -d ' ')
+((n <= 1500)) && ok_ "démarrage : état plein = $n caractères (<= 1 500)" || ko_ "démarrage : état plein trop long" "$n"
+[[ $sso == *'tronqué : suite dans docs/memory/state.md'* ]] && ok_ "démarrage : coupé avec un renvoi à docs/memory/state.md" || ko_ "démarrage : renvoi absent"
+last_kept=$(printf '%s\n' "$sso" | grep -v tronqué | tail -n 1)
+[[ $last_kept == '- Fait : lot '*'documentée.' ]] && ok_ "démarrage : coupé à une fin de ligne (pas de ligne tronquée)" || ko_ "démarrage : ligne coupée" "$last_kept"
+head -c 6000 /dev/zero | tr '\0' 'a' >"$SSP/docs/memory/state.md"
+sso=$(ss_run "$SSP")
+n=$(printf '%s\n' "$sso" | LC_ALL=C.UTF-8 wc -m | tr -d ' ')
+((n <= 1500)) && [[ $sso == *tronqué* ]] && ok_ "démarrage : une ligne géante est coupée aussi ($n caractères)" || ko_ "démarrage : ligne géante" "$n"
+# Un lien symbolique, un état hors du projet ou l'absence de fichier : rien n'est injecté.
+rm -f "$SSP/docs/memory/state.md"
+[[ -z $(ss_run "$SSP") ]] && ok_ "démarrage : pas de state.md, aucune sortie" || ko_ "démarrage : sortie sans state.md"
+printf 'HORS-PROJET\n' >"$TMP/ss-outside.md"
+ln -s "$TMP/ss-outside.md" "$SSP/docs/memory/state.md"
+[[ -z $(ss_run "$SSP") ]] && ok_ "démarrage : state.md lien symbolique ignoré" || ko_ "démarrage : lien symbolique suivi"
+rm -f "$SSP/docs/memory/state.md"
+# Domaines internes hors du dépôt public : aucune phrase autoMode ne nomme un hôte hors de la liste des API publiques.
+bad_hosts=$(jq -r '[.autoMode[][] | strings] | map(scan("[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+(?:/[A-Za-z0-9_.-]+)?") | gsub("/.*$"; "") | ascii_downcase) | unique
+  | map(select(. as $h | ["github.com", "api.cloudflare.com", "api.tailscale.com", "crates.io", "ghcr.io", "claude.ai", "skills.sh"] | index($h) | not))
+  | map(select(test("\\.(org|net|com|be|app|io|dev|fr|eu)$"))) | .[]' "$ROOT/global/settings.json" 2>/dev/null | paste -sd' ' -)
+[[ -z $bad_hosts ]] && ok_ "global/settings.json : aucun domaine interne dans autoMode (hôtes publics seulement)" || ko_ "global/settings.json : domaine dans autoMode" "$bad_hosts"
+jqc '[.autoMode.environment[] | select(startswith("Trusted internal domains"))] | length == 0' "$ROOT/global/settings.json" \
+  && ok_ "global/settings.json : plus de phrase « Trusted internal domains » (elle vit dans la surcharge locale)" || ko_ "global/settings.json : phrase des domaines internes"
+# L'instantané v1 garde les 10 empreintes d'environnement : celles qui ne sont plus livrées sont reconnues comme venant du kit.
+n_snap=$(jq '.autoModeSha256.environment | length' "$ROOT/global/settings.v1.json")
+cur_h=$(jq -r '.autoMode.environment[]' "$ROOT/global/settings.json" | while IFS= read -r l; do printf '%s' "$l" | sha256_hex_t; done | jq -R . | jq -s .)
+n_gone=$(jq --argjson cur "$cur_h" '[.autoModeSha256.environment[] | select(. as $h | $cur | index($h) | not)] | length' "$ROOT/global/settings.v1.json")
+[[ $n_snap == 10 && $n_gone == 3 ]] && ok_ "instantané v1 : 10 empreintes d'environnement, dont 3 plus livrées (retirées au sync des postes qui les ont)" || ko_ "instantané v1 : empreintes d'environnement" "$n_snap dont $n_gone retirées"
+[[ -z $(git -C "$ROOT" ls-files 2>/dev/null | grep -E '(^|/)(environment\.local\.txt|settings\.local\.json)$') ]] \
+  && grep -qx 'environment.local.txt' "$ROOT/.gitignore" && grep -qx 'settings.local.json' "$ROOT/.gitignore" \
+  && ok_ "fichiers locaux (environment.local.txt, settings.local.json) ignorés par Git et non versionnés" || ko_ ".gitignore des fichiers locaux"
+# Génération de la surcharge locale à partir du fichier hors dépôt.
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+cp "$ROOT/global/settings.v1.json" "$KITC/global/settings.v1.json"
+reset_home
+mkdir -p "$KIT_CONFIG"
+printf '# commentaire\r\nTrusted internal domains: *.example.org: sites de test.\r\n\r\n   Key internal services: coolify.example.org   \n' >"$KIT_CONFIG/environment.local.txt"
+dout=$(msync 2>&1)
+OV="$KIT_CONFIG/settings.local.json"
+jqc '.autoMode.environment == ["Trusted internal domains: *.example.org: sites de test.", "Key internal services: coolify.example.org"]' "$OV" \
+  && ok_ "overlay : phrases du fichier texte écrites (commentaires, lignes vides, CRLF et espaces nettoyés)" || ko_ "overlay : contenu" "$(cat "$OV" 2>/dev/null)"
+[[ $(fmode "$OV") == 600 ]] && ok_ "overlay : settings.local.json en 600" || ko_ "overlay : droits" "$(fmode "$OV")"
+jqc '.autoMode.environment | index("Key internal services: coolify.example.org") != null and index("Trusted internal domains: *.example.org: sites de test.") != null' "$(cur_settings)" \
+  && ok_ "overlay : phrases appliquées à settings.json par kit sync" || ko_ "overlay : appliquées à settings.json"
+jqc '.autoMode.environment | index("Key internal services: coolify.example.org") != null' "$KIT_CONFIG/settings.managed.json" \
+  && ok_ "overlay : le registre (K) les contient" || ko_ "overlay : registre"
+! grep -q 'example.org' <<<"$dout" && grep -q 'autoMode.environment' <<<"$dout" && ok_ "overlay : le sync annonce le nombre de phrases sans les afficher" || ko_ "overlay : sortie du sync" "$dout"
+cp "$(cur_settings)" "$TMP/ov1.json"; cp "$OV" "$TMP/ov1-local.json"; b1=$(n_backups)
+msync >/dev/null 2>&1
+cmp -s "$(cur_settings)" "$TMP/ov1.json" && cmp -s "$OV" "$TMP/ov1-local.json" && [[ $(n_backups) == "$b1" ]] \
+  && ok_ "overlay : idempotent (settings.json, overlay et sauvegardes inchangés)" || ko_ "overlay : idempotence"
+# Une phrase retirée du fichier texte disparaît de la surcharge et de settings.json au sync suivant.
+printf 'Key internal services: coolify.example.org\n' >"$KIT_CONFIG/environment.local.txt"
+msync >/dev/null 2>&1
+jqc '(.autoMode.environment == ["Key internal services: coolify.example.org"])' "$OV" \
+  && jqc '.autoMode.environment | index("Trusted internal domains: *.example.org: sites de test.") == null' "$(cur_settings)" \
+  && ok_ "overlay : une phrase retirée du fichier texte est retirée partout" || ko_ "overlay : retrait d'une phrase"
+# Les autres clés de la surcharge sont conservées.
+jq '.permissions.allow = ["Bash(mon-outil *)"]' "$OV" >"$TMP/d.json" && cp "$TMP/d.json" "$OV"
+printf 'Autre phrase locale.\n' >"$KIT_CONFIG/environment.local.txt"
+msync >/dev/null 2>&1
+jqc '(.permissions.allow == ["Bash(mon-outil *)"]) and (.autoMode.environment == ["Autre phrase locale."])' "$OV" \
+  && jqc '.permissions.allow | index("Bash(mon-outil *)") != null' "$(cur_settings)" \
+  && ok_ "overlay : les autres clés de settings.local.json (permissions) sont conservées" || ko_ "overlay : autres clés" "$(cat "$OV")"
+# kit overlay env : fichier explicite, --clear, absence de fichier.
+printf 'Phrase explicite.\n' >"$TMP/env-explicit.txt"
+env KIT_HOME="$KITC" bash "$KITC/scripts/kit.sh" overlay env "$TMP/env-explicit.txt" >/dev/null 2>&1
+jqc '.autoMode.environment == ["Phrase explicite."]' "$OV" && ok_ "kit overlay env <fichier> : phrases du fichier données" || ko_ "kit overlay env <fichier>"
+dout=$(env KIT_HOME="$KITC" bash "$KITC/scripts/kit.sh" overlay env --clear 2>&1)
+jqc '(.autoMode | not) and (.permissions.allow == ["Bash(mon-outil *)"])' "$OV" \
+  && ok_ "kit overlay env --clear : phrases retirées, permissions conservées" || ko_ "kit overlay env --clear" "$(cat "$OV")"
+rm -f "$KIT_CONFIG/environment.local.txt"
+env KIT_HOME="$KITC" bash "$KITC/scripts/kit.sh" overlay env >/dev/null 2>&1 && ko_ "kit overlay env sans fichier : erreur" || ok_ "kit overlay env sans fichier : erreur explicite"
+env KIT_HOME="$KITC" bash "$KITC/scripts/kit.sh" overlay bogus >/dev/null 2>&1 && ko_ "kit overlay : sous-commande inconnue refusée" || ok_ "kit overlay : sous-commande inconnue refusée"
+# Ligne trop longue : refus, rien d'écrit.
+reset_home
+msync >/dev/null 2>&1
+mkdir -p "$KIT_CONFIG"
+head -c 900 /dev/zero | tr '\0' 'x' >"$KIT_CONFIG/environment.local.txt"
+before_sum=$(cksum <"$(cur_settings)")
+msync >/dev/null 2>&1 && ko_ "overlay : ligne de plus de 800 caractères refusée" || ok_ "overlay : ligne de plus de 800 caractères refusée"
+[[ $(cksum <"$(cur_settings)") == "$before_sum" && ! -e $KIT_CONFIG/settings.local.json ]] && ok_ "overlay refusée : settings.json intact, rien écrit" || ko_ "overlay refusée : écriture"
+# Poste neuf, aucun fichier : aucune surcharge créée.
+reset_home
+msync >/dev/null 2>&1
+[[ ! -e $KIT_CONFIG/settings.local.json ]] && ok_ "overlay : sans fichier texte, aucune surcharge créée" || ko_ "overlay : surcharge créée sans fichier"
+# dry-run : annonce sans rien écrire.
+mkdir -p "$KIT_CONFIG"
+printf 'Phrase dry-run.\n' >"$KIT_CONFIG/environment.local.txt"
+dout=$(msync --dry-run 2>&1)
+[[ ! -e $KIT_CONFIG/settings.local.json ]] && grep -q 'seraient appliquées' <<<"$dout" && ok_ "overlay : --dry-run l'annonce sans écrire" || ko_ "overlay : dry-run" "$dout"
+# Session cloud : la variable KIT_LOCAL_ENVIRONMENT alimente le fichier (600) puis la surcharge.
+reset_home
+env KIT_LOCAL_ENVIRONMENT=$'Phrase cloud 1.\nPhrase cloud 2.' KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 KIT_SYNC_REGISTRY=0 "$KITC/scripts/kit.sh" sync >/dev/null 2>&1
+jqc '.autoMode.environment == ["Phrase cloud 1.", "Phrase cloud 2."]' "$OV" && [[ $(fmode "$KIT_CONFIG/environment.local.txt") == 600 ]] \
+  && jqc '.autoMode.environment | index("Phrase cloud 2.") != null' "$(cur_settings)" \
+  && ok_ "overlay : KIT_LOCAL_ENVIRONMENT (cloud) écrit le fichier (600) et la surcharge" || ko_ "overlay : variable cloud"
+reset_home
+
+# kit --version : tag (ou révision) et date du commit.
+KIT="$ROOT/scripts/kit.sh"
+v=$(bash "$KIT" --version 2>&1)
+[[ $v =~ ^kit\ .+\ \(20[0-9]{2}-[0-9]{2}-[0-9]{2}\)$ ]] && ok_ "kit --version : « $v »" || ko_ "kit --version" "$v"
+[[ $(bash "$KIT" version 2>&1) == "$v" && $(bash "$KIT" -V 2>&1) == "$v" ]] && ok_ "kit version et -V : même sortie" || ko_ "kit version / -V"
+VR="$TMP/vrepo"
+git init -q -b main "$VR"
+echo 1 >"$VR/f"
+git -C "$VR" add f
+GIT_AUTHOR_DATE='2026-01-02T03:04:05Z' GIT_COMMITTER_DATE='2026-01-02T03:04:05Z' git -C "$VR" commit -q -m c1
+git -C "$VR" tag v9.9.9
+[[ $(env KIT_HOME="$VR" bash "$KIT" --version 2>&1) == "kit v9.9.9 (2026-01-02)" ]] && ok_ "kit --version : tag et date du commit" || ko_ "kit --version : tag" "$(env KIT_HOME="$VR" bash "$KIT" --version 2>&1)"
+echo 2 >"$VR/f"
+GIT_AUTHOR_DATE='2026-01-03T03:04:05Z' GIT_COMMITTER_DATE='2026-01-03T03:04:05Z' git -C "$VR" commit -q -am c2
+[[ $(env KIT_HOME="$VR" bash "$KIT" --version 2>&1) =~ ^kit\ v9\.9\.9-1-g[0-9a-f]{7}\ \(2026-01-03\)$ ]] && ok_ "kit --version : commits depuis le tag (describe)" || ko_ "kit --version : describe" "$(env KIT_HOME="$VR" bash "$KIT" --version 2>&1)"
+[[ $(env KIT_HOME="$TMP/pas-un-depot" bash "$KIT" --version 2>&1) == "kit version inconnue"* ]] && ok_ "kit --version : hors dépôt git, « version inconnue »" || ko_ "kit --version : hors dépôt"
+# kit autoupdate : interrupteur et épinglage (les fichiers lus par le hook).
+rm -rf "$KIT_CONFIG"
+bash "$KIT" autoupdate off >/dev/null 2>&1
+au_status() { bash "$KIT" autoupdate status 2>&1; }
+[[ -e $KIT_CONFIG/autoupdate.off && $(au_status) == *'désactivée'* ]] && ok_ "kit autoupdate off : crée autoupdate.off, status le dit" || ko_ "kit autoupdate off"
+bash "$KIT" autoupdate on >/dev/null 2>&1
+[[ ! -e $KIT_CONFIG/autoupdate.off && $(au_status) == *'active'* ]] && ok_ "kit autoupdate on : retire autoupdate.off" || ko_ "kit autoupdate on"
+bash "$KIT" autoupdate pin v1.2.3 >/dev/null 2>&1
+[[ $(cat "$KIT_CONFIG/autoupdate.pin" 2>/dev/null) == v1.2.3 && $(au_status) == *'épinglée sur « v1.2.3 »'* ]] && ok_ "kit autoupdate pin : écrit autoupdate.pin, status l'affiche" || ko_ "kit autoupdate pin"
+bash "$KIT" autoupdate pin 'v1; rm -rf /' >/dev/null 2>&1 && ko_ "kit autoupdate pin : référence invalide refusée" || ok_ "kit autoupdate pin : référence invalide refusée"
+bash "$KIT" autoupdate pin -x >/dev/null 2>&1 && ko_ "kit autoupdate pin : option refusée" || ok_ "kit autoupdate pin : référence qui ressemble à une option refusée"
+[[ $(cat "$KIT_CONFIG/autoupdate.pin") == v1.2.3 ]] && ok_ "kit autoupdate pin : refus sans toucher au pin existant" || ko_ "kit autoupdate pin : pin modifié par un refus"
+bash "$KIT" autoupdate unpin >/dev/null 2>&1
+[[ ! -e $KIT_CONFIG/autoupdate.pin ]] && ok_ "kit autoupdate unpin : retire autoupdate.pin" || ko_ "kit autoupdate unpin"
+[[ $(KIT_AUTOUPDATE=0 au_status) == *'KIT_AUTOUPDATE=0'* ]] && ok_ "kit autoupdate status : KIT_AUTOUPDATE=0 signalé" || ko_ "kit autoupdate status : variable"
+usage_txt=$("$ROOT/scripts/kit.sh" help 2>&1)
+[[ $usage_txt == *autoupdate.pin* && $usage_txt == *autoupdate.off* ]] && ok_ "usage : autoupdate.off et autoupdate.pin documentés" || ko_ "usage : autoupdate"
+rm -rf "$KIT_CONFIG"
+[[ $(bash "$CB" --json | jq '.project_sessionstart.chars') -le 1500 ]] && ok_ "context-budget : démarrage de projet <= 1 500 caractères (mémoire pleine)" || ko_ "context-budget : démarrage de projet"
+grep -q 'project_sessionstart.chars' <<<"$ENFORCED" && ok_ "budget project_sessionstart.chars appliqué (liste ENFORCED)" || ko_ "budget project_sessionstart.chars non appliqué"
 
 # ---------------------------------------------------------------------------
 section "dépôt du kit"
