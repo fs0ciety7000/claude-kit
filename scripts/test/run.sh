@@ -55,6 +55,18 @@ while IFS= read -r f; do
 done < <(find "$ROOT/global" "$ROOT/templates" -name '*.json' -type f 2>/dev/null | sort)
 
 # ---------------------------------------------------------------------------
+# Hook guard-secrets : vrais accès bloqués, simples mentions autorisées (cas dans scripts/test/guard-secrets-test.sh).
+gs_out=$(bash "$ROOT/scripts/test/guard-secrets-test.sh" 2>&1)
+gs_rc=$?
+grep -E '^(==|  FAIL|       )' <<<"$gs_out"
+gs_p=$(sed -n 's/^guard-secrets: \([0-9][0-9]*\) passed, \([0-9][0-9]*\) failed$/\1/p' <<<"$gs_out")
+gs_f=$(sed -n 's/^guard-secrets: \([0-9][0-9]*\) passed, \([0-9][0-9]*\) failed$/\2/p' <<<"$gs_out")
+pass=$((pass + ${gs_p:-0}))
+fail=$((fail + ${gs_f:-0}))
+if [[ $gs_rc != 0 && ${gs_f:-0} == 0 ]]; then ko_ "guard-secrets-test.sh a échoué sans résumé" "$(tail -3 <<<"$gs_out")"; fi
+((${gs_p:-0} >= 25)) && ok_ "guard-secrets : au moins 25 cas de test (${gs_p:-0})" || ko_ "guard-secrets : moins de 25 cas (${gs_p:-0})"
+
+# ---------------------------------------------------------------------------
 section "kit perms : règles acceptées"
 PROJ="$TMP/proj"
 mkdir -p "$PROJ"
