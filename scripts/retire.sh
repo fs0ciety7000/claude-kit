@@ -14,7 +14,7 @@ set -euo pipefail
 RSELF=$(readlink -f "${BASH_SOURCE[0]}")
 # shellcheck disable=SC2034 # read by ship.sh: helpers only, no entry point
 KIT_SHIP_SOURCED=1
-# shellcheck source=ship.sh
+# shellcheck source-path=SCRIPTDIR source=ship.sh
 source "$(dirname "$RSELF")/ship.sh"
 
 usage() { sed -n '2,13p' "$RSELF" | sed 's/^# \{0,1\}//'; }
