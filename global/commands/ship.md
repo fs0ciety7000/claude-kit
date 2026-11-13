@@ -8,14 +8,13 @@ Coolify) et `deploy-coolify-cloudflare`. Annonce chaque écriture en une ligne ;
 
 1. **Prérequis** : `project.yaml` a `name`, `expose` (`none|tailnet|access|public`), `domain` (sauf `none`),
    `health_path`, `volumes`. Manquant : propose les valeurs et écris-les. Tests, lint et build verts (résultats réels).
-   `ship.conf` absent : modèle `docs/ship.conf.example` du kit, arrête-toi. `previews: true` (web, M
-   ou L) : prévisualisations des PR derrière Access, après `kit ship previews setup` (PR d'infra, une fois).
+   `ship.conf` absent : modèle `docs/ship.conf.example` du kit, arrête-toi. `previews: true` (web, M ou L) :
+   après `kit ship previews setup` (PR d'infra unique). Préviens : toute branche du dépôt (Renovate, branches
+   `claude/*`) est construite sur le serveur de prod avant revue et CI.
 2. **Plan** : `kit ship plan`. Résume-le.
-3. **Validation** : seulement si `coolify_uuid` est vide (première mise en prod) : demande l'accord dans le chat et
-   attends-le. Sinon, enchaîne.
+3. **Validation** : seulement si `coolify_uuid` est vide (première mise en prod) : demande l'accord et attends-le.
 4. **Infra** (si le plan annonce des ajouts) : `kit ship infra`. Donne au propriétaire le lien de la PR et la suite :
-   relire, fusionner, `tofu plan` puis `tofu apply` depuis son poste. **Attends sa confirmation** que `apply` est
-   passé ; ne lance jamais tofu.
+   relire, fusionner, `tofu plan`, `tofu apply`. **Attends sa confirmation** ; ne lance jamais tofu.
 5. **Application** : `kit ship app`. Lis les lignes `HTTP <code>`. Variables manquantes : donne leurs **noms** et les
    commandes proposées (`kit secrets add NOM`, puis le `POST …/envs` avec `__SECRET:NOM__`) ; jamais de valeur
    demandée dans le chat. Exécute les `POST` une fois les secrets présents.

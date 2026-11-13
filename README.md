@@ -403,7 +403,7 @@ kit ship infra [--dry-run]  # branche ship/<nom> + PR dans le dépôt d'infra : 
 kit ship app [--dry-run]    # application Coolify (source GitHub App, auto-déploiement coupé, domaine, santé),
                             # noms de variables comparés à .env.example, .fs0/bridge.yaml deploy:, DEPLOY_ALLOW du pont
 kit ship status [--wait s]  # dernier déploiement (trié par created_at) et réponse HTTPS du domaine
-kit ship previews setup [--dry-run]  # une fois : PR d'infra, CNAME joker *.<PREVIEW_SUFFIX> et application Access joker
+kit ship previews setup [--dry-run]  # PR d'infra : CNAME et Access joker *.<PREVIEW_SUFFIX>, puis (après apply) ingress
 ```
 
 - **Réglages du poste** : `~/.config/claude-kit/ship.conf` (modèle `docs/ship.conf.example`, valeurs factices) :
@@ -416,10 +416,15 @@ kit ship previews setup [--dry-run]  # une fois : PR d'infra, CNAME joker *.<PRE
   `access` le refusent, un apex de zone demande `--apex`.
 - **Application existante** : reprise seulement si elle est construite depuis le dépôt du projet.
 - **Prévisualisations des PR** : `previews: true` (piles web, tailles M et L, `expose` access ou public ; refusé
-  sinon). `kit ship app` les active avec le modèle `{{pr_id}}-<nom>.<PREVIEW_SUFFIX>` seulement si l'application
-  Access `*.<PREVIEW_SUFFIX>` est sur la branche de base du dépôt d'infra ; sinon, ou avec `previews: false`, il les
-  coupe. Un seul niveau sous le suffixe : joker DNS, joker Access et certificat le couvrent. Le propriétaire vérifie
-  l'ingress du tunnel et le certificat d'edge (Universal SSL ne couvre qu'un niveau sous la zone).
+  sinon). Coolify construit sur le serveur de prod les PR de toute branche du dépôt (Renovate, agents) avant revue,
+  et copie chaque variable dans sa version de prévisualisation avec la même valeur. Avec des variables déclarées,
+  `previews: true` est donc refusé, sauf `preview_env: dedicated` : chaque copie reçoit alors `__SECRET:<NOM>_PREVIEW__`,
+  vérifiée par relecture (un booléen, jamais une valeur). `kit ship app` active les prévisualisations
+  (`{{pr_id}}-<nom>.<PREVIEW_SUFFIX>`) seulement si le dépôt d'infra (branche de base) porte l'application Access
+  joker et la règle d'ingress dédiée (`access.required`), si l'application Access en ligne correspond, et si les
+  variables sont remplacées. Sinon, ou avec `previews: false`, il les coupe ; un écart à la relecture, ou des PR
+  publiques actives, l'arrête. Certificat d'edge requis pour `*.<PREVIEW_SUFFIX>` (Universal SSL ne couvre qu'un
+  niveau sous la zone).
 - **Secrets** : seuls les noms des variables sont comparés ; les manquantes sont listées avec `kit secrets add NOM`
   et le `POST …/envs` en `__SECRET:NOM__`. `DEPLOY_ALLOW` est relue et réécrite par fichier, sans jamais être
   affichée ; une entrée du même dépôt vers une autre application bloque tout.
