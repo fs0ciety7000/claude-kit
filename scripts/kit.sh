@@ -31,12 +31,17 @@ PROJETS
   kit project init [dossier]              copie le gabarit dans un dossier existant (n'écrase rien)
         gabarit : CLAUDE.md, AGENTS.md, DESIGN.md, DEPLOY.md, .env.example, .gitignore, secrets/
   kit project types                       types de projet du registre (profils et agents de chacun)
-  kit project add <type|pile>... [--dir d] [--no-skills] [--no-permissions]
+  kit project add <type|pile>... [--dir d] [--no-skills] [--no-permissions] [--no-ci]
         copie dans .claude/ du projet les agents et skills maison du type, installe ses profils de skills et pose
         les autorisations de sa pile (templates/permissions/<pile>.json, fusionnées dans .claude/settings.json) ;
-        une pile (python, tofu...) peut être donnée à la place d'un type
+        une pile (python, tofu...) peut être donnée à la place d'un type ; pose aussi la CI du type si absente
+        (kit project ci)
   kit project perms [pile|type]... [--dir d]
         pose seulement les autorisations de pile ; sans argument, détecte la pile d'après les fichiers du projet
+  kit project ci [pile|type]... [--dir d] [--force]
+        CI Forgejo : .forgejo/workflows/ci.yml (templates/ci/<pile>.yml : astro next vite go-web go-cli pocketbase
+        rust tauri static ; sans argument, détection), .fs0/bridge.yaml minimal, règle Renovate des actions
+        data.forgejo.org dans renovate.json ; n'écrase rien sans --force, refuse les liens symboliques
   kit project size S|M|L --reason "<une ligne>" [--dir d]
         fixe la taille : project.yaml, règles docs/rules/size-*.md et leurs imports dans CLAUDE.md (relançable)
   kit project effort <agent> <low|medium|high|xhigh|max> [--dir d]
@@ -571,19 +576,156 @@ project_perms() {
   project_permissions "$dir" "${all[@]}"
 }
 
+# ---------- CI (Forgejo Actions, templates/ci) ----------
+
+CI_STACKS="astro next vite go-web go-cli pocketbase rust tauri static"
+# CI template of a registry type (templates/ci/types.tsv), empty if none.
+ci_stack_for_type() {
+  awk -F'\t' -v t="$1" '$1 !~ /^#/ && $1 == t { print $2 }' "$KIT_HOME/templates/ci/types.tsv" 2>/dev/null || true
+}
+# CI stacks detected from the project's files, most specific first (kit project ci without argument).
+detect_ci_stacks() { # dossier
+  local d=$1 st=() pkg=""
+  if [[ -f $d/package.json ]]; then pkg=$d/package.json; fi
+  if [[ -d $d/src-tauri ]] || { [[ -n $pkg ]] && grep -qE '"@tauri-apps/cli"[[:space:]]*:' "$pkg"; }; then
+    st+=(tauri)
+  else
+    if [[ -n $pkg ]]; then
+      if grep -qE '"astro"[[:space:]]*:' "$pkg"; then st+=(astro)
+      elif grep -qE '"next"[[:space:]]*:' "$pkg"; then st+=(next)
+      elif grep -qE '"vite"[[:space:]]*:' "$pkg"; then st+=(vite)
+      fi
+    fi
+    if [[ -f $d/Cargo.toml ]]; then st+=(rust); fi
+  fi
+  if [[ -f $d/go.mod ]]; then
+    if [[ -f $d/.goreleaser.yaml || -f $d/.goreleaser.yml ]]; then st+=(go-cli); else st+=(go-web); fi
+  elif [[ -d $d/pb_migrations || -d $d/pb_hooks ]]; then
+    st+=(pocketbase)
+  fi
+  if ((${#st[@]} == 0)) && [[ -z $pkg && ! -f $d/Cargo.toml ]] \
+    && [[ -n $(find "$d" -maxdepth 2 \( -name node_modules -o -name .git \) -prune -o -name '*.html' -type f -print 2>/dev/null | head -n1) ]]; then
+    st+=(static)
+  fi
+  printf '%s\n' ${st[@]+"${st[@]}"}
+}
+# Adds the customManagers / packageRules of templates/ci/renovate.json to the project's renovate.json, without
+# duplicates (a custom manager is known by its matchStrings, also under the old name regexManagers). Absent: copies
+# the project template's renovate.json, unless another Renovate config file exists (then only a warning).
+ci_renovate() { # dossier
+  local dir=$1 f="$1/renovate.json" frag="$KIT_HOME/templates/ci/renovate.json" o new
+  if [[ ! -f $f ]]; then
+    for o in renovate.json5 .renovaterc .renovaterc.json .renovaterc.json5 .github/renovate.json .github/renovate.json5 .gitlab/renovate.json .gitlab/renovate.json5; do
+      if [[ -e $dir/$o ]]; then
+        warn "$o existe : ajoute-y à la main la règle Renovate de $frag (kit n'écrit pas dans ce fichier)"
+        return 0
+      fi
+    done
+    cp "$KIT_HOME/templates/project/renovate.json" "$f"
+    ok "renovate.json créé (gabarit du kit, règle des actions data.forgejo.org incluse)"
+    return 0
+  fi
+  jq -e 'type == "object"' "$f" >/dev/null 2>&1 || die "$f n'est pas un objet JSON valide"
+  new=$(jq -s '.[0] as $c | .[1] as $f
+    | (($c.customManagers // []) + ($c.regexManagers // [])) as $known
+    | $c
+    | .customManagers = (reduce $f.customManagers[] as $e ($c.customManagers // [];
+        if any($known[]; .matchStrings == $e.matchStrings) then . else . + [$e] end))
+    | .packageRules = (reduce $f.packageRules[] as $e ($c.packageRules // [];
+        if any(.[]; . == $e) then . else . + [$e] end))' "$f" "$frag") || die "fusion de renovate.json échouée"
+  if [[ $(jq -S . <<<"$new") == "$(jq -S . "$f")" ]]; then
+    ok "renovate.json : règle des actions data.forgejo.org déjà présente"
+  else
+    write_atomic "$f" "$new"
+    ok "renovate.json : règle des actions data.forgejo.org ajoutée (customManagers)"
+  fi
+}
+# kit project ci [pile|type]... [--dir d] [--force] : .forgejo/workflows/ci.yml (première pile ; les suivantes dans
+# ci-<pile>.yml), .fs0/bridge.yaml minimal s'il manque, règle Renovate. N'écrase rien sans --force ; refuse les liens
+# symboliques et le dossier personnel. --if-absent (kit project add) : workflows existants laissés tels quels, sans erreur.
+project_ci() {
+  local dir=. force=0 soft=0 stacks=() all=() s t m targets=() i f rdir home_phys exists=()
+  while (($#)); do
+    case $1 in
+      --dir) dir=${2:?"dossier manquant"}; shift ;;
+      --force) force=1 ;;
+      --if-absent) soft=1 ;;
+      -*) die "option inconnue : $1" ;;
+      *) stacks+=("$1") ;;
+    esac
+    shift
+  done
+  [[ -d $dir ]] || die "dossier introuvable : $dir"
+  need jq "Installe jq."
+  if ((${#stacks[@]} == 0)); then
+    while IFS= read -r s; do if [[ -n $s ]]; then stacks+=("$s"); fi; done < <(detect_ci_stacks "$dir")
+    if ((${#stacks[@]} == 0)); then
+      info "aucune pile de CI détectée dans $dir : kit project ci <pile> ($CI_STACKS)"
+      return 0
+    fi
+    info "piles de CI détectées : ${stacks[*]}"
+  fi
+  for t in "${stacks[@]}"; do
+    s=$t
+    case " $CI_STACKS " in *" $t "*) ;; *) s=$(ci_stack_for_type "$t") ;; esac
+    [[ -n $s ]] || die "pas de gabarit de CI pour : $t (piles : $CI_STACKS)"
+    case " ${all[*]-} " in *" $s "*) continue ;; esac
+    all+=("$s")
+  done
+  rdir=$(cd -P -- "$dir" 2>/dev/null && pwd -P) || rdir=$dir
+  home_phys=$(cd -P -- "$HOME" 2>/dev/null && pwd -P) || home_phys=$HOME
+  if [[ $rdir == / || $rdir == "$home_phys" || $rdir == "$HOME" || $rdir == "$CLAUDE_HOME" ]]; then
+    die "dossier de projet refusé ($dir) : c'est le dossier personnel ; lance la commande dans un projet"
+  fi
+  for m in .forgejo .forgejo/workflows .fs0 .fs0/bridge.yaml renovate.json; do
+    [[ ! -L $dir/$m ]] || die "$dir/$m est un lien symbolique : refusé (aucune écriture hors du projet)"
+  done
+  for i in "${!all[@]}"; do
+    if ((i == 0)); then f=ci.yml; else f="ci-${all[$i]}.yml"; fi
+    targets+=("$f")
+    [[ ! -L $dir/.forgejo/workflows/$f ]] || die "$dir/.forgejo/workflows/$f est un lien symbolique : refusé"
+    if [[ -e $dir/.forgejo/workflows/$f ]]; then exists+=("$f"); fi
+  done
+  if ((${#exists[@]} && !force)); then
+    if ((soft)); then
+      info "CI déjà présente (.forgejo/workflows/${exists[*]}) : laissée telle quelle (kit project ci --force pour la remplacer)"
+    else
+      die "existe déjà : .forgejo/workflows/${exists[*]} (--force pour écraser)"
+    fi
+  else
+    mkdir -p "$dir/.forgejo/workflows"
+    for i in "${!all[@]}"; do
+      write_atomic "$dir/.forgejo/workflows/${targets[$i]}" "$(cat "$KIT_HOME/templates/ci/${all[$i]}.yml")"
+      ok ".forgejo/workflows/${targets[$i]} écrit (gabarit ${all[$i]})"
+    done
+  fi
+  if [[ -d $dir/.github/workflows ]]; then
+    warn ".github/workflows/ existe : la CI tourne sur Forgejo (.forgejo/workflows/), migre puis retire ces workflows GitHub"
+  fi
+  if [[ ! -e $dir/.fs0/bridge.yaml ]]; then
+    mkdir -p "$dir/.fs0"
+    printf '%s\n' '# fs0-bridge: per-repository settings (keys and rules in the bridge README).' \
+      '# Optional, read on the default branch only: deploy: <Coolify application uuid>, branches: [main].' \
+      'enabled: true' >"$dir/.fs0/bridge.yaml"
+    ok ".fs0/bridge.yaml écrit (enabled: true)"
+  fi
+  ci_renovate "$dir"
+}
+
 project_add() {
-  local dir=. skills=1 perms=1 types=() t stacks=()
+  local dir=. skills=1 perms=1 ci=1 types=() t stacks=() cistacks=()
   while (($#)); do
     case $1 in
       --dir) dir=${2:?"dossier manquant"}; shift ;;
       --no-skills) skills=0 ;;
       --no-permissions) perms=0 ;;
+      --no-ci) ci=0 ;;
       -*) die "option inconnue : $1" ;;
       *) types+=("$1") ;;
     esac
     shift
   done
-  ((${#types[@]})) || die "usage : kit project add <type|pile>... [--dir d] [--no-skills] [--no-permissions]   (types : kit project types)"
+  ((${#types[@]})) || die "usage : kit project add <type|pile>... [--dir d] [--no-skills] [--no-permissions] [--no-ci]   (types : kit project types)"
   local rows profiles=() agents=() kskills=() row p a k
   rows=$(registry_rows)
   for t in "${types[@]}"; do
@@ -594,6 +736,7 @@ project_add() {
       die "Type inconnu : $t (types : $(cut -d';' -f1 <<<"$rows" | paste -sd' ' -) ; piles : $(cd "$KIT_HOME/templates/permissions" && ls ./*.json | sed 's#^\./##; s#\.json$##' | paste -sd' ' -))"
     fi
     for p in $(stacks_for_type "$t"); do stacks+=("$p"); done
+    for p in $(ci_stack_for_type "$t"); do cistacks+=("$p"); done
     IFS=';' read -r _ p k a <<<"$row"
     mapfile -t -O "${#profiles[@]}" profiles < <(backticked "$p")
     mapfile -t -O "${#kskills[@]}" kskills < <(backticked "$k")
@@ -631,6 +774,8 @@ project_add() {
   fi
   # Autorisations de la pile (allow seulement, fusionnées sans doublon : voir project_permissions).
   if ((perms && ${#stacks[@]})); then project_permissions "$dir" "${stacks[@]}"; fi
+  # CI Forgejo of the type (templates/ci/types.tsv): an existing workflow is left untouched.
+  if ((ci && ${#cistacks[@]})); then project_ci --if-absent --dir "$dir" "${cistacks[@]}"; fi
   echo "Commite .claude/ : le projet retrouvera ses agents, ses skills et ses autorisations à chaque session, y compris sur claude.ai/code."
 }
 
@@ -979,11 +1124,12 @@ cmd_project() {
       ;;
     add) shift; project_add "$@" ;;
     perms) shift; project_perms "$@" ;;
+    ci) shift; project_ci "$@" ;;
     size) shift; project_size "$@" ;;
     effort) shift; project_effort "$@" ;;
     types) project_types ;;
     template) shift; project_template "$@" ;;
-    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type|pile>... | perms [pile]... | size S|M|L | effort <agent> <niveau> | types | template [nom]" ;;
+    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type|pile>... | perms [pile]... | ci [pile]... | size S|M|L | effort <agent> <niveau> | types | template [nom]" ;;
   esac
 }
 
