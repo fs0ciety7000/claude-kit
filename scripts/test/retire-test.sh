@@ -47,6 +47,11 @@ if [[ ($m == POST || $m == PATCH) && $p == */envs && -n $body ]]; then
   if [[ -f $FAKE_DIR/envs_lossy ]]; then body=$(jq -c '.value = (.value | split(",") | last)' <<<"$body"); fi
   jq -c --argjson b "$body" '[.[] | select(.key != $b.key or .is_preview == true)] + [$b + {is_preview: false}]' "$g" >"$g.tmp" && mv "$g.tmp" "$g"
 fi
+# With $FAKE_DIR/patch_applies, a PATCH of an application's preview settings is kept by the fake Coolify.
+if [[ $m == PATCH && $p == /applications/* && $p != */envs && -f $FAKE_DIR/patch_applies ]]; then
+  g="$FAKE_DIR/$(printf 'GET %s' "$p" | tr -c 'A-Za-z0-9' '_').json"
+  [[ -f $g ]] && jq -c --argjson b "$body" '.settings = ((.settings // {}) + ($b | with_entries(select(.key | startswith("is_pr")))))' "$g" >"$g.tmp" && mv "$g.tmp" "$g"
+fi
 if [[ $f == /dev/null ]]; then echo '{}' | jq -c "$filter"; else jq -c "$filter" "$f"; fi
 EOF
 cat >"$BIN/gh" <<'EOF'
@@ -259,6 +264,32 @@ t "public : sonde modifiée gardée" test "$(showp gatus/config.yaml | grep -c '
 t "public : sonde modifiée signalée" has "À régler à la main"
 t "public : autres sondes gardées" test "$(showp gatus/config.yaml | grep -c old.example.org)" -eq 1
 t "public : DEPLOY_ALLOW vidé de sa seule entrée" test "$(allow_written)" = ""
+
+section "prévisualisations : coupées et relues avant l'arrêt"
+V=pvuuid000000000000000001
+PV="$T/pv"
+mkproj "$PV" pv access pv.example.org no
+sed -i.bak -e "s/^coolify_uuid: .*/coolify_uuid: $V/" -e "s/^previews: .*/previews: true/" "$PV/project.yaml" && rm -f "$PV/project.yaml.bak"
+fixture GET "/applications/$V" '{"git_repository":"acme/pv","status":"running:healthy","settings":{"is_preview_deployments_enabled":true,"is_pr_deployments_public_enabled":false}}'
+allow_fixture "acme/pv=$V"
+: >"$FAKE_LOG"
+rrun run --dir "$PV" --dry-run
+t "dry-run : coupure annoncée" has "- prévisualisations des PR coupées"
+t "dry-run : aucune écriture" test "$(writes)" -eq 0
+rrun run --dir "$PV"
+t "relecture encore active : erreur" bash -c '[[ $1 -ne 0 ]] && grep -q "pas gardé le réglage" <<<"$2"' _ "$RC" "$OUT"
+t "relecture encore active : application non arrêtée" test "$(logn "TRIGGER /applications/$V/stop")" -eq 0
+touch "$FAKE/patch_applies"
+: >"$FAKE_LOG"
+rrun run --dir "$PV"
+rm -f "$FAKE/patch_applies"
+t "run : code 0" test "$RC" -eq 0
+t "run : PATCH previews off" bash -c 'grep -A1 "PATCH /applications/$2\$" "$1" | sed -n "s/^BODY //p" | jq -e ".is_preview_deployments_enabled == false and .is_pr_deployments_public_enabled == false" >/dev/null' _ "$FAKE_LOG" "$V"
+t "run : coupure avant l'arrêt" test "$(grep -n "PATCH /applications/$V\$" "$FAKE_LOG" | cut -d: -f1)" -lt "$(grep -n "TRIGGER /applications/$V/stop" "$FAKE_LOG" | cut -d: -f1)"
+t "run : previews: false dans project.yaml" grep -qx 'previews: false' "$PV/project.yaml"
+: >"$FAKE_LOG"
+rrun run --dir "$PV"
+t "relance : déjà coupées, pas de PATCH" bash -c 'grep -q "déjà coupées" <<<"$1" && ! grep -q "PATCH /applications/$2\$" "$3"' _ "$OUT" "$V" "$FAKE_LOG"
 
 section "sans coolify_uuid ni domaine"
 NO="$T/no"

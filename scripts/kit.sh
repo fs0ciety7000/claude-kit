@@ -63,6 +63,7 @@ METTRE EN LIGNE (réglages du poste : ~/.config/claude-kit/ship.conf, modèle do
         plan : ce qui changerait ; infra : PR DNS/Access/Gatus/sauvegarde dans le dépôt d'infra (tofu par le
         propriétaire) ; app : application Coolify, noms de variables, .fs0/bridge.yaml, DEPLOY_ALLOW du pont ;
         status : dernier déploiement et réponse HTTPS (voir /ship)
+  kit ship previews setup [--dry-run]     une fois : PR d'infra, joker DNS et Access des prévisualisations de PR
   kit project get [clé] [--dir d]         champs de mise en ligne de project.yaml (expose, domain, server...)
   kit retire plan|run [--dir d] [--dry-run]
         retire un service : arrêt Coolify, DEPLOY_ALLOW, deploy:, PR d'infra qui retire ce que kit ship a écrit,

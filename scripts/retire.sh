@@ -2,7 +2,7 @@
 # kit retire : take a project put online by kit ship offline, without deleting anything.
 #
 #   kit retire plan [--dir D]             what would be stopped, removed or edited; writes nothing
-#   kit retire run  [--dir D] [--dry-run] stop the Coolify application (after checking it is built from this repository),
+#   kit retire run  [--dir D] [--dry-run] switch PR previews off (read back), stop the Coolify application (owned check),
 #                                         remove owner/repo from the bridge's DEPLOY_ALLOW, remove deploy: from
 #                                         .fs0/bridge.yaml, open a PR in the infra repo removing the entries kit ship
 #                                         wrote (DNS, Access, Gatus, backup line), set expose: none (coolify_uuid kept),
@@ -28,6 +28,22 @@ retire_app_check() { # read-only: ownership and current status
   app_owned "$P_UUID"
   APP_STATUS=$(api "/applications/$P_UUID" --jq '.status // ""' | jq -r .) || die "lecture de l'application $P_UUID en échec"
   echo "Coolify : application $P_UUID (construite depuis $P_REPO), statut ${APP_STATUS:-inconnu}"
+}
+# PR previews switched off before the stop (a preview keeps running otherwise), then read back: any gap stops the run.
+retire_previews() { # mode
+  local cur body
+  [[ -n $P_UUID ]] || return 0
+  cur=$(api "/applications/$P_UUID" --jq '{on: (.settings.is_preview_deployments_enabled // false), pub: (.settings.is_pr_deployments_public_enabled // false)}' | jq -c .) \
+    || die "lecture des prévisualisations de $P_UUID en échec"
+  if [[ $(jq -r '.on or .pub' <<<"$cur") == false ]]; then echo "  = prévisualisations des PR déjà coupées"; return 0; fi
+  if [[ $1 != real ]]; then echo "  - prévisualisations des PR coupées (PATCH /applications/$P_UUID, relu)"; return 0; fi
+  body=$(preview_json | jsonfile)
+  announce "prévisualisations des PR de $P_UUID coupées (retour arrière : previews: true, puis kit ship app)"
+  api PATCH "/applications/$P_UUID" --json "@$body" --jq '{uuid: (.uuid // null)}' >/dev/null || die "coupure des prévisualisations refusée par Coolify"
+  PREVIEWS_ON=0
+  preview_readback "$P_UUID"
+  ok "prévisualisations des PR coupées"
+  REMOVED+=("prévisualisations coupées")
 }
 retire_app_stop() { # mode
   [[ -n $P_UUID ]] || return 0
@@ -125,6 +141,12 @@ retire_project_files() { # mode
   else
     announce "project.yaml : expose: none (retour arrière : git checkout project.yaml)"
     kv_set "$DIR/project.yaml" expose none
+  fi
+  if [[ $(pget previews) == false ]]; then echo "  = project.yaml : previews: false"
+  elif [[ $mode != real ]]; then echo "  ~ project.yaml : previews: false"
+  else
+    announce "project.yaml : previews: false (retour arrière : git checkout project.yaml)"
+    kv_set "$DIR/project.yaml" previews false
   fi
   note_block "$mode" "$DIR/DEPLOY.md" "## Retrait
 
@@ -316,6 +338,7 @@ retire_main() {
   # Read-only checks first: nothing is written unless the application belongs to this repository.
   retire_app_check
   retire_bridge_check "$mode"
+  retire_previews "$mode"
   retire_app_stop "$mode"
   retire_bridge "$mode"
   echo "Projet :"
