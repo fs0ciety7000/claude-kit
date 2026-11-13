@@ -1091,4 +1091,5 @@ main() {
   esac
   return 0
 }
-main "$@"
+# scripts/retire.sh sources this file for its helpers (KIT_SHIP_SOURCED=1): no entry point then.
+[[ ${KIT_SHIP_SOURCED:-} == 1 ]] || main "$@"

@@ -367,15 +367,20 @@ git clone --depth 1 https://github.com/fs0ciety7000/claude-kit ~/claude-kit 2>/d
   kit project template          # crée ou met à jour <toi>/project-template et le marque comme modèle
   ```
 
-- **Depuis ta machine ou le VPS** : le dossier, le gabarit et les agents et skills des types donnés, puis le dépôt GitHub (privé, avec sa clé de déploiement) :
+- **Depuis ta machine ou le VPS**, en une commande : dossier, gabarit, agents, skills, autorisations et CI de la pile,
+  `project.yaml`, premier commit, dépôt GitHub privé et push de `main` :
 
   ```bash
-  kit project new ma-boutique nextjs-cloudflare pocketbase && cd ma-boutique
-  kit repo create ma-boutique
-  git add -A && git commit -m "Initialise le projet" && git push -u origin main
+  kit new ma-boutique --stack nextjs-cloudflare,pocketbase --size S --reason "boutique simple, un seul déploiement"
+  kit new ma-boutique --stack astro-static --dry-run      # montre ce qui serait fait, n'écrit rien
   ```
 
-Les deux passent par `GITHUB_TOKEN` (`kit secrets add GITHUB_TOKEN -g`, droits : création de dépôts + Administration).
+  Le dépôt passe par `kit repo create` (`GITHUB_TOKEN`, clé de déploiement), sinon par `gh` connecté ; relancer
+  `kit new` reprend où il s'est arrêté. En session cloud, si le dépôt ne peut pas être créé, `kit new` le dit et donne
+  la commande à lancer sur ton poste. `kit doctor` vérifie ces prérequis. Environnement cloud conseillé :
+  `docs/cloud-env.md`.
+
+Le modèle et `kit repo create` passent par `GITHUB_TOKEN` (`kit secrets add GITHUB_TOKEN -g`, droits : création de dépôts + Administration).
 
 **2. Ouvrir une session** sur claude.ai/code sur ce dépôt, puis :
 
@@ -430,6 +435,14 @@ kit ship previews setup [--dry-run]  # PR d'infra : CNAME et Access joker *.<PRE
   affichée ; une entrée du même dépôt vers une autre application bloque tout.
 - **Déploiement** : le pont déploie après la CI verte sur `main` ; aucun déploiement de l'application par l'API après
   une fusion. Chaque écriture est annoncée sur une ligne ; `DELETE` n'est jamais utilisé.
+
+**Retirer** : `/retire` (ou `kit retire plan|run [--dry-run]`) met hors ligne un projet publié par `kit ship`, sans
+rien supprimer : arrêt de l'application Coolify (après contrôle qu'elle est construite depuis le dépôt du projet),
+retrait de l'entrée du dépôt dans `DEPLOY_ALLOW` du pont (relue et vérifiée, valeur jamais affichée), retrait de
+`deploy:` dans `.fs0/bridge.yaml`, PR d'infra `retire/<nom>` qui enlève les entrées DNS, Access, Gatus et sauvegarde
+seulement si elles sont identiques à ce qu'écrit `kit ship` (les autres sont signalées et gardées), puis
+`expose: none` (`coolify_uuid` gardé) et une note dans `DEPLOY.md` et `docs/memory/state.md`. Restent au
+propriétaire : `tofu apply`, la suppression de l'application dans l'interface Coolify et l'archivage du dépôt.
 
 ## VPS
 
