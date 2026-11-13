@@ -70,10 +70,12 @@ DASHBOARD (vue en direct des sessions, agents, mémoire : claude-kit-dashboard)
 INFOS & MAINTENANCE
   kit list                                agents, skills et profils disponibles
   kit mcp setup                           déclare le serveur MCP Coolify (jeton injecté, jamais écrit en clair)
-  kit sync [--dry-run]                    (re)crée les liens vers ~/.claude et applique les réglages gérés
-        (fusion à trois points : une règle retirée du kit disparaît, tes ajouts restent ; surcharge propre au
-        poste : ~/.config/claude-kit/settings.local.json ; --dry-run affiche l'écart par clé sans rien écrire ;
-        KIT_SYNC_CONTEXT=0 saute les copies de contexte, KIT_SYNC_REGISTRY=0 le registre des profils)
+  kit sync [--dry-run] [--yes]            (re)crée les liens vers ~/.claude et applique les réglages gérés
+        (fusion à trois points : une règle allow retirée du kit disparaît, tes ajouts restent ; deny et ask ne sont
+        jamais retirés sauf règle listée dans global/settings.retired.json ; surcharge propre au poste :
+        ~/.config/claude-kit/settings.local.json ; --dry-run affiche l'écart par clé sans rien écrire ; --yes accepte
+        un defaultMode plus permissif ; KIT_SYNC_CONTEXT=0 saute les copies de contexte, KIT_SYNC_REGISTRY=0 le
+        registre des profils)
   kit update                             git pull du kit + sync + mise à jour des skills globaux
         (au démarrage de session, le hook kit-autoupdate fait déjà un fast-forward sur main puis sync,
         au plus toutes les 6 h en local ; KIT_AUTOUPDATE=0 le désactive)
@@ -848,15 +850,17 @@ cmd_mcp() {
 }
 
 cmd_sync() {
-  local a
+  local a dry=0 opts=()
   for a in "$@"; do
     case $a in
-      --dry-run) apply_managed_settings --dry-run; return 0 ;;
-      *) die "option inconnue : $a (usage : kit sync [--dry-run])" ;;
+      --dry-run) dry=1 ;;
+      --yes) opts+=(--yes) ;;
+      *) die "option inconnue : $a (usage : kit sync [--dry-run] [--yes])" ;;
     esac
   done
+  if ((dry)); then apply_managed_settings --dry-run ${opts[@]+"${opts[@]}"}; return 0; fi
   link_global
-  apply_managed_settings
+  apply_managed_settings ${opts[@]+"${opts[@]}"}
   [[ ${KIT_SYNC_REGISTRY:-1} == 0 ]] || regen_registry
   sync_context
   ok "liens et réglages à jour"

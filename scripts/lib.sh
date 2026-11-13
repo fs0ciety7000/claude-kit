@@ -99,6 +99,8 @@ link_file() { # src dst
 }
 
 link_global() {
+  # Le dossier de config (registre des réglages, surcharge locale, secrets chiffrés) n'est lisible que par son propriétaire.
+  if [[ ! -d $KIT_CONFIG ]]; then mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; fi
   mkdir -p "$CLAUDE_HOME" "$KIT_CONFIG/hooks"
   link_dir  "$KIT_HOME/global/agents"   "$CLAUDE_HOME/agents"
   link_dir  "$KIT_HOME/global/commands" "$CLAUDE_HOME/commands"
@@ -111,12 +113,13 @@ link_global() {
   ln -sfn "$KIT_HOME/scripts/hooks/kit-dockerd.sh" "$KIT_CONFIG/hooks/kit-dockerd.sh"
 }
 
-# write_atomic <fichier> <contenu> : écrit dans un fichier temporaire du même dossier puis mv (jamais de fichier tronqué
+# write_atomic <fichier> <contenu> [droits] : écrit dans un fichier temporaire du même dossier puis mv (jamais de fichier tronqué
 # si le processus est interrompu). Suit un lien symbolique (réglages versionnés ailleurs) et garde les droits existants.
 write_atomic() {
   local target=$1 content=$2 real tmp mode=644
   real=$(readlink -f "$target" 2>/dev/null || echo "$target")
-  [[ -f $real ]] && mode=$(file_mode "$real")
+  if [[ -f $real ]]; then mode=$(file_mode "$real"); fi
+  if [[ -n ${3:-} ]]; then mode=$3; fi
   tmp=$(mktemp "$(dirname "$real")/.$(basename "$real").XXXXXX") || die "écriture impossible : $(dirname "$real")"
   printf '%s\n' "$content" >"$tmp" && chmod "$mode" "$tmp" && mv "$tmp" "$real" || { rm -f "$tmp"; die "écriture de $real échouée"; }
 }
@@ -155,60 +158,183 @@ automode_v1_owned() {
 # Clés gérées : permissions.allow|ask|deny|defaultMode, hooks, autoMode.*. Le reste du fichier n'est jamais touché.
 #   K = réglages du kit pour ce poste : global/settings.json, + settings.vps.json (profil vps),
 #       + $KIT_CONFIG/settings.local.json (surcharge propre au poste, jamais dans Git, absente par défaut).
-#   L = registre $KIT_CONFIG/settings.managed.json = le K appliqué la dernière fois. Absent (première exécution après
-#       la mise à niveau) : L = K + global/settings.v1.json, instantané de toutes les entrées que le kit v1 a écrites
-#       (autoMode.* y figure en empreintes SHA-256, pas en clair).
-#   U = ajouts de l'utilisateur = C (fichier actuel) moins L, par liste. Un groupe de hooks dont une commande pointe
-#       dans $KIT_CONFIG/hooks appartient toujours au kit (retire les doublons).
-#   Nouveau fichier : chaque liste = K puis U, sans doublon, ordre gardé ; defaultMode vient de K. Écriture atomique
-#   seulement si le contenu change, sauvegarde settings.json.pre-kit.<date> (les 3 dernières gardées), puis L := K.
-# Option --dry-run : affiche l'écart par clé, n'écrit rien (ni fichier, ni sauvegarde, ni registre).
+#   L = registre $KIT_CONFIG/settings.managed.json = le K appliqué la dernière fois (+ le profil). Absent ou illisible
+#       (première exécution après la mise à niveau) : L = K + global/settings.v1.json, instantané des entrées allow,
+#       hooks et autoMode (en empreintes SHA-256) que le kit v1 a écrites.
+#   U = ajouts de l'utilisateur = C (fichier actuel) moins L, pour allow et autoMode.environment|allow.
+#   deny, ask, autoMode.soft_deny|hard_deny ne sont JAMAIS retirés automatiquement : seules les règles listées dans
+#   global/settings.retired.json le sont. Hooks : seules les entrées exactement <dossier des hooks du kit>/<script du
+#   kit> (même matcher que dans K ou L) appartiennent au kit ; les autres restent.
+#   Nouveau fichier : chaque liste = K puis U, sans doublon, ordre gardé ; defaultMode vient de K, mais un passage à un
+#   mode plus permissif (default -> auto…) est refusé sans --yes. Écriture atomique seulement si le contenu change,
+#   sous verrou ($KIT_CONFIG/settings.lock), sauvegarde settings.json.pre-kit.<date> (la plus ancienne et les 2
+#   dernières gardées), puis L := K.
+# Options : --dry-run affiche l'écart par clé et n'écrit rien (ni fichier, ni sauvegarde, ni registre, ni verrou) ;
+#           --yes accepte un defaultMode plus permissif.
+# Variables : KIT_LOCK_WAIT (secondes d'attente du verrou, 10 par défaut).
+_AMS_TMPD=""
+_AMS_LOCK=""
+_ams_cleanup() {
+  if [[ -n $_AMS_TMPD ]]; then rm -rf "$_AMS_TMPD"; fi
+  if [[ -n $_AMS_LOCK ]]; then rm -rf "$_AMS_LOCK"; fi
+  _AMS_TMPD="" _AMS_LOCK=""
+  return 0
+}
+
+# Verrou par mkdir (flock est absent de macOS). Un verrou dont le processus n'existe plus, ou sans pid depuis plus de
+# 5 minutes, est repris. Retourne 1 si le verrou reste tenu après KIT_LOCK_WAIT secondes.
+_ams_lock() {
+  local lock="$KIT_CONFIG/settings.lock" waited=0 max=${KIT_LOCK_WAIT:-10} pid
+  while ! mkdir "$lock" 2>/dev/null; do
+    pid=$(cat "$lock/pid" 2>/dev/null || true)
+    if [[ -n $pid ]]; then
+      if ! kill -0 "$pid" 2>/dev/null; then rm -rf "$lock"; continue; fi
+    elif [[ -n $(find "$lock" -maxdepth 0 -mmin +5 2>/dev/null) ]]; then
+      rm -rf "$lock"; continue
+    fi
+    ((waited < max)) || return 1
+    sleep 1
+    waited=$((waited + 1))
+  done
+  echo $$ >"$lock/pid"
+  _AMS_LOCK=$lock
+}
+
+# Forme attendue d'un fichier de réglages (objet ; permissions, hooks et autoMode bien typés) : sans elle, la fusion échouerait.
+_ams_valid() { # fichier
+  jq -e '
+    type == "object"
+    and ((.permissions // {}) | type == "object" and all((.allow, .ask, .deny); . == null or type == "array"))
+    and ((.hooks // {}) | type == "object" and all(.[]; type == "array"))
+    and ((.autoMode // {}) | type == "object" and all(.[]; type == "array"))' "$1" >/dev/null 2>&1
+}
+
+# Rang de permissivité d'un defaultMode (plus grand = plus permissif).
+_ams_rank() {
+  case $1 in plan) echo 0 ;; default) echo 1 ;; acceptEdits) echo 2 ;; auto) echo 3 ;; bypassPermissions) echo 4 ;; *) echo 9 ;; esac
+}
+
+# Contrôle de la surcharge locale : refuse bypassPermissions et les règles allow trop larges, affiche ce qu'elle apporte.
+_ams_check_overlay() { # fichier
+  local f=$1 bad line
+  bad=$(jq -r '
+    [(.permissions.allow // [])[] | select(type == "string"
+        and test("^(\\*|Bash|Bash\\(\\*{1,2}\\)|Bash\\(:\\*\\)|(Edit|Write|MultiEdit|NotebookEdit)(\\(\\*{0,2}\\))?)$"))
+      | "permissions.allow : " + .]
+    + (if .permissions.defaultMode == "bypassPermissions" then ["permissions.defaultMode : bypassPermissions"] else [] end)
+    | .[]' "$f") || die "lecture de $f échouée"
+  if [[ -n $bad ]]; then
+    warn "surcharge refusée ($f) : une surcharge locale ne peut pas contenir"
+    while IFS= read -r line; do warn "  $line"; done <<<"$bad"
+    die "retire ces entrées de $f (règles larges et bypassPermissions : à décider dans global/settings.json, par PR)"
+  fi
+  info "surcharge locale ($f) :"
+  jq -r 'def short: tojson | if length > 120 then .[0:117] + "..." else . end;
+    ((.permissions // {}) | to_entries[] | select(.value | type == "array")
+      | "  permissions." + .key + " : +" + (.value | length | tostring)
+        + (if .key == "allow" or .key == "ask" or .key == "deny" then " (" + (.value | map(short) | join(", ")) + ")" else "" end)),
+    (if .permissions.defaultMode then "  permissions.defaultMode : " + (.permissions.defaultMode | tostring) else empty end),
+    ((.hooks // {}) | to_entries[] | "  hooks." + .key + " : +" + (.value | length | tostring) + " groupe(s)"),
+    ((.autoMode // {}) | to_entries[] | "  autoMode." + .key + " : +" + (.value | length | tostring) + " entrée(s)")' "$f"
+}
+
 apply_managed_settings() {
-  local dry=0 cur="$CLAUDE_HOME/settings.json" reg="$KIT_CONFIG/settings.managed.json"
+  local dry=0 yes=0 cur="$CLAUDE_HOME/settings.json" reg="$KIT_CONFIG/settings.managed.json"
   local jqf="$KIT_HOME/scripts/managed-settings.jq" snap="$KIT_HOME/global/settings.v1.json"
-  local overlay="$KIT_CONFIG/settings.local.json" tmpd f created=0 migrating=0 nb_add nb_rm
-  [[ ${1:-} == --dry-run ]] && dry=1
+  local retired="$KIT_HOME/global/settings.retired.json" overlay="$KIT_CONFIG/settings.local.json"
+  local tmpd f created=0 migrating=0 nb_add nb_rm profile="" reg_profile="" a
+  for a in "$@"; do
+    case $a in
+      --dry-run) dry=1 ;;
+      --yes) yes=1 ;;
+      *) die "option inconnue : $a" ;;
+    esac
+  done
   need jq "Installe jq."
   [[ -f $jqf ]] || die "$jqf introuvable"
+
+  # Profil : fichier profile ; à défaut, celui du registre (un profil vps ne retombe pas silencieusement sur local).
+  profile=$(cat "$KIT_CONFIG/profile" 2>/dev/null || true)
+  if [[ -f $reg ]]; then reg_profile=$(jq -r '.profile // empty' "$reg" 2>/dev/null || true); fi
+  if [[ -z $profile ]]; then
+    if [[ -n $reg_profile && $reg_profile != local ]]; then
+      warn "profil introuvable ($KIT_CONFIG/profile) : profil « $reg_profile » du registre conservé"
+      profile=$reg_profile
+    else
+      profile=local
+    fi
+  fi
+
   local frags=("$KIT_HOME/global/settings.json")
-  if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null || echo local)" == vps ]]; then frags+=("$KIT_HOME/global/settings.vps.json"); fi
-  [[ -f $overlay ]] && frags+=("$overlay")
+  if [[ $profile == vps ]]; then frags+=("$KIT_HOME/global/settings.vps.json"); fi
+  if [[ -f $overlay ]]; then
+    chmod 600 "$overlay" 2>/dev/null || true
+    _ams_valid "$overlay" || die "$overlay n'est pas un objet JSON de réglages valide"
+    _ams_check_overlay "$overlay"
+    frags+=("$overlay")
+  fi
   for f in "${frags[@]}"; do
-    jq -e 'type == "object"' "$f" >/dev/null 2>&1 || die "$f n'est pas un objet JSON valide"
+    _ams_valid "$f" || die "$f n'est pas un objet JSON de réglages valide"
   done
   if [[ -f $cur ]]; then
-    jq -e 'type == "object"' "$cur" >/dev/null 2>&1 || die "$cur n'est pas du JSON valide (objet attendu)"
+    _ams_valid "$cur" || die "$cur n'est pas du JSON valide (objet de réglages attendu : permissions, hooks et autoMode en listes)"
   else
     created=1
   fi
 
-  tmpd=$(mktemp -d) || die "mktemp échoué"
+  if ((!dry)); then
+    if [[ ! -d $KIT_CONFIG ]]; then mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; fi
+    _ams_lock || { warn "réglages non appliqués : $KIT_CONFIG/settings.lock est tenu par un autre kit sync (réessaie)"; return 0; }
+  fi
+  tmpd=$(mktemp -d) || { _ams_cleanup; die "mktemp échoué"; }
+  _AMS_TMPD=$tmpd
+  trap '_ams_cleanup' EXIT
+  trap '_ams_cleanup; exit 130' INT
+  trap '_ams_cleanup; exit 143' TERM
+
   # K : réglages du kit pour ce poste.
-  jq -s --arg mode build -f "$jqf" "${frags[@]}" >"$tmpd/k.json" || { rm -rf "$tmpd"; die "calcul des réglages du kit échoué"; }
-  # C : fichier actuel.
-  if ((created)); then echo '{}' >"$tmpd/c.json"; else cp "$cur" "$tmpd/c.json"; fi
+  jq -s --arg mode build -f "$jqf" "${frags[@]}" >"$tmpd/k.json" || die "calcul des réglages du kit échoué"
+  # C : fichier actuel (lu une fois ; son cksum est revérifié juste avant l'écriture).
+  local sum0=""
+  if ((created)); then echo '{}' >"$tmpd/c.json"; else cp "$cur" "$tmpd/c.json"; sum0=$(cksum <"$cur"); fi
   # L : registre, ou K + instantané v1 à la première exécution.
-  if [[ -f $reg ]] && jq -e 'type == "object"' "$reg" >/dev/null 2>&1; then
-    jq --arg mode project -f "$jqf" "$reg" >"$tmpd/l.json" || { rm -rf "$tmpd"; die "lecture de $reg échouée"; }
+  if [[ -f $reg ]] && _ams_valid "$reg" && jq --arg mode project -f "$jqf" "$reg" >"$tmpd/l.json" 2>/dev/null; then
+    :
   else
     migrating=1
-    [[ -f $reg ]] && warn "$reg illisible : traité comme absent"
+    if [[ -f $reg ]]; then warn "$reg illisible : traité comme absent (première migration)"; fi
     if [[ -f $snap ]]; then
-      jq -s --arg mode build -f "$jqf" "$tmpd/k.json" "$snap" >"$tmpd/l.json" || { rm -rf "$tmpd"; die "lecture de $snap échouée"; }
+      # Le profil vps ajoute ses entrées à l'instantané (profiles.<profil>) ; local = global seul.
+      jq --arg p "$profile" '.profiles[$p] // {}' "$snap" >"$tmpd/snapprof.json" || die "lecture de $snap échouée"
+      jq -s --arg mode build -f "$jqf" "$tmpd/k.json" "$snap" "$tmpd/snapprof.json" >"$tmpd/l.json" || die "lecture de $snap échouée"
       # autoMode.* est stocké en empreintes SHA-256 dans l'instantané : les entrées de C qui y figurent viennent du kit.
       automode_v1_owned "$snap" "$tmpd/c.json" >"$tmpd/lx.json" \
         && jq -s --arg mode build -f "$jqf" "$tmpd/l.json" "$tmpd/lx.json" >"$tmpd/l2.json" \
         && mv "$tmpd/l2.json" "$tmpd/l.json" \
-        || { rm -rf "$tmpd"; die "lecture des empreintes autoMode de $snap échouée"; }
+        || die "lecture des empreintes autoMode de $snap échouée"
     else
       warn "$snap introuvable : les anciennes entrées du kit ne seront pas retirées"
       cp "$tmpd/k.json" "$tmpd/l.json"
     fi
   fi
-  jq -n --arg mode merge --arg kitdir "$KIT_CONFIG/hooks" \
-    --slurpfile c "$tmpd/c.json" --slurpfile k "$tmpd/k.json" --slurpfile l "$tmpd/l.json" \
-    -f "$jqf" >"$tmpd/res.json" || { rm -rf "$tmpd"; die "fusion des réglages échouée"; }
+  # Règles que le kit a explicitement retirées (deny, ask, autoMode.soft_deny|hard_deny).
+  if [[ -f $retired ]] && jq -e 'type == "object"' "$retired" >/dev/null 2>&1; then cp "$retired" "$tmpd/r.json"; else echo '{}' >"$tmpd/r.json"; fi
+  # Préfixes ancrés du dossier des hooks du kit et noms de ses scripts.
+  local prefixes names h
+  # shellcheck disable=SC2016,SC2088
+  prefixes=$(printf '%s\n' "$KIT_CONFIG/hooks/" "$HOME/.config/claude-kit/hooks/" '$HOME/.config/claude-kit/hooks/' \
+    '${HOME}/.config/claude-kit/hooks/' '~/.config/claude-kit/hooks/' | jq -R . | jq -s -c .) || die "préfixes de hooks"
+  names=$(for h in "$KIT_HOME"/scripts/hooks/*.sh; do [[ -e $h ]] && basename "$h"; done | jq -R . | jq -s -c .) || die "noms de hooks"
+  jq -n --arg mode merge --argjson prefixes "$prefixes" --argjson names "$names" --argjson yes "$( ((yes)) && echo true || echo false )" \
+    --slurpfile c "$tmpd/c.json" --slurpfile k "$tmpd/k.json" --slurpfile l "$tmpd/l.json" --slurpfile r "$tmpd/r.json" \
+    -f "$jqf" >"$tmpd/res.json" || die "fusion des réglages échouée"
   jq '.new' "$tmpd/res.json" >"$tmpd/new.json"
+  local dm_c dm_k
+  dm_c=$(jq -r '.permissions.defaultMode // empty' "$tmpd/c.json")
+  dm_k=$(jq -r '.permissions.defaultMode // empty' "$tmpd/k.json")
+  if [[ -n $dm_c && -n $dm_k && $dm_c != "$dm_k" ]] && (($(_ams_rank "$dm_k") > $(_ams_rank "$dm_c"))) && ((!yes)); then
+    warn "defaultMode : le kit voudrait passer de « $dm_c » à « $dm_k » (plus permissif) : refusé. Relance « kit sync --yes » pour l'accepter."
+  fi
 
   local changed=0
   if ((created)) || [[ "$(jq -S -c . "$tmpd/c.json")" != "$(jq -S -c . "$tmpd/new.json")" ]]; then changed=1; fi
@@ -228,29 +354,60 @@ apply_managed_settings() {
     else
       echo "  aucun changement"
     fi
-    rm -rf "$tmpd"
+    _ams_cleanup
+    trap - EXIT INT TERM
     return 0
   fi
 
   if ((changed)); then
+    # Le fichier a-t-il changé depuis la lecture ? (un autre processus, ou l'utilisateur dans son éditeur)
+    if { ((created)) && [[ -e $cur ]]; } || { ((!created)) && [[ "$(cksum <"$cur" 2>/dev/null)" != "$sum0" ]]; }; then
+      warn "$cur a changé pendant la fusion : rien n'est écrit, réessaie (prochain kit sync)"
+      _ams_cleanup
+      trap - EXIT INT TERM
+      return 0
+    fi
     if ((created)); then
       mkdir -p "$(dirname "$cur")"
       write_atomic "$cur" "$(cat "$tmpd/new.json")"
       ok "réglages créés : $cur"
     else
-      cp "$cur" "$cur.pre-kit.$(date +%Y%m%d%H%M%S)"
+      _ams_backup "$cur"
       write_atomic "$cur" "$(cat "$tmpd/new.json")"
       ok "réglages mis à jour : $cur (+$nb_add -$nb_rm entrées)"
-      # Garde les 3 dernières sauvegardes (l'horodatage trie dans l'ordre chronologique).
-      local bks=() b i
-      for b in "$cur".pre-kit.*; do [[ -e $b ]] && bks+=("$b"); done
-      for ((i = 0; i < ${#bks[@]} - 3; i++)); do rm -f "${bks[i]}"; done
+      # Ce que le kit a retiré et qui peut compter : hooks, deny, ask (nommés, jamais silencieux).
+      jq -r 'def short: tojson | if length > 160 then .[0:157] + "..." else . end;
+        .changes[] | select(.name | test("^hooks[.]|^permissions[.](deny|ask)$|^autoMode[.](soft_deny|hard_deny)$"))
+        | .name as $n | .removed[] | "→ retiré de " + $n + " : " + short' "$tmpd/res.json"
     fi
   fi
-  # Registre : L := K, seulement si son contenu change.
-  if [[ ! -f $reg ]] || [[ "$(jq -S -c . "$tmpd/k.json")" != "$(jq -S -c --arg mode project -f "$jqf" "$reg" 2>/dev/null)" ]]; then
-    mkdir -p "$KIT_CONFIG"
-    write_atomic "$reg" "$(cat "$tmpd/k.json")"
+  # Registre : L := K (+ profil), seulement si son contenu change ; droits 600.
+  jq --arg p "$profile" '. + {profile: $p}' "$tmpd/k.json" >"$tmpd/reg.json"
+  if [[ ! -f $reg ]] || [[ "$(jq -S -c . "$tmpd/reg.json")" != "$(jq -S -c . "$reg" 2>/dev/null)" ]]; then
+    write_atomic "$reg" "$(cat "$tmpd/reg.json")" 600
+  else
+    chmod 600 "$reg" 2>/dev/null || true
   fi
-  rm -rf "$tmpd"
+  _ams_cleanup
+  trap - EXIT INT TERM
+}
+
+# Sauvegarde settings.json.pre-kit.<14 chiffres> : pas d'écrasement dans la même seconde, rien si identique à la
+# dernière ; on garde la plus ancienne et les deux plus récentes (les suffixes qui ne sont pas des dates sont ignorés).
+_ams_backup() { # fichier
+  local cur=$1 ts b bks=() n i last=""
+  for b in "$cur".pre-kit.*; do
+    [[ -e $b && ${b##*.} =~ ^[0-9]{14}$ ]] && bks+=("$b")
+  done
+  n=${#bks[@]}
+  if ((n > 0)); then last=${bks[n - 1]}; fi
+  if [[ -z $last ]] || ! cmp -s "$cur" "$last"; then
+    ts=$(date +%Y%m%d%H%M%S)
+    while [[ -e $cur.pre-kit.$ts ]]; do ts=$((10#$ts + 1)); done
+    cp "$cur" "$cur.pre-kit.$ts" && chmod 600 "$cur.pre-kit.$ts" 2>/dev/null
+    bks+=("$cur.pre-kit.$ts")
+    n=${#bks[@]}
+  fi
+  for ((i = 1; i < n - 2; i++)); do rm -f "${bks[i]}"; done
+  return 0
 }
