@@ -75,8 +75,13 @@ DASHBOARD (vue en direct des sessions, agents, mémoire : claude-kit-dashboard)
 INFOS & MAINTENANCE
   kit list                                agents, skills et profils disponibles
   kit mcp setup                           déclare le serveur MCP Coolify (jeton injecté, jamais écrit en clair)
-  kit sync                                (re)crée les liens vers ~/.claude et fusionne les réglages
-  kit update                              git pull du kit + sync + mise à jour des skills globaux
+  kit sync [--dry-run] [--yes]            (re)crée les liens vers ~/.claude et applique les réglages gérés
+        (fusion à trois points : une règle allow retirée du kit disparaît, tes ajouts restent ; deny et ask ne sont
+        jamais retirés sauf règle listée dans global/settings.retired.json ; surcharge propre au poste :
+        ~/.config/claude-kit/settings.local.json ; --dry-run affiche l'écart par clé sans rien écrire ; --yes accepte
+        un defaultMode plus permissif ; KIT_SYNC_CONTEXT=0 saute les copies de contexte, KIT_SYNC_REGISTRY=0 le
+        registre des profils)
+  kit update                             git pull du kit + sync + mise à jour des skills globaux
         (au démarrage de session, le hook kit-autoupdate fait déjà un fast-forward sur main puis sync,
         au plus toutes les 6 h en local ; KIT_AUTOUPDATE=0 le désactive)
   kit doctor                              vérifie l'installation
@@ -171,7 +176,7 @@ regen_registry() {
     /<!-- kit:profiles:end -->/   { skip = 0; next }
     !skip { print }
   ' "$reg" >"$tmp"
-  cat "$tmp" >"$reg"
+  cmp -s "$tmp" "$reg" || cat "$tmp" >"$reg"   # n'écrit que si le contenu change
   rm -f "$tmp" "$blk"
   ok "registre mis à jour"
 }
@@ -822,7 +827,7 @@ cmd_dash() {
       mkdir -p "$KIT_CONFIG"
       printf '%s\n' "${url%/}" >"$KIT_CONFIG/dash.url"
       link_global
-      apply_settings
+      apply_managed_settings
       ok "hook kit-emit actif vers ${url%/}"
       dash_mcp "${url%/}"
       if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
@@ -994,9 +999,18 @@ cmd_mcp() {
 }
 
 cmd_sync() {
+  local a dry=0 opts=()
+  for a in "$@"; do
+    case $a in
+      --dry-run) dry=1 ;;
+      --yes) opts+=(--yes) ;;
+      *) die "option inconnue : $a (usage : kit sync [--dry-run] [--yes])" ;;
+    esac
+  done
+  if ((dry)); then apply_managed_settings --dry-run ${opts[@]+"${opts[@]}"}; return 0; fi
   link_global
-  apply_settings
-  regen_registry
+  apply_managed_settings ${opts[@]+"${opts[@]}"}
+  [[ ${KIT_SYNC_REGISTRY:-1} == 0 ]] || regen_registry
   sync_context
   ok "liens et réglages à jour"
 }
@@ -1006,6 +1020,7 @@ cmd_sync() {
 sync_context() {
   local list="$KIT_HOME/global/context-repos.txt" dir="$HOME/.kit/context" repo name
   [[ -f $list ]] || return 0
+  [[ ${KIT_SYNC_CONTEXT:-1} == 0 ]] && return 0
   if [[ ${CLAUDE_CODE_REMOTE:-} == true || "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then return 0; fi
   command -v git >/dev/null 2>&1 || return 0
   mkdir -p "$dir"
@@ -1063,6 +1078,8 @@ cmd_doctor() {
   else
     echo "✗ hook anti-fuite absent de settings.json : kit sync"; bad=1
   fi
+  [[ -f $KIT_CONFIG/settings.managed.json ]] && ok "réglages gérés (registre présent)" \
+    || echo "! registre des réglages gérés absent : kit sync (première migration depuis la v1)"
   [[ -x $KIT_CONFIG/hooks/guard-secrets.sh ]] && ok "hook installé" || { echo "✗ hook introuvable : kit sync"; bad=1; }
   if [[ -x $KIT_CONFIG/hooks/kit-autoupdate.sh ]] && [[ -f $CLAUDE_HOME/settings.json ]] \
     && jq -e '[.hooks.SessionStart[]?.hooks[]?.command // empty] | any(endswith("kit-autoupdate.sh"))' "$CLAUDE_HOME/settings.json" >/dev/null 2>&1; then
@@ -1101,7 +1118,7 @@ main() {
     repo) cmd_repo "$@" ;;
     list) cmd_list ;;
     mcp) cmd_mcp "$@" ;;
-    sync) cmd_sync ;;
+    sync) cmd_sync "$@" ;;
     update) cmd_update ;;
     doctor) cmd_doctor ;;
     help|-h|--help) usage ;;

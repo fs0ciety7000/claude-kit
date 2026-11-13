@@ -17,6 +17,12 @@ export KIT_CONFIG="$HOME/.config/claude-kit"
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.org GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.org
 export GIT_CONFIG_NOSYSTEM=1
 PERMS="$ROOT/scripts/perms.sh"
+# État du dépôt du kit (fichiers suivis et non suivis, diff) : comparé en fin de run, les tests n'y écrivent rien.
+repo_state() {
+  git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || { echo none; return; }
+  { git -C "$ROOT" status --porcelain -uall; git -C "$ROOT" diff; git -C "$ROOT" diff --cached; } | cksum
+}
+REPO_STATE0=$(repo_state)
 
 pass=0
 fail=0
@@ -396,12 +402,13 @@ out=$("$ROOT/scripts/kit.sh" perms check 'Bash(*)' 2>&1); rc=$?
 ((rc == 1)) && ok_ "kit perms dispatché par kit.sh" || ko_ "kit perms dispatché par kit.sh" "code $rc : $out"
 
 # ---------------------------------------------------------------------------
-section "link_global, merge_settings, usage"
+section "link_global, apply_managed_settings, usage"
 (
   # shellcheck source=/dev/null
   source "$ROOT/scripts/lib.sh"
   link_global >/dev/null 2>&1
-  merge_settings "$TMP/merged.json" "$ROOT/global/settings.json" current >/dev/null 2>&1
+  apply_managed_settings >/dev/null 2>&1
+  cp "$CLAUDE_HOME/settings.json" "$TMP/merged.json"
 )
 [[ -L $KIT_CONFIG/hooks/kit-autoupdate.sh && $(readlink "$KIT_CONFIG/hooks/kit-autoupdate.sh") == "$ROOT/scripts/hooks/kit-autoupdate.sh" ]] \
   && ok_ "link_global lie kit-autoupdate.sh" || ko_ "link_global lie kit-autoupdate.sh"
@@ -420,17 +427,442 @@ jq -e '.permissions.allow | index("Bash(kit perms allow *)") != null and index("
 "$ROOT/scripts/kit.sh" help 2>&1 | grep -q 'kit perms allow' && ok_ "usage : section PERMISSIONS" || ko_ "usage : section PERMISSIONS"
 "$ROOT/scripts/kit.sh" help 2>&1 | grep -q 'KIT_AUTOUPDATE=0' && ok_ "usage : KIT_AUTOUPDATE=0" || ko_ "usage : KIT_AUTOUPDATE=0"
 rm -rf "$HOME/.claude" "$KIT_CONFIG"
-# I. merge_settings écrit de façon atomique et suit un lien symbolique (réglages versionnés ailleurs).
+# I. apply_managed_settings écrit de façon atomique et suit un lien symbolique (réglages versionnés ailleurs).
 mkdir -p "$HOME/.claude"
 echo '{"model":"sonnet","hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo bye"}]}]}}' >"$TMP/real-settings.json"
 chmod 600 "$TMP/real-settings.json"
 ln -s "$TMP/real-settings.json" "$HOME/.claude/settings.json"
-( source "$ROOT/scripts/lib.sh"; merge_settings "$HOME/.claude/settings.json" "$ROOT/global/settings.json" current >/dev/null 2>&1 )
+( source "$ROOT/scripts/lib.sh"; apply_managed_settings >/dev/null 2>&1 )
 [[ -L $HOME/.claude/settings.json ]] && jq -e '.model == "sonnet" and (.hooks.Stop | length == 2) and (.hooks.SessionStart | length == 2)' "$TMP/real-settings.json" >/dev/null 2>&1 \
-  && ok_ "merge_settings : lien conservé, cible fusionnée" || ko_ "merge_settings : lien conservé, cible fusionnée"
-[[ $(stat -c %a "$TMP/real-settings.json" 2>/dev/null || stat -f %Lp "$TMP/real-settings.json") == 600 ]] && ok_ "merge_settings : droits conservés" || ko_ "merge_settings : droits conservés"
-[[ -z $(find "$TMP" -maxdepth 1 -name '.real-settings.json.*') ]] && ok_ "merge_settings : aucun fichier temporaire résiduel" || ko_ "merge_settings : fichier temporaire résiduel"
+  && ok_ "apply_managed_settings : lien conservé, cible fusionnée" || ko_ "apply_managed_settings : lien conservé, cible fusionnée"
+[[ $(stat -c %a "$TMP/real-settings.json" 2>/dev/null || stat -f %Lp "$TMP/real-settings.json") == 600 ]] && ok_ "apply_managed_settings : droits conservés" || ko_ "apply_managed_settings : droits conservés"
+[[ -z $(find "$TMP" -maxdepth 1 -name '.real-settings.json.*') ]] && ok_ "apply_managed_settings : aucun fichier temporaire résiduel" || ko_ "apply_managed_settings : fichier temporaire résiduel"
 rm -rf "$HOME/.claude" "$KIT_CONFIG"
+
+# ---------------------------------------------------------------------------
+section "réglages gérés (kit sync, fusion à trois points)"
+# Copie du kit : les tests y retirent ou ajoutent des règles sans jamais toucher au dépôt. KIT_SYNC_CONTEXT=0 saute le
+# clonage des dépôts de contexte, KIT_SYNC_REGISTRY=0 ne régénère pas global/skills-registry.md.
+KITC="$TMP/kitcopy"
+mkdir -p "$KITC/global"
+cp "$ROOT"/global/settings*.json "$KITC/global/"
+cp -R "$ROOT/scripts" "$KITC/scripts"
+reset_home() { rm -rf "$HOME/.claude" "$HOME/.kit" "$KIT_CONFIG"; mkdir -p "$HOME/.claude"; }
+msync() { env KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 KIT_SYNC_REGISTRY=0 "$KITC/scripts/kit.sh" sync "$@"; }
+cur_settings() { echo "$HOME/.claude/settings.json"; }
+n_backups() { find "$HOME/.claude" -maxdepth 1 -name 'settings.json.pre-kit.*' | wc -l | tr -d ' '; }
+jqc() { jq -e "$@" >/dev/null 2>&1; } # jqc <filtre> <fichier>
+fmode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+sha256_hex_t() { ( source "$ROOT/scripts/lib.sh"; sha256_hex ); }
+KIT_ALLOW_JSON="$KITC/global/settings.json"
+RULE='Bash(git stash*)'   # règle du kit, retirée dans certains tests
+
+# 1. Poste neuf : fichier et registre créés.
+reset_home
+msync >/dev/null 2>&1
+jqc '.permissions.defaultMode == "auto" and (.permissions.allow | index("Bash(git status*)") != null)' "$(cur_settings)" \
+  && ok_ "poste neuf : réglages créés depuis le kit" || ko_ "poste neuf : réglages créés depuis le kit"
+[[ -f $KIT_CONFIG/settings.managed.json ]] && jqc 'has("permissions") and has("hooks")' "$KIT_CONFIG/settings.managed.json" \
+  && ok_ "poste neuf : registre settings.managed.json écrit" || ko_ "poste neuf : registre écrit"
+[[ $(n_backups) == 0 ]] && ok_ "poste neuf : aucune sauvegarde inutile" || ko_ "poste neuf : sauvegarde inutile"
+
+# 2. Une règle retirée du kit disparaît ; les autres restent.
+before=$(jq '.permissions.allow | length' "$(cur_settings)")
+jq --arg r "$RULE" '.permissions.allow |= map(select(. != $r))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+jqc --arg r "$RULE" '.permissions.allow | index($r) != null' "$(cur_settings)" && ok_ "retrait : la règle est d'abord présente" || ko_ "retrait : règle présente avant"
+msync >/dev/null 2>&1
+jqc --arg r "$RULE" '.permissions.allow | index($r) == null' "$(cur_settings)" && ok_ "retrait : la règle retirée du kit disparaît" || ko_ "retrait : la règle retirée du kit disparaît"
+[[ $(jq '.permissions.allow | length' "$(cur_settings)") == $((before - 1)) ]] && ok_ "retrait : les autres règles restent" || ko_ "retrait : les autres règles restent"
+[[ $(n_backups) == 1 ]] && ok_ "retrait : une sauvegarde pre-kit créée" || ko_ "retrait : sauvegarde pre-kit" "$(n_backups)"
+
+# 3. Les ajouts de l'utilisateur survivent (règle, groupe de hooks, entrée autoMode), même après un autre retrait.
+jq '.permissions.allow += ["Bash(make lint)"] | .permissions.deny += ["Bash(make deploy)"]
+    | .hooks.Stop += [{"hooks": [{"type": "command", "command": "echo mon-hook"}]}]
+    | .autoMode.environment += ["Mon serveur de test."]' "$(cur_settings)" >"$TMP/u.json" && cp "$TMP/u.json" "$(cur_settings)"
+jq '.permissions.allow |= map(select(. != "Bash(git add*)"))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+msync >/dev/null 2>&1
+jqc '.permissions.allow | index("Bash(make lint)") != null' "$(cur_settings)" && ok_ "ajout utilisateur : règle allow conservée" || ko_ "ajout utilisateur : allow"
+jqc '.permissions.deny | index("Bash(make deploy)") != null' "$(cur_settings)" && ok_ "ajout utilisateur : règle deny conservée" || ko_ "ajout utilisateur : deny"
+jqc '[.hooks.Stop[].hooks[].command] | index("echo mon-hook") != null' "$(cur_settings)" && ok_ "ajout utilisateur : groupe de hooks conservé" || ko_ "ajout utilisateur : hooks"
+jqc '.autoMode.environment | index("Mon serveur de test.") != null' "$(cur_settings)" && ok_ "ajout utilisateur : entrée autoMode conservée" || ko_ "ajout utilisateur : autoMode"
+jqc '.permissions.allow | index("Bash(git add*)") == null' "$(cur_settings)" && ok_ "ajout utilisateur : le retrait du kit s'applique en même temps" || ko_ "ajout utilisateur : retrait simultané"
+# Les entrées du kit passent avant celles de l'utilisateur.
+jqc '(.permissions.allow | index("Bash(make lint)")) > (.permissions.allow | index("Bash(git status*)"))' "$(cur_settings)" \
+  && ok_ "ordre : kit d'abord, utilisateur ensuite" || ko_ "ordre : kit d'abord"
+
+# 4. Idempotence : deux syncs donnent le même fichier, sans nouvelle sauvegarde ; le registre ne bouge pas.
+cp "$(cur_settings)" "$TMP/i1.json"; cp "$KIT_CONFIG/settings.managed.json" "$TMP/r1.json"; b1=$(n_backups)
+msync >/dev/null 2>&1
+cmp -s "$(cur_settings)" "$TMP/i1.json" && ok_ "idempotence : fichier identique après un second sync" || ko_ "idempotence : fichier identique"
+[[ $(n_backups) == "$b1" ]] && ok_ "idempotence : pas de nouvelle sauvegarde" || ko_ "idempotence : nouvelle sauvegarde"
+cmp -s "$KIT_CONFIG/settings.managed.json" "$TMP/r1.json" && ok_ "idempotence : registre identique" || ko_ "idempotence : registre"
+
+# 5. Le groupe SessionStart dupliqué (kit-emit, autre timeout) est fusionné ; les groupes de hooks du kit retirés aussi.
+reset_home
+msync >/dev/null 2>&1
+n_ss=$(jq '.hooks.SessionStart | length' "$(cur_settings)")
+jq '.hooks.SessionStart += [{"hooks": [{"type": "command", "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh", "timeout": 10}]}]
+    | .hooks.SessionStart += [.hooks.SessionStart[1]]' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+msync >/dev/null 2>&1
+[[ $(jq '.hooks.SessionStart | length' "$(cur_settings)") == "$n_ss" ]] && ok_ "doublon : SessionStart ramené à $n_ss groupes" || ko_ "doublon : SessionStart" "$(jq -c '.hooks.SessionStart | length' "$(cur_settings)")"
+jqc '[.hooks.SessionStart[].hooks[].timeout] | index(10) == null' "$(cur_settings)" && ok_ "doublon : le groupe en trop (timeout 10) a disparu" || ko_ "doublon : groupe en trop"
+# Un groupe utilisateur (hors dossier du kit) n'est jamais pris pour un doublon.
+jq '.hooks.SessionStart += [{"hooks": [{"type": "command", "command": "echo mien"}]}]' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+msync >/dev/null 2>&1
+[[ $(jq '.hooks.SessionStart | length' "$(cur_settings)") == $((n_ss + 1)) ]] && ok_ "hooks : le groupe de l'utilisateur reste" || ko_ "hooks : groupe utilisateur"
+
+# 6. --dry-run : écart par clé sur la sortie standard, rien d'écrit.
+reset_home
+msync >/dev/null 2>&1
+jq '.permissions.allow += ["Bash(make lint)"]' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+jq --arg r "Bash(git commit*)" '.permissions.allow |= map(select(. != $r))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+tree_sum() { (cd "$HOME" && { find . | sort; find . -type f -exec cksum {} +; } 2>/dev/null | sort | cksum); }
+t1=$(tree_sum)
+dout=$(msync --dry-run 2>&1); rc=$?
+[[ $rc == 0 && $(tree_sum) == "$t1" ]] && ok_ "dry-run : rien d'écrit (fichiers, sauvegardes, registre)" || ko_ "dry-run : rien d'écrit"
+grep -q 'permissions.allow : +0 -1' <<<"$dout" && grep -qF -- '- "Bash(git commit*)"' <<<"$dout" \
+  && ok_ "dry-run : écart par clé (entrée retirée listée)" || ko_ "dry-run : écart par clé" "$dout"
+! grep -q 'make lint' <<<"$dout" && ok_ "dry-run : l'ajout utilisateur n'est pas touché" || ko_ "dry-run : ajout utilisateur"
+reset_home
+msync --dry-run >/dev/null 2>&1
+[[ ! -e $HOME/.claude/settings.json && ! -e $KIT_CONFIG ]] && ok_ "dry-run : poste neuf, rien créé" || ko_ "dry-run : poste neuf"
+msync --bogus >/dev/null 2>&1 && ko_ "sync : option inconnue refusée" || ok_ "sync : option inconnue refusée"
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+
+# 7. Lien symbolique et droits de settings.json conservés ; aucun fichier temporaire résiduel.
+reset_home
+echo '{"model":"sonnet"}' >"$TMP/real-settings.json"
+chmod 600 "$TMP/real-settings.json"
+ln -s "$TMP/real-settings.json" "$HOME/.claude/settings.json"
+msync >/dev/null 2>&1
+[[ -L $HOME/.claude/settings.json ]] && jqc '.model == "sonnet" and (.permissions.allow | length > 10)' "$TMP/real-settings.json" \
+  && ok_ "lien symbolique : conservé, cible mise à jour" || ko_ "lien symbolique conservé"
+[[ $(stat -c %a "$TMP/real-settings.json" 2>/dev/null || stat -f %Lp "$TMP/real-settings.json") == 600 ]] && ok_ "droits : 600 conservés" || ko_ "droits conservés"
+[[ -z $(find "$TMP" -maxdepth 1 -name '.real-settings.json.*') ]] && ok_ "aucun fichier temporaire résiduel" || ko_ "fichier temporaire résiduel"
+rm -f "$TMP/real-settings.json"
+
+# 8. Migration sans registre (poste v1) : instantané v1 = entrées du kit. Ajouts utilisateur gardés, règles retirées perdues.
+reset_home
+jq --arg r "$RULE" '.permissions.allow |= map(select(. != $r))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+# Fichier de la v1 : union triée de tout ce que le kit v1 écrivait, plus des ajouts de l'utilisateur.
+jq '.permissions.allow = ((.permissions.allow + ["Bash(make lint)"]) | sort)
+    | .hooks.SessionStart += [{"hooks": [{"type": "command", "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh", "timeout": 10}]}]
+    | .hooks.Stop += [{"hooks": [{"type": "command", "command": "echo mon-hook"}]}]' \
+  "$ROOT/global/settings.v1.json" >"$(cur_settings)"
+[[ ! -e $KIT_CONFIG/settings.managed.json ]] && ok_ "migration : pas de registre au départ" || ko_ "migration : registre présent"
+dout=$(msync --dry-run 2>&1)
+grep -q 'registre absent' <<<"$dout" && ok_ "migration : dry-run signale l'absence de registre" || ko_ "migration : dry-run" "$dout"
+msync >/dev/null 2>&1
+jqc '.permissions.allow | index("Bash(make lint)") != null' "$(cur_settings)" && ok_ "migration : ajout utilisateur conservé" || ko_ "migration : ajout utilisateur"
+jqc '[.hooks.Stop[].hooks[].command] | index("echo mon-hook") != null' "$(cur_settings)" && ok_ "migration : hook utilisateur conservé" || ko_ "migration : hook utilisateur"
+jqc --arg r "$RULE" '.permissions.allow | index($r) == null' "$(cur_settings)" && ok_ "migration : règle v1 retirée du kit supprimée" || ko_ "migration : règle v1 retirée"
+jqc '.hooks.SessionStart | length == 2' "$(cur_settings)" && ok_ "migration : SessionStart dédoublonné" || ko_ "migration : SessionStart"
+[[ -f $KIT_CONFIG/settings.managed.json ]] && ok_ "migration : registre créé" || ko_ "migration : registre créé"
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+
+# 8b. Migration sans registre, autoMode : l'instantané v1 ne contient que des empreintes SHA-256 (le dépôt est public).
+jqc 'has("autoMode") | not' "$ROOT/global/settings.v1.json" && jqc '.autoModeSha256 | [.[][]] | length > 0 and all(test("^[0-9a-f]{64}$"))' "$ROOT/global/settings.v1.json" \
+  && ok_ "instantané v1 : autoMode en empreintes SHA-256 seulement, rien en clair" || ko_ "instantané v1 : autoMode"
+dig=$(printf '%s' '$defaults' | sha256_hex_t)
+jqc --arg d "$dig" '[.autoModeSha256[][]] | index($d) != null' "$ROOT/global/settings.v1.json" \
+  && ok_ "instantané v1 : l'empreinte d'une entrée connue y figure" || ko_ "instantané v1 : empreinte connue"
+reset_home
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+# Le kit d'aujourd'hui ne livre plus l'entrée « Trusted internal domains… » (cas du lot 2c).
+jq '.autoMode.environment |= map(select(startswith("Trusted internal domains") | not))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+# Fichier v1 : toutes les entrées autoMode du kit v1 (ici celles de global/settings.json), plus une entrée de l'utilisateur.
+jq '.autoMode as $am | {permissions: {allow: ["Bash(ls*)"]}, autoMode: ($am | .environment += ["Mon serveur de test."])}' "$ROOT/global/settings.json" >"$(cur_settings)"
+jqc '.autoMode.environment | map(select(startswith("Trusted internal domains"))) | length == 1' "$(cur_settings)" \
+  && ok_ "migration autoMode : l'entrée à retirer est d'abord présente" || ko_ "migration autoMode : entrée présente avant"
+msync >/dev/null 2>&1
+jqc '.autoMode.environment | map(select(startswith("Trusted internal domains"))) | length == 0' "$(cur_settings)" \
+  && ok_ "migration autoMode : une entrée v1 (empreinte connue) retirée du kit est supprimée" || ko_ "migration autoMode : entrée v1 supprimée"
+jqc '.autoMode.environment | index("Mon serveur de test.") != null' "$(cur_settings)" \
+  && ok_ "migration autoMode : l'entrée de l'utilisateur reste" || ko_ "migration autoMode : entrée utilisateur"
+jqc '(.autoMode.environment | index("$defaults") != null) and (.autoMode.hard_deny | length == 2)' "$(cur_settings)" \
+  && ok_ "migration autoMode : les entrées toujours livrées restent" || ko_ "migration autoMode : entrées livrées"
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+
+# 9. Clés non gérées intactes (y compris une clé inconnue) ; sauvegarde conservant l'ancien contenu.
+reset_home
+cat >"$(cur_settings)" <<'EOF'
+{"model": "opus", "statusLine": {"type": "command", "command": "echo s"}, "enabledPlugins": {"p@m": true},
+ "env": {"UNE_VARIABLE": "valeur"}, "autre": [1, 2], "permissions": {"allow": ["Bash(make lint)"], "additionalDirectories": ["/tmp/x"]}}
+EOF
+msync >/dev/null 2>&1
+jqc '.model == "opus" and .statusLine.command == "echo s" and .enabledPlugins["p@m"] == true and .env.UNE_VARIABLE == "valeur" and .autre == [1, 2] and .permissions.additionalDirectories == ["/tmp/x"]' "$(cur_settings)" \
+  && ok_ "clés non gérées : model, statusLine, enabledPlugins, env, permissions.additionalDirectories intactes" || ko_ "clés non gérées"
+jqc '.permissions.allow | index("Bash(make lint)") != null' "$(cur_settings)" && ok_ "clés non gérées : la règle utilisateur reste aussi" || ko_ "clés non gérées : règle"
+bk=$(find "$HOME/.claude" -maxdepth 1 -name 'settings.json.pre-kit.*' | head -1)
+[[ -n $bk ]] && jqc '.model == "opus" and (.permissions.allow == ["Bash(make lint)"])' "$bk" && ok_ "sauvegarde : contient l'ancien contenu" || ko_ "sauvegarde : ancien contenu"
+
+# 10. Surcharge propre au poste : settings.local.json (jamais dans Git), ajoutée puis retirée.
+reset_home
+msync >/dev/null 2>&1
+mkdir -p "$KIT_CONFIG"
+echo '{"permissions":{"allow":["Bash(mon-outil *)"]},"autoMode":{"environment":["Domaine interne de ce poste."]}}' >"$KIT_CONFIG/settings.local.json"
+msync >/dev/null 2>&1
+jqc '(.permissions.allow | index("Bash(mon-outil *)") != null) and (.autoMode.environment | index("Domaine interne de ce poste.") != null)' "$(cur_settings)" \
+  && ok_ "surcharge : entrées de settings.local.json appliquées" || ko_ "surcharge : appliquée"
+rm -f "$KIT_CONFIG/settings.local.json"
+msync >/dev/null 2>&1
+jqc '(.permissions.allow | index("Bash(mon-outil *)") == null) and (.autoMode.environment | index("Domaine interne de ce poste.") == null)' "$(cur_settings)" \
+  && ok_ "surcharge : retirer le fichier retire ses entrées" || ko_ "surcharge : retirée"
+[[ -z $(git -C "$ROOT" ls-files -- '*settings.local.json' 2>/dev/null) ]] && ok_ "surcharge : aucun settings.local.json versionné dans le kit" || ko_ "surcharge : fichier versionné"
+echo '{"permissions": ' >"$KIT_CONFIG/settings.local.json"
+before_sum=$(cksum <"$(cur_settings)")
+msync >/dev/null 2>&1 && ko_ "surcharge : JSON invalide refusé" || ok_ "surcharge : JSON invalide refusé"
+[[ $(cksum <"$(cur_settings)") == "$before_sum" ]] && ok_ "surcharge invalide : settings.json intact" || ko_ "surcharge invalide : settings.json touché"
+
+# 11. Profil vps : defaultMode et fragments du profil ; JSON invalide : refus sans écriture.
+reset_home
+mkdir -p "$KIT_CONFIG"; echo vps >"$KIT_CONFIG/profile"
+msync >/dev/null 2>&1
+jqc '.permissions.defaultMode == "default" and (.permissions.ask | index("Bash(cp *)") != null)' "$(cur_settings)" \
+  && ok_ "profil vps : defaultMode et fragment appliqués" || ko_ "profil vps"
+echo local >"$KIT_CONFIG/profile"
+msync >/dev/null 2>&1
+jqc '.permissions.defaultMode == "default"' "$(cur_settings)" && ok_ "profil local après vps : defaultMode plus permissif refusé sans --yes" || ko_ "profil local après vps : refus"
+msync --yes >/dev/null 2>&1
+jqc '.permissions.defaultMode == "auto" and (.permissions.deny | index("Bash(kit secrets run -- wrangler deploy*)") != null)' "$(cur_settings)" \
+  && ok_ "profil local après vps : --yes passe en auto, les deny restent (jamais retirés)" || ko_ "profil local après vps : --yes"
+echo '{"permissions": ' >"$(cur_settings)"
+nb0=$(n_backups)
+dout=$(msync 2>&1); rc=$?
+[[ $rc != 0 && $(cat "$(cur_settings)") == '{"permissions": ' && $(n_backups) == "$nb0" ]] && ok_ "settings.json invalide : refus, rien écrit" || ko_ "settings.json invalide" "code $rc : $dout"
+
+# 12. Au plus 3 sauvegardes pre-kit : la plus ancienne et les deux plus récentes.
+reset_home
+msync >/dev/null 2>&1
+for n in 1 2 3 4 5; do echo '{}' >"$HOME/.claude/settings.json.pre-kit.2020010100000$n"; done
+jq --arg r "Bash(git add*)" '.permissions.allow |= map(select(. != $r))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+msync >/dev/null 2>&1
+[[ $(n_backups) == 3 ]] && ok_ "sauvegardes : 3 conservées au plus" || ko_ "sauvegardes : 3 au plus" "$(n_backups)"
+[[ -e $HOME/.claude/settings.json.pre-kit.20200101000001 && ! -e $HOME/.claude/settings.json.pre-kit.20200101000002 \
+  && ! -e $HOME/.claude/settings.json.pre-kit.20200101000004 && -e $HOME/.claude/settings.json.pre-kit.20200101000005 ]] \
+  && ok_ "sauvegardes : la plus ancienne et la plus récente gardées, les intermédiaires supprimées" || ko_ "sauvegardes : rotation"
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+
+# 13. KIT_SYNC_CONTEXT=0 : aucun clonage des dépôts de contexte ; rien n'est écrit dans le dépôt du kit.
+reset_home
+printf 'exemple/depot-prive\n' >"$KITC/global/context-repos.txt"
+msync >/dev/null 2>&1
+[[ ! -e $HOME/.kit ]] && ok_ "KIT_SYNC_CONTEXT=0 : ~/.kit/context non créé" || ko_ "KIT_SYNC_CONTEXT=0"
+rm -f "$KITC/global/context-repos.txt"
+reset_home
+
+# 14. deny et ask ne sont jamais retirés automatiquement : une règle identique à une règle du kit survit à son retrait.
+reset_home
+msync >/dev/null 2>&1
+jq '.permissions.deny |= map(select(. != "Bash(sudo *)")) | .permissions.ask |= map(select(. != "Bash(rm *)"))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+msync >/dev/null 2>&1
+jqc '.permissions.deny | index("Bash(sudo *)") != null' "$(cur_settings)" && ok_ "deny : une règle retirée du kit n'est pas retirée du fichier" || ko_ "deny retiré automatiquement"
+jqc '.permissions.ask | index("Bash(rm *)") != null' "$(cur_settings)" && ok_ "ask : une règle retirée du kit n'est pas retirée du fichier" || ko_ "ask retiré automatiquement"
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+# Seule une règle listée dans global/settings.retired.json est retirée, et la sortie la nomme.
+jq '.permissions.deny += ["Bash(retire-x)", "Bash(garde-y)"]' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+echo '{"permissions":{"deny":["Bash(retire-x)"],"ask":[]}}' >"$KITC/global/settings.retired.json"
+dout=$(msync 2>&1)
+jqc '(.permissions.deny | index("Bash(retire-x)")) == null and (.permissions.deny | index("Bash(garde-y)")) != null' "$(cur_settings)" \
+  && ok_ "retired : seule la règle listée est retirée" || ko_ "retired : règle listée"
+grep -q 'retiré de permissions.deny : "Bash(retire-x)"' <<<"$dout" && ok_ "retired : la règle retirée est nommée dans la sortie" || ko_ "retired : sortie" "$dout"
+rm -f "$KITC/global/settings.retired.json"
+[[ $(jq -r '.permissions | keys | join(",")' "$ROOT/global/settings.retired.json") == "ask,deny" ]] && ok_ "settings.retired.json : forme permissions.ask|deny" || ko_ "settings.retired.json : forme"
+
+# 15. Migration locale : les entrées vps-only de l'utilisateur ne sont pas retirées (ask git push, ask mv, deny wrangler).
+reset_home
+jq '.permissions.ask = ["Bash(git push*)", "Bash(mv *)"] | .permissions.deny = ["Bash(kit secrets run -- wrangler deploy*)"]' \
+  "$ROOT/global/settings.v1.json" >"$(cur_settings)"
+msync >/dev/null 2>&1
+jqc '(.permissions.ask | index("Bash(git push*)") != null) and (.permissions.ask | index("Bash(mv *)") != null)
+     and (.permissions.deny | index("Bash(kit secrets run -- wrangler deploy*)") != null)' "$(cur_settings)" \
+  && ok_ "migration locale : ask et deny de l'utilisateur conservés" || ko_ "migration locale : ask/deny"
+jqc '.permissions.defaultMode == "auto"' "$(cur_settings)" && ok_ "migration locale : defaultMode du kit posé (aucun mode antérieur)" || ko_ "migration locale : defaultMode"
+
+# 16. Hooks : seules les entrées exactement du kit (préfixe ancré, script du kit, même matcher) lui appartiennent.
+reset_home
+msync >/dev/null 2>&1
+gm=$(jq -r '[.hooks.PreToolUse[] | select(any(.hooks[]?; (.command // "") | endswith("guard-secrets.sh")))][0].matcher' "$(cur_settings)")
+gc=$(jq -r '[.hooks.PreToolUse[] | .hooks[] | select(.command | endswith("guard-secrets.sh")) | .command][0]' "$(cur_settings)")
+jq --arg gm "$gm" --arg gc "$gc" '
+    (.hooks.PreToolUse[] | select(.matcher == $gm and any(.hooks[]; .command == $gc)) | .hooks) += [{"type": "command", "command": "echo mien-dans-le-groupe"}]
+    | .hooks.PreToolUse += [{"matcher": "WebFetch|mcp__.*", "hooks": [{"type": "command", "command": $gc}]},
+                            {"matcher": "Bash", "hooks": [{"type": "command", "command": "/opt/acme/claude-kit/hooks/corp-dlp.sh"}]}]
+    | .hooks.Stop += [{"hooks": [{"type": "command", "command": "$HOME/.config/claude-kit/hooks/perso.sh"}]}]
+    | .hooks.PermissionRequest = [{"hooks": [{"type": "command", "command": "echo pr"}]}]
+    | .hooks.SessionStart += [(.hooks.SessionStart[0] | .hooks[0].timeout = 10)]' \
+  "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+dout=$(msync 2>&1)
+jqc --arg gm "$gm" '[.hooks.PreToolUse[] | select(.matcher == $gm) | .hooks[].command] | index("echo mien-dans-le-groupe") != null' "$(cur_settings)" \
+  && ok_ "hooks : le hook de l'utilisateur ajouté dans le groupe du kit reste" || ko_ "hooks : hook dans le groupe du kit"
+jqc --arg gc "$gc" '[.hooks.PreToolUse[] | .hooks[].command | select(. == $gc)] | length == 2' "$(cur_settings)" \
+  && ok_ "hooks : guard-secrets du kit une fois, plus celui du groupe utilisateur (autre matcher)" || ko_ "hooks : script du kit réutilisé"
+jqc 'any(.hooks.PreToolUse[]; .matcher == "WebFetch|mcp__.*")' "$(cur_settings)" && ok_ "hooks : groupe utilisateur réutilisant guard-secrets (autre matcher) conservé" || ko_ "hooks : autre matcher"
+jqc '[.hooks.Stop[].hooks[].command] | index("$HOME/.config/claude-kit/hooks/perso.sh") != null' "$(cur_settings)" && ok_ "hooks : hook personnel dans le dossier des hooks conservé" || ko_ "hooks : hook personnel"
+jqc '[.hooks.PreToolUse[].hooks[].command] | index("/opt/acme/claude-kit/hooks/corp-dlp.sh") != null' "$(cur_settings)" && ok_ "hooks : chemin tiers /opt/acme/claude-kit/hooks conservé" || ko_ "hooks : chemin tiers"
+jqc '.hooks.PermissionRequest | length == 1' "$(cur_settings)" && ok_ "hooks : événement PermissionRequest de l'utilisateur conservé" || ko_ "hooks : événement entier"
+jqc '[.hooks.SessionStart[].hooks[].timeout] | index(10) == null' "$(cur_settings)" && ok_ "hooks : le doublon du kit (timeout 10) est retiré" || ko_ "hooks : doublon"
+grep -q 'retiré de hooks.SessionStart' <<<"$dout" && ok_ "hooks : le groupe retiré est nommé dans la sortie" || ko_ "hooks : sortie" "$dout"
+msync >/dev/null 2>&1
+jqc '([.hooks.PreToolUse[] | .hooks[].command | select(endswith("guard-secrets.sh"))] | length == 2) and ([.hooks.PreToolUse[].hooks[].command] | index("echo mien-dans-le-groupe") != null)' "$(cur_settings)" \
+  && ok_ "hooks : second sync stable (rien de perdu, rien de dupliqué)" || ko_ "hooks : second sync"
+
+# 17. Invariant : toute règle deny/ask de K est dans le résultat, quels que soient C, L et les règles retirées.
+pool=('Bash(r1)' 'Bash(r2)' 'Bash(r3)' 'Bash(r4)' 'Bash(r5)' 'Bash(r6)' 'Bash(r7)' 'Bash(r8)')
+rs() { local o="[" first=1 p; for p in "${pool[@]}"; do if ((RANDOM % 2)); then ((first)) || o+=","; o+="\"$p\""; first=0; fi; done; RS="$o]"; }
+inv_bad=0
+for _ in $(seq 1 40); do
+  rs; kd=$RS; rs; ka=$RS
+  rs; c1=$RS; rs; c2=$RS; rs; c3=$RS; rs; l1=$RS; rs; l2=$RS; rs; l3=$RS; rs; r1=$RS; rs; r2=$RS; rs; k3=$RS
+  cobj="{\"permissions\":{\"deny\":$c1,\"ask\":$c2,\"allow\":$c3}}"
+  lobj="{\"permissions\":{\"deny\":$l1,\"ask\":$l2,\"allow\":$l3}}"
+  robj="{\"permissions\":{\"deny\":$r1,\"ask\":$r2}}"
+  kobj="{\"permissions\":{\"deny\":$kd,\"ask\":$ka,\"allow\":$k3}}"
+  jq -n --arg mode merge --argjson prefixes '[]' --argjson names '[]' --argjson yes false \
+    --slurpfile c <(echo "$cobj") --slurpfile k <(echo "$kobj") --slurpfile l <(echo "$lobj") --slurpfile r <(echo "$robj") \
+    -f "$ROOT/scripts/managed-settings.jq" \
+    | jq -e --argjson kd "$kd" --argjson ka "$ka" '(.new.permissions.deny // []) as $d | (.new.permissions.ask // []) as $a
+        | all($kd[]; . as $x | $d | index($x) != null) and all($ka[]; . as $x | $a | index($x) != null)' >/dev/null 2>&1 || inv_bad=$((inv_bad + 1))
+done
+((inv_bad == 0)) && ok_ "invariant : toute règle deny/ask de K est dans le résultat (40 tirages aléatoires)" || ko_ "invariant deny/ask" "$inv_bad tirages en défaut"
+
+# 18. Surcharge locale : droits 600, refus de bypassPermissions et des règles larges, contenu affiché à chaque sync.
+reset_home
+msync >/dev/null 2>&1
+[[ $(fmode "$KIT_CONFIG") == 700 ]] && ok_ "droits : dossier de config créé en 700" || ko_ "droits : dossier de config" "$(fmode "$KIT_CONFIG")"
+[[ $(fmode "$KIT_CONFIG/settings.managed.json") == 600 ]] && ok_ "droits : registre en 600" || ko_ "droits : registre" "$(fmode "$KIT_CONFIG/settings.managed.json")"
+echo '{"permissions":{"allow":["Bash(mon-outil *)"]},"autoMode":{"environment":["Entree locale."]}}' >"$KIT_CONFIG/settings.local.json"
+chmod 644 "$KIT_CONFIG/settings.local.json"
+dout=$(msync 2>&1)
+[[ $(fmode "$KIT_CONFIG/settings.local.json") == 600 ]] && ok_ "droits : surcharge remise en 600" || ko_ "droits : surcharge"
+grep -q 'surcharge locale' <<<"$dout" && grep -qF 'Bash(mon-outil *)' <<<"$dout" && grep -q 'autoMode.environment : +1' <<<"$dout" \
+  && ok_ "surcharge : ce qu'elle apporte est affiché à chaque sync" || ko_ "surcharge : affichage" "$dout"
+! grep -q 'Entree locale' <<<"$dout" && ok_ "surcharge : le texte des entrées autoMode n'est pas affiché" || ko_ "surcharge : texte autoMode affiché"
+sum_before=$(cksum <"$(cur_settings)")
+for bad in '"defaultMode":"bypassPermissions"' '"allow":["Bash(*)"]' '"allow":["Bash"]' '"allow":["*"]' '"allow":["Edit"]' '"allow":["Write"]' '"allow":["Write(*)"]'; do
+  body="{\"permissions\":{$bad}}"
+  echo "$body" >"$KIT_CONFIG/settings.local.json"
+  dout=$(msync 2>&1); rc=$?
+  if [[ $rc != 0 && $(cksum <"$(cur_settings)") == "$sum_before" ]] && grep -q 'surcharge refusée' <<<"$dout"; then ok_ "surcharge refusée : $bad"; else ko_ "surcharge refusée : $bad" "code $rc : $dout"; fi
+done
+echo '{"permissions":{"allow":["Edit(src/**)","Write(docs/*)"]}}' >"$KIT_CONFIG/settings.local.json"
+msync >/dev/null 2>&1 && ok_ "surcharge : règles Edit/Write avec chemin acceptées" || ko_ "surcharge : règles avec chemin"
+rm -f "$KIT_CONFIG/settings.local.json"
+
+# 19. defaultMode : un passage à un mode plus permissif est refusé sans --yes.
+reset_home
+msync >/dev/null 2>&1
+jq '.permissions.defaultMode = "default"' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+dout=$(msync 2>&1)
+jqc '.permissions.defaultMode == "default"' "$(cur_settings)" && grep -q 'plus permissif' <<<"$dout" \
+  && ok_ "defaultMode : default -> auto refusé sans --yes (avertissement)" || ko_ "defaultMode : refus" "$dout"
+msync --yes >/dev/null 2>&1
+jqc '.permissions.defaultMode == "auto"' "$(cur_settings)" && ok_ "defaultMode : accepté avec --yes" || ko_ "defaultMode : --yes"
+jq '.permissions.defaultMode = "plan"' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+dout=$(msync --dry-run 2>&1)
+grep -q 'plus permissif' <<<"$dout" && ok_ "defaultMode : le dry-run signale aussi le refus" || ko_ "defaultMode : dry-run" "$dout"
+jq 'del(.permissions.defaultMode)' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+msync >/dev/null 2>&1
+jqc '.permissions.defaultMode == "auto"' "$(cur_settings)" && ok_ "defaultMode : posé quand le fichier n'en a pas" || ko_ "defaultMode : absent"
+
+# 20. Profil absent : le profil du registre (vps) est conservé, pas de retour silencieux à local.
+reset_home
+mkdir -p "$KIT_CONFIG"; echo vps >"$KIT_CONFIG/profile"
+msync >/dev/null 2>&1
+rm -f "$KIT_CONFIG/profile"
+dout=$(msync 2>&1)
+grep -q 'profil introuvable' <<<"$dout" && jqc '.permissions.defaultMode == "default"' "$(cur_settings)" \
+  && [[ $(jq -r '.profile' "$KIT_CONFIG/settings.managed.json") == vps ]] \
+  && ok_ "profil absent : le profil vps du registre est conservé (avertissement)" || ko_ "profil absent" "$dout"
+
+# 21. Registre corrompu ou modifié à la main : traité comme absent (avertissement), rien de perdu.
+reset_home
+msync >/dev/null 2>&1
+jq '.permissions.allow += ["Bash(make lint)"]' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+for body in '{"permissions": ' '{"hooks": [1]}' '{"permissions": "x"}' '[]' '{"autoMode": {"environment": "texte"}}'; do
+  printf '%s\n' "$body" >"$KIT_CONFIG/settings.managed.json"
+  dout=$(msync 2>&1); rc=$?
+  if [[ $rc == 0 ]] && grep -q 'illisible' <<<"$dout" && jqc '.permissions.allow | index("Bash(make lint)") != null' "$(cur_settings)" \
+    && jq -e 'type == "object" and has("profile")' "$KIT_CONFIG/settings.managed.json" >/dev/null 2>&1; then ok_ "registre corrompu ($body) : migration refaite, ajout conservé"
+  else ko_ "registre corrompu ($body)" "code $rc : $dout"; fi
+done
+
+# 22. Échec en cours de route : ni dossier temporaire ni verrou résiduels.
+reset_home
+mkdir -p "$TMP/tmpd"
+cp "$KITC/global/settings.v1.json" "$TMP/snap.bak"
+echo '{' >"$KITC/global/settings.v1.json"
+env TMPDIR="$TMP/tmpd" KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 KIT_SYNC_REGISTRY=0 "$KITC/scripts/kit.sh" sync >/dev/null 2>&1 && rc=0 || rc=$?
+[[ $rc != 0 && -z $(ls -A "$TMP/tmpd") && ! -e $KIT_CONFIG/settings.lock ]] && ok_ "échec : dossier temporaire et verrou nettoyés" || ko_ "échec : nettoyage" "code $rc : $(ls -A "$TMP/tmpd")"
+cp "$TMP/snap.bak" "$KITC/global/settings.v1.json"
+
+# 23. Verrou : tenu par un processus vivant, le second sync attend puis renonce ; un verrou orphelin est repris.
+reset_home
+msync >/dev/null 2>&1
+jq --arg r "Bash(git add*)" '.permissions.allow |= map(select(. != $r))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+sleep 60 & holder=$!
+mkdir "$KIT_CONFIG/settings.lock" && echo "$holder" >"$KIT_CONFIG/settings.lock/pid"
+cp "$(cur_settings)" "$TMP/lock-before.json"
+dout=$(env KIT_LOCK_WAIT=1 KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 KIT_SYNC_REGISTRY=0 "$KITC/scripts/kit.sh" sync 2>&1); rc=$?
+[[ $rc == 0 ]] && grep -q 'settings.lock' <<<"$dout" && cmp -s "$(cur_settings)" "$TMP/lock-before.json" \
+  && ok_ "verrou tenu : le second sync attend, renonce avec un message, ne touche à rien" || ko_ "verrou tenu" "code $rc : $dout"
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+dout=$(msync 2>&1)
+jqc '.permissions.allow | index("Bash(git add*)") == null' "$(cur_settings)" && [[ ! -e $KIT_CONFIG/settings.lock ]] \
+  && ok_ "verrou orphelin (processus mort) : repris, réglages appliqués, verrou libéré" || ko_ "verrou orphelin" "$dout"
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+# Le fichier a changé entre la lecture et l'écriture : rien n'est écrit.
+reset_home
+msync >/dev/null 2>&1
+jq --arg r "Bash(git add*)" '.permissions.allow |= map(select(. != $r))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+SHIM="$TMP/shim"; mkdir -p "$SHIM"; : >"$TMP/shim.cnt"
+cat >"$SHIM/cksum" <<EOF
+#!/bin/sh
+n=\$(cat "$TMP/shim.cnt" 2>/dev/null || echo 0)
+echo \$((n + 1)) >"$TMP/shim.cnt"
+if [ "\$n" -ge 1 ]; then echo "1 1"; else exec "$(command -v cksum)"; fi
+EOF
+chmod +x "$SHIM/cksum"
+cp "$(cur_settings)" "$TMP/race-before.json"
+dout=$(env PATH="$SHIM:$PATH" KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 KIT_SYNC_REGISTRY=0 "$KITC/scripts/kit.sh" sync 2>&1); rc=$?
+[[ $rc == 0 ]] && grep -q 'a changé pendant la fusion' <<<"$dout" && cmp -s "$(cur_settings)" "$TMP/race-before.json" \
+  && ok_ "fichier modifié pendant la fusion : rien d'écrit, message" || ko_ "fichier modifié pendant la fusion" "code $rc : $dout"
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+
+# 24. Sauvegardes : suffixes non datés ignorés, plus ancienne conservée, pas d'écrasement dans la même seconde.
+reset_home
+msync >/dev/null 2>&1
+echo '{}' >"$HOME/.claude/settings.json.pre-kit.notadate"
+echo '{}' >"$HOME/.claude/settings.json.pre-kit.2020"
+for r in 'Bash(git add*)' 'Bash(git commit*)' 'Bash(git switch*)'; do
+  jq --arg r "$r" '.permissions.allow |= map(select(. != $r))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+  msync >/dev/null 2>&1
+done
+valid_backups=$(find "$HOME/.claude" -maxdepth 1 -name 'settings.json.pre-kit.[0-9]*' | grep -cE '\.pre-kit\.[0-9]{14}$' || true)
+[[ $valid_backups == 3 ]] && ok_ "sauvegardes : trois changements dans la même seconde, trois sauvegardes distinctes" || ko_ "sauvegardes : même seconde" "$valid_backups"
+[[ -e $HOME/.claude/settings.json.pre-kit.notadate && -e $HOME/.claude/settings.json.pre-kit.2020 ]] \
+  && ok_ "sauvegardes : suffixes non datés ni comptés ni supprimés" || ko_ "sauvegardes : suffixe non daté"
+oldest=$(find "$HOME/.claude" -maxdepth 1 -name 'settings.json.pre-kit.[0-9]*' | grep -E '\.pre-kit\.[0-9]{14}$' | sort | head -1)
+jq --arg r "Bash(git stash*)" '.permissions.allow |= map(select(. != $r))' "$KIT_ALLOW_JSON" >"$TMP/g.json" && cp "$TMP/g.json" "$KIT_ALLOW_JSON"
+msync >/dev/null 2>&1
+valid_backups=$(find "$HOME/.claude" -maxdepth 1 -name 'settings.json.pre-kit.[0-9]*' | grep -cE '\.pre-kit\.[0-9]{14}$' || true)
+[[ $valid_backups == 3 && -e $oldest ]] && ok_ "sauvegardes : toujours 3, la plus ancienne conservée" || ko_ "sauvegardes : plus ancienne" "$valid_backups, $oldest"
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+
+# 25. Entrées autoMode avec tabulation et antislash : l'empreinte est celle de la chaîne exacte.
+reset_home
+odd=$'Entree\tavec tab et \\antislash "guillemets"'
+dig=$(printf '%s' "$odd" | sha256_hex_t)
+jq --arg d "$dig" '.autoModeSha256.environment += [$d]' "$KITC/global/settings.v1.json" >"$TMP/s.json" && cp "$TMP/s.json" "$KITC/global/settings.v1.json"
+jq -n --arg odd "$odd" '{autoMode: {environment: [$odd, "Entree utilisateur"]}}' >"$(cur_settings)"
+msync >/dev/null 2>&1
+jqc '.autoMode.environment | index("Entree utilisateur") != null' "$(cur_settings)" && jq -e --arg odd "$odd" '.autoMode.environment | index($odd) == null' "$(cur_settings)" >/dev/null 2>&1 \
+  && ok_ "autoMode : entrée à tabulation et antislash (empreinte connue) retirée, entrée utilisateur conservée" || ko_ "autoMode : tab et antislash" "$(jq -c '.autoMode' "$(cur_settings)")"
+cp "$ROOT/global/settings.v1.json" "$KITC/global/settings.v1.json"
+
+# 26. Options : toute option inconnue est refusée, même après --dry-run.
+msync --dry-run --bogus >/dev/null 2>&1 && ko_ "sync --dry-run --bogus refusé" || ok_ "sync --dry-run --bogus refusé"
+reset_home
 
 # ---------------------------------------------------------------------------
 section "hook kit-autoupdate"
@@ -832,6 +1264,10 @@ fi
 echo "  -- autres budgets (avertissements seulement) --"
 bash "$CB" --budget 2>&1 | sed 's/^/  /'
 check "arbre réel : --budget sort 0 hors BUDGET_ENFORCE" bash "$CB" --budget
+
+# ---------------------------------------------------------------------------
+section "dépôt du kit"
+[[ $(repo_state) == "$REPO_STATE0" ]] && ok_ "aucune écriture dans le dépôt du kit pendant les tests" || ko_ "le dépôt du kit a été modifié pendant les tests" "$(git -C "$ROOT" status --porcelain | head -5)"
 
 # ---------------------------------------------------------------------------
 echo

@@ -63,7 +63,8 @@ fi
 ((CLOUD)) || command -v claude >/dev/null 2>&1 || warn "Claude Code n'est pas installé : voir README.md (section Installer Claude Code)."
 
 # 2) Liens et réglages
-mkdir -p "$KIT_CONFIG" "$HOME/.local/bin"
+if [[ ! -d $KIT_CONFIG ]]; then mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; fi
+mkdir -p "$HOME/.local/bin"
 ln -sfn "$HERE/scripts/kit.sh" "$HOME/.local/bin/kit"
 # En cloud, ~/.local/bin n'est pas forcément dans le PATH : on expose aussi kit dans /usr/local/bin.
 if ((CLOUD)) && [[ -w /usr/local/bin ]]; then ln -sfn "$HERE/scripts/kit.sh" /usr/local/bin/kit; fi
@@ -71,7 +72,7 @@ if ((VPS)); then echo vps >"$KIT_CONFIG/profile"
 elif ((CLOUD)); then echo cloud >"$KIT_CONFIG/profile"
 else echo local >"$KIT_CONFIG/profile"; fi
 link_global
-apply_settings
+apply_managed_settings
 ok "agents, commandes, skills et réglages liés dans $CLAUDE_HOME (profil : $(cat "$KIT_CONFIG/profile"))"
 
 # 3) Secrets

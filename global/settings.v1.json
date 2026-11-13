@@ -1,0 +1,342 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch",
+      "Skill",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git switch*)",
+      "Bash(git checkout*)",
+      "Bash(git branch*)",
+      "Bash(git stash*)",
+      "Bash(git fetch*)",
+      "Bash(git pull*)",
+      "Bash(git push*)",
+      "Bash(gh pr *)",
+      "Bash(gh issue *)",
+      "Bash(gh run *)",
+      "Bash(gh repo view*)",
+      "Bash(npm run *)",
+      "Bash(npm test*)",
+      "Bash(npm ci)",
+      "Bash(npm install*)",
+      "Bash(pnpm run *)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm install*)",
+      "Bash(npx tsc*)",
+      "Bash(npx eslint*)",
+      "Bash(npx prettier*)",
+      "Bash(npx vitest*)",
+      "Bash(npx playwright*)",
+      "Bash(cargo build*)",
+      "Bash(cargo test*)",
+      "Bash(cargo check*)",
+      "Bash(cargo clippy*)",
+      "Bash(cargo fmt*)",
+      "Bash(go build*)",
+      "Bash(go test*)",
+      "Bash(go vet*)",
+      "Bash(go fmt*)",
+      "Bash(go mod *)",
+      "Bash(gofmt*)",
+      "Bash(godot --headless*)",
+      "Bash(ls*)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(jq *)",
+      "Bash(diff *)",
+      "Bash(tree*)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(touch *)",
+      "Bash(pwd)",
+      "Bash(which *)",
+      "Bash(kit add-skill*)",
+      "Bash(kit add-agent*)",
+      "Bash(kit new-agent*)",
+      "Bash(kit new-skill*)",
+      "Bash(kit list*)",
+      "Bash(kit skills *)",
+      "Bash(kit registry*)",
+      "Bash(kit project *)",
+      "Bash(kit doctor*)",
+      "Bash(kit secrets list*)",
+      "Bash(kit secrets check*)",
+      "Bash(kit secrets doctor*)",
+      "Bash(kit secrets run -- wrangler *)",
+      "Bash(kit secrets run * -- wrangler *)",
+      "Bash(kit secrets run -- npx wrangler *)",
+      "Bash(kit secrets run * -- npx wrangler *)",
+      "Bash(kit api coolify *)",
+      "Bash(kit api cloudflare *)",
+      "Bash(kit api coolify /*)",
+      "Bash(kit api coolify \"/*)",
+      "Bash(kit api coolify GET *)",
+      "Bash(kit api cloudflare /*)",
+      "Bash(kit api cloudflare \"/*)",
+      "Bash(kit api cloudflare GET *)",
+      "Bash(kit api coolify POST *)",
+      "Bash(kit api coolify PUT *)",
+      "Bash(kit api coolify PATCH *)",
+      "Bash(kit api coolify TRIGGER *)",
+      "Bash(kit api cloudflare POST *)",
+      "Bash(kit api cloudflare PUT *)",
+      "Bash(kit api cloudflare PATCH *)",
+      "Bash(kit api cloudflare TRIGGER *)",
+      "Bash(kit api github /*)",
+      "Bash(kit api github \"/*)",
+      "Bash(kit api github GET *)",
+      "Bash(kit api github POST *)",
+      "Bash(kit api github PUT *)",
+      "Bash(kit api github PATCH *)",
+      "Bash(kit repo create *)",
+      "Bash(kit detect*)",
+      "Bash(kit dash status*)",
+      "mcp__kit-control__checkpoint",
+      "mcp__kit-control__ask",
+      "mcp__kit-control__wait_for_answer",
+      "mcp__kit-control__task_create",
+      "mcp__kit-control__task_update",
+      "mcp__kit-control__task_list",
+      "Bash(kit dash *)",
+      "Bash(node *)",
+      "Bash(npx quartz*)",
+      "Bash(npm view*)",
+      "Bash(npm audit*)",
+      "Bash(git ls-remote*)",
+      "Bash(git clone --depth 1 *)",
+      "Bash(docker build*)",
+      "Bash(docker image ls*)",
+      "Bash(docker image inspect*)",
+      "Bash(docker ps*)",
+      "Bash(docker logs*)",
+      "Bash(rm -rf public)",
+      "Bash(rm -rf dist)",
+      "Bash(rm -rf node_modules)",
+      "Bash(rm -rf .quartz-cache)",
+      "mcp__github__get_file_contents",
+      "mcp__github__list_branches",
+      "mcp__github__list_commits",
+      "mcp__github__get_commit",
+      "mcp__github__list_pull_requests",
+      "mcp__github__pull_request_read",
+      "mcp__github__create_pull_request",
+      "mcp__github__update_pull_request",
+      "mcp__github__create_branch",
+      "mcp__github__issue_read",
+      "mcp__github__list_issues",
+      "mcp__github__actions_list",
+      "mcp__github__actions_get",
+      "mcp__github__get_job_logs",
+      "mcp__github__get_check_run",
+      "mcp__github__list_releases",
+      "mcp__github__get_latest_release",
+      "mcp__github__list_tags",
+      "mcp__claude-code-remote__list_repos",
+      "mcp__claude-code-remote__read_documentation",
+      "mcp__claude-code-remote__get_session",
+      "mcp__claude-code-remote__get_environment",
+      "mcp__claude-code-remote__subscribe_pr_activity",
+      "mcp__claude-code-remote__unsubscribe_pr_activity",
+      "Bash(kit perms allow *)",
+      "Bash(kit perms list*)",
+      "Bash(kit perms check *)",
+      "mcp__claude-code-remote__add_repo",
+      "mcp__claude-code-remote__register_repo_root"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/guard-secrets.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-autoupdate.sh",
+            "timeout": 20
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-autoupdate.sh",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-autoupdate.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-dockerd.sh",
+            "timeout": 25
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "autoModeSha256": {
+    "environment": [
+      "58a5e1c94f9ab95ee954ed7430667f08e7057db479ce67056c8169a15d3b6158",
+      "745abccd191db55f843e52748093b75c9db37fb5df507162d692653cc02f0df9",
+      "6f08b8368caff27270f56930f53abed54eb0a57f81d6fec041cf38d6f8cdcb5d",
+      "59b6d90d7407cdadac5b2402ad42454799576d8637cd0eca4fd9cd6341a462b2",
+      "493fdba805142304e78bf7b14f4729d7bf11f6a20ec24142c842779c90d46f50",
+      "1ef15ae11aba523ec12a9cc47f15aa55c5b6f52726496b57d0158e2806850f77",
+      "70170ce095729efea8f2e5e7542f09e14c88c3875b162d0972677da42c831c51",
+      "f7525283a9baa849dbd2cda9b7a7d3872ca390bb9334c210272574b6d1d3e68a",
+      "489ffd0e245406a8ee142bdf4e8f8fd8542be1c6b5de2e1682d3ea5597df0c5e",
+      "cb045b8e97f62fe3e6893b5d4a3f9c523bcdbb1fb8901c66e451e4b897b05c8d"
+    ],
+    "allow": [
+      "58a5e1c94f9ab95ee954ed7430667f08e7057db479ce67056c8169a15d3b6158",
+      "297868a613b35f0cc92dab4591501bd714a66f627e1da679324c750686cf670e",
+      "c64117109512bd3f5468fe1c6d1279fe48a187cf18dbda6ecfaabf168973951b",
+      "61a372fa7edff5d9c312823fb200155c78d6b0cf1a33c41b8c2fbcbcc8b67016",
+      "718b20cef13413ec4df00d1af1c5e7a4d29f20de1d1ec271f548bc6e5848898d",
+      "c0516cae709ad7dacb4373e83eeae96b22079ca8df800666e5a670434e34583d",
+      "919512a17470e56772f718cdf3c219b6f9a656bbdd00e9b7f25b2682d86cfc97",
+      "8bea6a5e8bc1416c6965732306906dea6a2837dd07322e48536d0f10c718df9a"
+    ],
+    "soft_deny": [
+      "58a5e1c94f9ab95ee954ed7430667f08e7057db479ce67056c8169a15d3b6158",
+      "cd4fa164eb9948d8a15797e23a02547bc359c484f37a4d7b0ca8315383863a76",
+      "1ee87b3a3c07023fd571f5239dcd55ca275b478a4401caf787ddf89fd129c223"
+    ],
+    "hard_deny": [
+      "58a5e1c94f9ab95ee954ed7430667f08e7057db479ce67056c8169a15d3b6158",
+      "6db4cf5be4dd420453749ec12236412b2996b5b1d1d756049e16323261dc177a"
+    ]
+  }
+}
