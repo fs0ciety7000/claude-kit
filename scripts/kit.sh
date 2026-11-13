@@ -13,8 +13,9 @@ AJOUTER FACILEMENT
   kit add-skill <source> [--skill nom ...] [--profile p] [--project]
         installe un skill (global par défaut), le mémorise dans profiles/<p>.txt (défaut : custom)
         ex. kit add-skill vercel-labs/agent-skills --skill vercel-react-best-practices --profile web
-  kit add-agent <url|gh:owner/repo/chemin.md|fichier.md> [--project] [--force]
-        télécharge un agent, vérifie son en-tête, l'installe (global par défaut)
+  kit add-agent <url|gh:owner/repo/chemin.md|fichier.md|nom> [--project] [--force]
+        télécharge un agent, vérifie son en-tête, l'installe (global par défaut) ; un nom seul désigne un agent
+        optionnel du kit (extras/agents/ : sysop, data-engineer, game-designer, android-ui-reviewer)
   kit new-agent <nom> "<description>" [--tools "Read, Glob, Grep"] [--model haiku|sonnet|opus|fable|inherit] [--effort low|medium|high|xhigh|max]
   kit new-skill <nom> "<description>"
 
@@ -243,6 +244,13 @@ resolve_source() {
   esac
 }
 
+# Names of the optional agents shipped with the kit (extras/agents/*.md): installed per project, never linked globally.
+extras_agents() {
+  local f
+  for f in "$KIT_HOME"/extras/agents/*.md; do [[ -f $f ]] && basename "$f" .md; done
+  return 0
+}
+
 cmd_add_agent() {
   local src="" project=0 force=0
   while (($#)); do
@@ -254,8 +262,14 @@ cmd_add_agent() {
     esac
     shift
   done
-  [[ -n $src ]] || die "usage : kit add-agent <url|gh:owner/repo/chemin.md|fichier.md> [--project] [--force]"
+  [[ -n $src ]] || die "usage : kit add-agent <url|gh:owner/repo/chemin.md|fichier.md|nom> [--project] [--force]"
   local url name desc tools dest_dir dest
+  # A bare name (no slash, no .md, no such file here) is an optional agent of the kit: extras/agents/<name>.md.
+  if [[ $src =~ ^[a-z0-9][a-z0-9-]*$ && ! -e $src ]]; then
+    [[ -f $KIT_HOME/extras/agents/$src.md ]] \
+      || die "agent optionnel inconnu : $src (disponibles : $(extras_agents | paste -sd' ' -))"
+    src="$KIT_HOME/extras/agents/$src.md"
+  fi
   TMP_FILE=$(mktemp)  # global exprès : nettoyé par le trap EXIT, hors de la portée de la fonction
   trap 'rm -f "${TMP_FILE:-}"' EXIT
   url=$(resolve_source "$src")
@@ -306,7 +320,7 @@ cmd_add_agent() {
 }
 
 cmd_new_agent() {
-  local name=${1:-} desc=${2:-} tools="Read, Glob, Grep" model=sonnet effort=medium
+  local name=${1:-} desc=${2:-} tools="Read, Glob, Grep" model=opus effort=medium
   shift 2 2>/dev/null || true
   while (($#)); do
     case $1 in
@@ -433,8 +447,13 @@ project_add() {
   mkdir -p "$dir/.claude/agents" "$dir/.claude/skills"
   local placed=()
   for a in $(printf '%s\n' "${agents[@]}" | sort -u); do
-    [[ -f $KIT_HOME/global/agents/$a.md ]] || continue
-    cp "$KIT_HOME/global/agents/$a.md" "$dir/.claude/agents/$a.md"
+    if [[ -f $KIT_HOME/global/agents/$a.md ]]; then
+      cp "$KIT_HOME/global/agents/$a.md" "$dir/.claude/agents/$a.md"
+    elif [[ -f $KIT_HOME/extras/agents/$a.md ]]; then
+      cp "$KIT_HOME/extras/agents/$a.md" "$dir/.claude/agents/$a.md"   # optional agent: only ever installed per project
+    else
+      continue
+    fi
     placed+=("agent:$a")
   done
   # Skills maison du kit cités par le type (pocketbase, deploy-coolify-cloudflare, secrets-handling).
@@ -942,6 +961,10 @@ cmd_list() {
   local f
   echo "== Agents (kit) =="
   for f in "$KIT_HOME"/global/agents/*.md; do
+    [[ -f $f ]] && printf '  %-22s %s\n' "$(fm_get "$f" name)" "$(fm_get "$f" description | cut -c1-90)"
+  done
+  echo "== Agents optionnels (kit add-agent <nom> --project) =="
+  for f in "$KIT_HOME"/extras/agents/*.md; do
     [[ -f $f ]] && printf '  %-22s %s\n' "$(fm_get "$f" name)" "$(fm_get "$f" description | cut -c1-90)"
   done
   echo "== Skills (kit) =="
