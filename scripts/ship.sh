@@ -8,8 +8,8 @@
 #                                         path), env var NAMES checked against .env.example, .fs0/bridge.yaml deploy:,
 #                                         owner/repo=uuid added to the bridge's DEPLOY_ALLOW
 #   kit ship status [--dir D] [--wait S]  last deployment and HTTPS answer of the domain (--wait: poll up to S seconds)
-#   kit ship previews setup [--dry-run]   one-time infra PR: proxied wildcard CNAME *.<PREVIEW_SUFFIX> to the tunnel
-#                                         and an Access application for it (project.yaml previews: true needs it)
+#   kit ship previews setup [--dry-run]   infra PR: proxied wildcard CNAME *.<PREVIEW_SUFFIX> to the tunnel, wildcard
+#                                         Access application, then (after apply) a dedicated ingress rule (access.required)
 #   --apex                                allow a zone apex as domain (refused otherwise)
 #   kit project get [key] [--dir D]       read the project.yaml fields used here (defaults applied)
 #
@@ -74,11 +74,12 @@ pget() { # key
       volumes) v=no ;;
       branch) v=main ;;
       previews) v=false ;;
+      preview_env) v=none ;;
     esac
   fi
   printf '%s\n' "$v"
 }
-SHIP_KEYS="name expose domain server coolify_uuid health_path volumes previews"
+SHIP_KEYS="name expose domain server coolify_uuid health_path volumes previews preview_env"
 
 project_get() {
   local key=""
@@ -97,17 +98,18 @@ project_get() {
 }
 
 # ---------- project ----------
-P_NAME="" P_EXPOSE="" P_DOMAIN="" P_SERVER="" P_UUID="" P_HEALTH="" P_VOLUMES="" P_REPO="" P_BRANCH="" P_PREVIEWS=""
+P_NAME="" P_EXPOSE="" P_DOMAIN="" P_SERVER="" P_UUID="" P_HEALTH="" P_VOLUMES="" P_REPO="" P_BRANCH="" P_PREVIEWS="" P_PREVIEW_ENV=""
 load_project() {
   [[ -f $DIR/project.yaml ]] || die "project.yaml absent dans $DIR (kit project init)"
   [[ ! -L $DIR/project.yaml ]] || die "project.yaml est un lien symbolique : refusé"
   P_NAME=$(pget name) P_EXPOSE=$(pget expose) P_DOMAIN=$(pget domain) P_SERVER=$(pget server)
   P_UUID=$(pget coolify_uuid) P_HEALTH=$(pget health_path) P_VOLUMES=$(pget volumes) P_BRANCH=$(pget branch)
-  P_PREVIEWS=$(pget previews)
+  P_PREVIEWS=$(pget previews) P_PREVIEW_ENV=$(pget preview_env)
   [[ $P_NAME =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || die "project.yaml : name invalide ou absent (minuscules, chiffres, tirets)"
   [[ $P_EXPOSE =~ ^(none|tailnet|access|public)$ ]] || die "project.yaml : expose doit valoir none, tailnet, access ou public"
   [[ $P_VOLUMES =~ ^(yes|no)$ ]] || die "project.yaml : volumes doit valoir yes ou no"
   [[ $P_PREVIEWS =~ ^(true|false)$ ]] || die "project.yaml : previews doit valoir true ou false"
+  [[ $P_PREVIEW_ENV =~ ^(none|dedicated)$ ]] || die "project.yaml : preview_env doit valoir none ou dedicated"
   [[ $P_HEALTH =~ ^/[A-Za-z0-9._~/-]*$ ]] || die "project.yaml : health_path invalide (ex. /health)"
   [[ $P_BRANCH =~ ^[A-Za-z0-9._/-]+$ ]] || die "project.yaml : branch invalide"
   [[ -z $P_UUID || $P_UUID =~ ^[a-z0-9]{8,40}$ ]] || die "project.yaml : coolify_uuid invalide"
@@ -266,11 +268,11 @@ step_access() {
   for p in ${POLICIES//,/ }; do pol+="${pol:+, }\"$p\""; done
   ents=$(yaml_entries "$f" applications)
   if awk -F'\t' -v k="$P_DOMAIN" '$1 == k { f = 1 } END { exit !f }' <<<"$ents"; then
-    if [[ $(entry_field "$ents" "$P_DOMAIN" policies) == "[$pol]" ]]; then
+    if [[ $(entry_field "$ents" "$P_DOMAIN" policies) == "[$pol]" && -z $(entry_field "$ents" "$P_DOMAIN" destinations) ]]; then
       echo "  = Access : application $P_DOMAIN déjà déclarée (policies : ${POLICIES//,/ })"
       return
     fi
-    taken "Access $P_DOMAIN ($ACCESS_FILE, policies différentes de ACCESS_POLICIES)"
+    taken "Access $P_DOMAIN ($ACCESS_FILE, policies différentes de ACCESS_POLICIES, ou destinations:)"
   fi
   snip=$(mktemp)
   printf '  "%s":\n    name: "%s"\n    session_duration: "24h"\n    app_launcher_visible: false\n    auto_redirect_to_identity: false\n    http_only_cookie_attribute: true\n    enable_binding_cookie: false\n    options_preflight_bypass: false\n    policies: [%s]\n' \
@@ -318,7 +320,11 @@ step_backup() {
 infra_steps() { # root
   case $P_EXPOSE in
     public) step_dns "$1"; echo "  - Access : non (expose public)"; step_gatus "$1" ;;
-    access) step_access "$1"; step_dns "$1"; echo "  - Gatus : non (Access répond à la place de l'origine)" ;;
+    access)
+      step_access "$1"; step_dns "$1"
+      if ((PREVIEW_SETUP)); then step_tunnel "$1"; fi
+      echo "  - Gatus : non (Access répond à la place de l'origine)"
+      ;;
     tailnet) echo "  - DNS, Access, Gatus : non (expose tailnet : nom du tailnet, aucun enregistrement public)" ;;
     none) echo "  - DNS, Access, Gatus : non (expose none)" ;;
   esac
@@ -331,13 +337,14 @@ infra_files() { # relative paths an expose mode may touch
     if [[ -z $(conf ZONES) ]]; then git -C "$INFRA_DIR" ls-tree --name-only "$1" "$DNS_DIR/" 2>/dev/null || true; fi
   fi
   [[ $P_EXPOSE == access ]] && echo "$ACCESS_FILE"
+  ((PREVIEW_SETUP)) && echo "$TUNNELS_FILE"
   [[ $P_EXPOSE == public ]] && echo "$GATUS_FILE"
   b=$(conf BACKUP_FILE)
   if [[ $P_VOLUMES == yes && -n $b ]]; then echo "$b"; fi
   return 0
 }
 
-INFRA_DIR="" INFRA_REPO="" INFRA_BASE="" DNS_DIR="" ACCESS_FILE="" GATUS_FILE="" TUNNEL="" POLICIES="" INFRA_SRC=""
+INFRA_DIR="" INFRA_REPO="" INFRA_BASE="" DNS_DIR="" ACCESS_FILE="" GATUS_FILE="" TUNNEL="" POLICIES="" INFRA_SRC="" TUNNELS_FILE=""
 load_infra_conf() {
   INFRA_DIR=$(conf_req INFRA_REPO_DIR '^/')
   INFRA_REPO=$(conf_req INFRA_REPO '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
@@ -345,9 +352,10 @@ load_infra_conf() {
   DNS_DIR=$(conf DNS_DIR infra/cloudflare/dns)
   ACCESS_FILE=$(conf ACCESS_FILE infra/cloudflare/access.yaml)
   GATUS_FILE=$(conf GATUS_FILE gatus/config.yaml)
+  TUNNELS_FILE=$(conf TUNNELS_FILE infra/cloudflare/tunnels.yaml)
   POLICIES=$(conf ACCESS_POLICIES)
   local p
-  for p in DNS_DIR ACCESS_FILE GATUS_FILE; do [[ ${!p} =~ $RELPATH_RE && ${!p} != *..* ]] || die "ship.conf : $p doit être un chemin relatif au dépôt d'infra"; done
+  for p in DNS_DIR ACCESS_FILE GATUS_FILE TUNNELS_FILE; do [[ ${!p} =~ $RELPATH_RE && ${!p} != *..* ]] || die "ship.conf : $p doit être un chemin relatif au dépôt d'infra"; done
   [[ -z $(conf BACKUP_FILE) || ( $(conf BACKUP_FILE) =~ $RELPATH_RE && $(conf BACKUP_FILE) != *..* ) ]] || die "ship.conf : BACKUP_FILE doit être un chemin relatif"
   [[ $INFRA_BASE =~ ^[A-Za-z0-9._/-]+$ ]] || die "ship.conf : INFRA_BASE invalide"
   if [[ $P_EXPOSE == public || $P_EXPOSE == access ]]; then
@@ -406,8 +414,11 @@ load_preview_conf() { # PREVIEW_SUFFIX and PREVIEW_ZONE, validated against ZONES
 }
 preview_template() { printf '{{pr_id}}-%s.%s' "$P_NAME" "$PREVIEW_SUFFIX"; }
 # previews: true is for web stacks of size M or L with a public name (Coolify derives the preview scheme from it).
+# Coolify copies every variable into a preview copy with the same value, and builds the PRs of any branch of the
+# repository (bots, agents) before review: previews are refused while the project declares variables, unless
+# preview_env: dedicated (each preview copy then gets its own secret <NAME>_PREVIEW, checked before enabling).
 check_previews() {
-  local sfx size w web=0
+  local sfx size w web=0 names
   sfx=$(conf PREVIEW_SUFFIX)
   if [[ -n $sfx && -n $P_DOMAIN ]] && [[ $P_DOMAIN == "$sfx" || $P_DOMAIN == *".$sfx" ]]; then
     die "$P_DOMAIN est sous le suffixe des prévisualisations ($sfx), réservé : refusé"
@@ -419,28 +430,135 @@ check_previews() {
   ((web)) || die "previews: true réservé aux piles web (stack: $(pget stack)) : passe previews à false"
   [[ $P_EXPOSE == access || $P_EXPOSE == public ]] || die "previews: true demande expose access ou public (expose: $P_EXPOSE)"
   ((${#P_NAME} <= 50)) || die "previews: true : name trop long pour un nom de prévisualisation (50 caractères au plus)"
+  names=$(expected_env_names | grep -vE "$RESERVED_RE" | tr '\n' ' ' || true)
+  if [[ -n ${names// /} && $P_PREVIEW_ENV != dedicated ]]; then
+    die "previews: true refusé : Coolify donnerait aux prévisualisations les valeurs de prod de ${names% } ; mets preview_env: dedicated et crée <NOM>_PREVIEW (kit secrets add), ou previews: false"
+  fi
   load_preview_conf
 }
-# PREVIEWS_ON=1 only if previews: true and the Access application *.<PREVIEW_SUFFIX> (ACCESS_POLICIES) is on the base
-# branch of the infra repo; otherwise previews are switched off on the application.
+# Entries of the policies block may be inline JSON ("key": {"name": ...}) or a nested map; prints the name of a key.
+policy_name() { # file key
+  local line rest
+  line=$(awk -v k="  \"$2\":" '/^[^ \t#]/ { inb = ($0 == "policies:"); next } inb && index($0, k) == 1 { print; exit }' "$1")
+  rest=${line#*\":}
+  if [[ $rest =~ ^[[:space:]]*\{ ]]; then jq -r '.name // empty' <<<"$rest" 2>/dev/null || true
+  else entry_field "$(yaml_entries "$1" policies)" "$2" name | sed 's/^"//; s/"$//'; fi
+}
+# Ingress rules written one per line as JSON flow maps (`- {"hostname": ...}`): lineno<TAB>json for each.
+tunnel_rules() { # file
+  awk '/^[ \t]*- \{.*\}[ \t]*$/ { l = $0; sub(/^[ \t]*- /, "", l); sub(/[ \t]+$/, "", l); print NR "\t" l }' "$1"
+}
+rule_line() { # rules hostname -> "lineno<TAB>json" lines whose hostname matches
+  local n j
+  while IFS=$'\t' read -r n j; do
+    [[ -n $n ]] || continue
+    if [[ $(jq -r '.hostname // ""' <<<"$j" 2>/dev/null) == "$2" ]]; then printf '%s\t%s\n' "$n" "$j"; fi
+  done <<<"$1"
+}
+# The dedicated rule: the zone rule's service and options, plus an Access token check at cloudflared.
+preview_rule() { # zone-rule-json aud team
+  jq -c --arg h "*.$PREVIEW_SUFFIX" --arg a "$2" --arg t "$3" \
+    '.hostname = $h | .origin_request = ((.origin_request // {}) + {access: {aud_tag: [$a], required: true, team_name: $t}})' <<<"$1" \
+    | sed -e 's/":/": /g' -e 's/,"/, "/g'
+}
+preview_aud() { # -> aud of the Access application (ship.conf PREVIEW_ACCESS_AUD, else read live in real mode), "" if unknown
+  local a acc
+  a=$(conf PREVIEW_ACCESS_AUD)
+  if [[ -z $a && $MODE == real && -n $(conf CLOUDFLARE_ACCOUNT_ID) ]]; then
+    acc=$(conf_req CLOUDFLARE_ACCOUNT_ID '^[0-9a-f]{32}$')
+    a=$("$API" cloudflare "/accounts/$acc/access/apps?per_page=1000" \
+      --jq '[.result[] | select(.domain == "*.'"$PREVIEW_SUFFIX"'")] | if length == 1 then .[0].aud else "" end' 2>/dev/null | jq -r . 2>/dev/null) || a=""
+  fi
+  [[ -z $a || $a =~ ^[0-9a-f]{64}$ ]] || die "aud Access inattendue (PREVIEW_ACCESS_AUD ou réponse Cloudflare)"
+  printf '%s' "$a"
+}
+step_tunnel() { # root : dedicated ingress rule *.<suffix> before the zone rule, with access.required
+  local f="$1/$TUNNELS_FILE" rules zr pr aud team new n snip
+  if [[ ! -f $f ]]; then
+    echo "  ! Ingress : $TUNNELS_FILE absent : étape manuelle requise, règle *.$PREVIEW_SUFFIX (access.required, avant la règle *.$PREVIEW_ZONE)"
+    return 0
+  fi
+  rules=$(tunnel_rules "$f")
+  zr=$(rule_line "$rules" "*.$PREVIEW_ZONE")
+  pr=$(rule_line "$rules" "*.$PREVIEW_SUFFIX")
+  if [[ -n $pr ]]; then
+    [[ $pr != *$'\n'* ]] || taken "Ingress *.$PREVIEW_SUFFIX ($TUNNELS_FILE, plusieurs règles)"
+    if [[ $(jq -r '.origin_request.access.required // false' <<<"${pr#*$'\t'}") == true ]] && { [[ -z $zr ]] || ((${pr%%$'\t'*} < ${zr%%$'\t'*})); }; then
+      echo "  = Ingress : règle *.$PREVIEW_SUFFIX avec access.required déjà déclarée ($TUNNELS_FILE)"
+      return 0
+    fi
+    taken "Ingress *.$PREVIEW_SUFFIX ($TUNNELS_FILE, sans access.required ou après la règle de la zone)"
+  fi
+  if [[ -z $zr || $zr == *$'\n'* ]]; then
+    echo "  ! Ingress : pas de règle unique *.$PREVIEW_ZONE dans $TUNNELS_FILE : étape manuelle requise, règle *.$PREVIEW_SUFFIX (access.required) avant celle qui sert ces noms"
+    return 0
+  fi
+  aud=$(preview_aud)
+  if [[ -z $aud ]]; then
+    echo "  ! Ingress : règle *.$PREVIEW_SUFFIX (access.required) à ajouter quand l'application Access existe : après tofu apply, relance kit ship previews setup (aud lue chez Cloudflare avec CLOUDFLARE_ACCOUNT_ID, ou PREVIEW_ACCESS_AUD)"
+    return 0
+  fi
+  team=$(conf_req ACCESS_TEAM_NAME '^[a-z0-9-]{1,63}$')
+  new=$(preview_rule "${zr#*$'\t'}" "$aud" "$team")
+  n=${zr%%$'\t'*}
+  snip=$(mktemp)
+  awk -v n="$n" -v r="$new" 'NR == n { p = $0; sub(/-.*/, "", p); print p "- " r } { print }' "$f" >"$snip" && cat "$snip" >"$f"
+  rm -f "$snip"
+  echo "  + Ingress : règle *.$PREVIEW_SUFFIX avant *.$PREVIEW_ZONE, jeton Access exigé par cloudflared ($TUNNELS_FILE)"
+  CHANGES=$((CHANGES + 1)) SUMMARY+=("ingress")
+}
+
+# PREVIEWS_ON=1 only if previews: true and, on the base branch of the infra repo, the Access application
+# *.<PREVIEW_SUFFIX> has exactly ACCESS_POLICIES (no destinations:) and the dedicated ingress rule exists (when the
+# repo has a tunnels file); in real mode, the live Cloudflare Access application must match too. Otherwise: off.
 preview_state() { # mode
-  local ref f ents pol="" p key
+  local ref f t ents pol="" p key rules zr pr
   PREVIEWS_ON=0 PREVIEW_WHY="previews: false dans project.yaml"
   [[ $P_PREVIEWS == true ]] || return 0
   load_infra_conf
   POLICIES=$(conf_req ACCESS_POLICIES '^[a-z0-9_]+([ ,]+[a-z0-9_]+)*$')
-  [[ $1 != real ]] || git -C "$INFRA_DIR" fetch -q origin || die "git fetch du dépôt d'infra en échec"
+  [[ $1 != real ]] || git -C "$INFRA_DIR" fetch -q --prune origin || die "git fetch du dépôt d'infra en échec"
   ref="origin/$INFRA_BASE" key="*.$PREVIEW_SUFFIX"
-  f="$(tmpd)/access.yaml"
+  f="$(tmpd)/access.yaml" t="$(tmpd)/tunnels.yaml"
   git -C "$INFRA_DIR" show "$ref:$ACCESS_FILE" >"$f" 2>/dev/null || : >"$f"
   for p in ${POLICIES//,/ }; do pol+="${pol:+, }\"$p\""; done
   ents=$(yaml_entries "$f" applications)
   if ! awk -F'\t' -v k="$key" '$1 == k { f = 1 } END { exit !f }' <<<"$ents"; then
-    PREVIEW_WHY="application Access $key absente de $ref du dépôt d'infra (kit ship previews setup, fusion, tofu apply)"
-  elif [[ $(entry_field "$ents" "$key" policies) != "[$pol]" ]]; then
-    PREVIEW_WHY="application Access $key aux policies différentes de ACCESS_POLICIES ($ref)"
-  else
-    PREVIEWS_ON=1 PREVIEW_WHY=""
+    PREVIEW_WHY="application Access $key absente de $ref du dépôt d'infra (kit ship previews setup, fusion, tofu apply)"; return 0
+  fi
+  if [[ $(entry_field "$ents" "$key" policies) != "[$pol]" ]]; then
+    PREVIEW_WHY="application Access $key aux policies différentes de ACCESS_POLICIES ($ref)"; return 0
+  fi
+  if [[ -n $(entry_field "$ents" "$key" destinations) ]]; then
+    PREVIEW_WHY="application Access $key avec destinations: ($ref) : non gérée par kit ship"; return 0
+  fi
+  if git -C "$INFRA_DIR" show "$ref:$TUNNELS_FILE" >"$t" 2>/dev/null; then
+    rules=$(tunnel_rules "$t")
+    pr=$(rule_line "$rules" "$key") zr=$(rule_line "$rules" "*.$PREVIEW_ZONE")
+    if [[ -z $pr || $pr == *$'\n'* || $(jq -r '.origin_request.access.required // false' <<<"${pr#*$'\t'}") != true ]] \
+      || { [[ -n $zr ]] && ((${pr%%$'\t'*} > ${zr%%$'\t'*})); }; then
+      PREVIEW_WHY="règle d'ingress $key avec access.required absente de $ref (kit ship previews setup)"; return 0
+    fi
+  fi
+  if [[ $1 == real ]]; then preview_live "$f" || return 0; fi
+  PREVIEWS_ON=1 PREVIEW_WHY=""
+}
+preview_live() { # access-file : the live Access application matches the infra repo (exactly one, same policies)
+  local acc out p names="" key="*.$PREVIEW_SUFFIX" n
+  acc=$(conf_req CLOUDFLARE_ACCOUNT_ID '^[0-9a-f]{32}$')
+  for p in ${POLICIES//,/ }; do
+    n=$(policy_name "$1" "$p")
+    [[ -n $n ]] || { PREVIEW_WHY="nom de la policy $p introuvable dans $ACCESS_FILE"; return 1; }
+    names+="$n"$'\n'
+  done
+  names=$(printf '%s' "$names" | sort | jq -R . | jq -sc .)
+  out=$("$API" cloudflare "/accounts/$acc/access/apps?per_page=1000" \
+    --jq '{total: (.result_info.total_count // -1), n: (.result | length), apps: [.result[] | select(.domain == "'"$key"'") | {type, pol: ([.policies[]?.name] | sort), dest: [(.destinations // [])[] | ((.type // "") + " " + (.uri // ""))]}]}') \
+    || { PREVIEW_WHY="lecture des applications Access en échec (kit api cloudflare)"; return 1; }
+  out=$(jq -c . <<<"$out") || { PREVIEW_WHY="réponse Cloudflare illisible"; return 1; }
+  if ! jq -e --argjson want "$names" --arg k "$key" '.total == .n and (.apps | length) == 1 and .apps[0].type == "self_hosted"
+      and .apps[0].pol == $want and all(.apps[0].dest[]; . == "public " + $k)' <<<"$out" >/dev/null; then
+    PREVIEW_WHY="application Access $key en ligne absente ou différente du dépôt d'infra (policies, destinations ; tofu apply ?)"; return 1
   fi
   return 0
 }
@@ -467,6 +585,16 @@ infra_ref() { # PR branch on origin if it exists and is not merged, else the bas
   else echo "origin/$INFRA_BASE"; fi
 }
 
+# A PR branch whose PR was merged (squash: not an ancestor of the base) and none is open: building on it would check
+# an outdated tree, and pushing a new base on it would need a force push. Stops; the owner deletes the branch.
+stale_branch() { # branch
+  local merged open q="repos/$INFRA_REPO/pulls?head=${INFRA_REPO%%/*}:$1"
+  open=$("$GH" api "$q&state=open" --jq 'length') || die "lecture des PR en échec (gh)"
+  [[ $open == 0 ]] || return 0
+  merged=$("$GH" api "$q&state=closed" --jq '[.[] | select(.merged_at != null)] | length') || die "lecture des PR en échec (gh)"
+  [[ $merged == 0 ]] || die "branche $1 déjà fusionnée (PR fermée) mais encore présente sur $INFRA_REPO : supprime-la sur GitHub, puis relance (rien n'a été écrit)"
+}
+
 ship_infra() { # mode: plan | dry | real
   local mode=$1 ref root wt branch=${INFRA_BRANCH:-ship/$P_NAME} pr title body
   if ! infra_needed; then echo "Infra : rien à changer"; infra_steps /nonexistent; return 0; fi
@@ -474,9 +602,10 @@ ship_infra() { # mode: plan | dry | real
   echo "Infra : branche $branch sur $INFRA_REPO"
   if [[ $mode == real ]]; then
     need "$GH" "Installe GitHub CLI (gh)."
-    git -C "$INFRA_DIR" fetch -q origin || die "git fetch du dépôt d'infra en échec"
+    git -C "$INFRA_DIR" fetch -q --prune origin || die "git fetch du dépôt d'infra en échec"
   fi
   ref=$(infra_ref)
+  if [[ $mode == real && $ref != "origin/$INFRA_BASE" ]]; then stale_branch "$branch"; fi
   [[ $mode == real ]] || echo "  (d'après $ref du clone local, sans git fetch)"
   git -C "$INFRA_DIR" rev-parse -q --verify "$ref^{commit}" >/dev/null || die "référence $ref absente dans $INFRA_DIR (git fetch)"
   if [[ $mode != real ]]; then
@@ -578,11 +707,10 @@ app_payload() { # pack port -> JSON of the creation request
     + (if $d == "" then {} else {domains: $d} end)
     + (if $bp == "static" then {is_static: true} else {} end) + $pv'
 }
-preview_json() { # preview fields of both payloads: on with the Access-protected template, else off
-  jq -n --argjson on "$( ((PREVIEWS_ON)) && echo true || echo false)" --arg t "$( ((PREVIEWS_ON)) && preview_template)" '
-    {is_preview_deployments_enabled: $on, is_pr_deployments_public_enabled: false}
-    + (if $on then {preview_url_template: $t} else {} end)'
-}
+# Creation and settings payloads always switch previews off; kit ship app enables them afterwards, once the preview
+# copies of the variables hold dedicated values (preview_envs).
+preview_json() { echo '{"is_preview_deployments_enabled": false, "is_pr_deployments_public_enabled": false}'; }
+preview_enable_json() { jq -n --arg t "$(preview_template)" '{is_preview_deployments_enabled: true, is_pr_deployments_public_enabled: false, preview_url_template: $t}'; }
 settings_payload() { # JSON of the PATCH that keeps an existing application in line
   local domains=""
   [[ -n $P_DOMAIN ]] && domains="https://$P_DOMAIN"
@@ -675,7 +803,22 @@ ship_app() { # mode: plan | dry | real
     announce "coolify_uuid dans project.yaml (retour arrière : git checkout project.yaml)"
     kv_set "$DIR/project.yaml" coolify_uuid "$uuid"
   fi
-  if [[ $mode == real && -n $uuid ]]; then preview_readback "$uuid"; fi
+  if [[ $mode == dry ]] && ((PREVIEWS_ON)); then
+    echo "  ~ prévisualisations : copies des variables remplacées par __SECRET:<NOM>_PREVIEW__ (vérifiées), puis PATCH /applications/${uuid:-<uuid>} :"
+    preview_enable_json | jq . | sed 's/^/    /'
+  fi
+  if [[ $mode == real && -n $uuid ]]; then
+    if ((PREVIEWS_ON)) && ! preview_envs "$uuid"; then
+      PREVIEWS_ON=0
+      warn "prévisualisations laissées coupées : $PREVIEW_WHY"
+    fi
+    if ((PREVIEWS_ON)); then
+      body=$(preview_enable_json | jsonfile)
+      announce "prévisualisations des PR de $uuid : https://$(preview_template) derrière Access (retour arrière : previews: false, puis kit ship app)"
+      api PATCH "/applications/$uuid" --json "@$body" --jq '{uuid: (.uuid // null)}' >/dev/null || die "activation des prévisualisations refusée par Coolify"
+    fi
+    preview_readback "$uuid"
+  fi
   if ((created)); then
     local auto
     auto=$(api "/applications/$uuid" --jq '.settings.is_auto_deploy_enabled // false' 2>/dev/null || echo unknown)
@@ -690,13 +833,43 @@ ship_app() { # mode: plan | dry | real
   fi
 }
 
-preview_readback() { # uuid : the preview settings Coolify kept (never trusted blindly)
+preview_readback() { # uuid : the preview settings Coolify kept; any gap stops the run (never trusted blindly)
   local got want=false tpl=""
   ((PREVIEWS_ON)) && want=true tpl=$(preview_template)
-  got=$(api "/applications/$1" --jq '{on: (.settings.is_preview_deployments_enabled // false), tpl: (.preview_url_template // "")}' 2>/dev/null) || got='{}'
+  got=$(api "/applications/$1" --jq '{on: (.settings.is_preview_deployments_enabled // false), pub: (.settings.is_pr_deployments_public_enabled // false), tpl: (.preview_url_template // "")}') \
+    || die "relecture des prévisualisations en échec : à contrôler dans l'interface (Preview Deployments)"
+  got=$(jq -c . <<<"$got")
+  [[ $(jq -r '.pub' <<<"$got") == false ]] || die "prévisualisations des PR publiques actives sur $1 : à couper dans l'interface (Preview Deployments)"
   if [[ $(jq -r '.on' <<<"$got") != "$want" ]] || { [[ $want == true ]] && [[ $(jq -r '.tpl' <<<"$got") != "$tpl" ]]; }; then
-    warn "prévisualisations : Coolify n'a pas gardé le réglage attendu (actives : $want) ; à corriger dans l'interface (Preview Deployments)"
+    die "prévisualisations : Coolify n'a pas gardé le réglage attendu (actives : $want) ; à corriger dans l'interface (Preview Deployments)"
   fi
+  return 0
+}
+# Every variable's preview copy gets the dedicated secret <NAME>_PREVIEW. The re-read compares each preview copy with
+# its production value inside the jq filter: only a boolean comes out, never a value; a masked value counts as same.
+# (Coolify's API takes no comment on application variables, so the comparison is the proof of replacement.)
+ENV_PAIRS_JQ='group_by(.key) | map((map(select(.is_preview != true)) | .[0].value) as $p
+  | {k: .[0].key, prod: any(.[]; .is_preview != true), prev: any(.[]; .is_preview == true),
+     same: any(.[]; .is_preview == true and (.value == null or .value == $p))}) | map("\(.k) \(.prod) \(.prev) \(.same)") | .[]'
+preview_envs() { # uuid -> 0 when no preview copy can carry a production value
+  local uuid=$1 rows k prod prev same m body n=0
+  rows=$(api "/applications/$uuid/envs" --jq "$ENV_PAIRS_JQ" | jq -r .) || { PREVIEW_WHY="lecture des variables en échec"; return 1; }
+  while read -r k prod prev same; do
+    [[ -n $k && $prod == true ]] || continue
+    [[ $k =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { PREVIEW_WHY="nom de variable inattendu dans Coolify"; return 1; }
+    [[ $P_PREVIEW_ENV == dedicated ]] || { PREVIEW_WHY="variables présentes dans Coolify ($k…) : leurs copies de prévisualisation auraient les valeurs de prod ; preview_env: dedicated"; return 1; }
+    ((n++ > 0)) || announce "copies de prévisualisation des variables de $uuid : valeurs dédiées <NOM>_PREVIEW (retour arrière : previews: false, puis kit ship app)"
+    m=POST
+    [[ $prev != true ]] || m=PATCH
+    body=$(K=$k jq -n '{key: env.K, value: ("__SECRET:" + env.K + "_PREVIEW__"), is_preview: true, is_literal: true}' | jsonfile)
+    api "$m" "/applications/$uuid/envs" --json "@$body" --jq '{uuid: (.uuid // null)}' >/dev/null \
+      || { PREVIEW_WHY="copie de prévisualisation de $k non remplacée (kit secrets add ${k}_PREVIEW)"; return 1; }
+  done <<<"$rows"
+  rows=$(api "/applications/$uuid/envs" --jq "$ENV_PAIRS_JQ" | jq -r .) || { PREVIEW_WHY="relecture des variables en échec"; return 1; }
+  while read -r k prod prev same; do
+    [[ -n $k ]] || continue
+    if [[ $same == true || ( $prod == true && $prev != true ) ]]; then PREVIEW_WHY="copie de prévisualisation de $k non vérifiée (valeur de prod ou absente)"; return 1; fi
+  done <<<"$rows"
   return 0
 }
 
@@ -846,6 +1019,7 @@ ship_status() {
 }
 
 # ---------- previews setup (one-time infra PR, no project) ----------
+PREVIEW_SETUP=0 MODE=real
 previews_cmd() {
   local sub=${1:-}
   [[ $sub == setup ]] || die "usage : kit ship previews setup [--dry-run]"
@@ -862,13 +1036,14 @@ previews_cmd() {
   load_preview_conf
   # The wildcard is shipped like an expose: access name: same anchored, idempotent edits, same refusals.
   P_NAME=previews P_EXPOSE=access P_DOMAIN="*.$PREVIEW_SUFFIX" P_VOLUMES=no P_REPO="kit ship previews setup"
-  INFRA_BRANCH=kit/previews DNS_ZONE=$PREVIEW_ZONE
-  local mode=real
-  ((DRY)) && mode=dry
+  INFRA_BRANCH=kit/previews DNS_ZONE=$PREVIEW_ZONE PREVIEW_SETUP=1
+  ((DRY)) && MODE=dry
+  local mode=$MODE
   echo "kit ship previews setup : *.$PREVIEW_SUFFIX (zone $PREVIEW_ZONE), CNAME proxifié vers le tunnel et application Access"
   ship_infra "$mode"
-  echo "  Propriétaire : vérifier que l'ingress du tunnel couvre *.$PREVIEW_SUFFIX (une règle *.$PREVIEW_ZONE le couvre chez cloudflared ; sinon ajouter *.$PREVIEW_SUFFIX avant la règle 404)"
-  echo "  et que le certificat d'edge couvre *.$PREVIEW_SUFFIX (Universal SSL ne couvre qu'un niveau sous la zone : certificat avancé ou Total TLS)."
+  echo "  Propriétaire : une règle *.$PREVIEW_ZONE sert aussi ces noms, sans contrôle du jeton Access à l'origine : la règle"
+  echo "  dédiée *.$PREVIEW_SUFFIX (access.required) passe avant ; tant qu'elle manque, kit ship app laisse les prévisualisations coupées."
+  echo "  Certificat d'edge pour *.$PREVIEW_SUFFIX requis (Universal SSL ne couvre qu'un niveau sous la zone : certificat avancé ou Total TLS)."
   ((DRY)) && echo "Rien n'a été écrit (--dry-run)."
   return 0
 }
@@ -900,6 +1075,7 @@ main() {
   load_project
   local mode=real
   ((DRY)) && mode=dry
+  MODE=$mode
   case $sub in
     status) ship_status ;;
     plan)

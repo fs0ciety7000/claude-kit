@@ -20,6 +20,13 @@ ACCESS_POLICIES=me
 # application Access joker posés une fois par kit ship previews setup ; PREVIEW_ZONE est le fichier de zone édité.
 PREVIEW_ZONE=example.org
 PREVIEW_SUFFIX=preview.example.org
+# Contrôle en direct de l'application Access joker (kit api cloudflare, lecture) avant d'activer les prévisualisations.
+CLOUDFLARE_ACCOUNT_ID=00000000000000000000000000000000
+# Règle d'ingress dédiée *.<PREVIEW_SUFFIX> (access.required) ajoutée avant la règle *.<PREVIEW_ZONE> du fichier des
+# tunnels (règles JSON sur une ligne) ; aud lue chez Cloudflare après tofu apply, ou fixée ici.
+TUNNELS_FILE=infra/cloudflare/tunnels.yaml
+ACCESS_TEAM_NAME=example-team
+PREVIEW_ACCESS_AUD=
 # Sondes Gatus (bloc endpoints:), pour expose: public seulement.
 GATUS_FILE=gatus/config.yaml
 GATUS_GROUP=Sites
