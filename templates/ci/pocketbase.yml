@@ -1,0 +1,89 @@
+# CI for a PocketBase application run from the prebuilt binary with JS migrations (pb_migrations/) and JS hooks
+# (pb_hooks/), on the self-hosted Forgejo runner (`kit project ci`). PocketBase embedded in Go: use go-web instead.
+# A frontend in the same repository gets its own workflow (`kit project ci pocketbase vite`).
+# The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate (built-in
+# github-actions manager, forgejo-tags) bumps the SHA from the version comment. No secret is used; the data directory is a throwaway one in the runner's temp dir.
+# PocketBase version: PB_VERSION below, and its SHA-256 (checksums.txt of the GitHub release). A Dockerfile with
+# `ARG PB_VERSION=<v>` must name the same version: the first step fails otherwise.
+name: ci-pocketbase
+on: [push]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CI: "true"
+  PB_VERSION: 0.40.6
+  PB_SHA256: 0e1f609158ed945f809f8a02ae012aa0427129c66ebb63c1aee76f2c0309373f
+  GOVULNCHECK_VERSION: v1.9.0
+
+jobs:
+  pocketbase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: same PocketBase version as the Dockerfile
+        run: |
+          d=""
+          if [ -f Dockerfile ]; then
+            d=$(sed -nE 's/^[[:space:]]*ARG[[:space:]]+PB_VERSION=v?([0-9][0-9.]*).*/\1/p' Dockerfile | head -n1)
+          fi
+          if [ -n "$d" ] && [ "$d" != "$PB_VERSION" ]; then
+            echo "Dockerfile PB_VERSION=$d, CI PB_VERSION=$PB_VERSION: set PB_VERSION and PB_SHA256 to the Dockerfile version"
+            exit 1
+          fi
+      - name: download PocketBase (checksum verified)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/pocketbase.zip" \
+            "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_amd64.zip"
+          echo "${PB_SHA256}  $RUNNER_TEMP/pocketbase.zip" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/pb"
+          unzip -q -o "$RUNNER_TEMP/pocketbase.zip" pocketbase -d "$RUNNER_TEMP/pb"
+          "$RUNNER_TEMP/pb/pocketbase" --version
+      # Migrations: applied on an empty database, every project migration reverted, then applied again.
+      - name: migrations (up, down, up)
+        run: |
+          pb=("$RUNNER_TEMP/pb/pocketbase" --dir "$RUNNER_TEMP/pb_data")
+          if [ -d pb_migrations ]; then pb+=(--migrationsDir pb_migrations); fi
+          if [ -d pb_hooks ]; then pb+=(--hooksDir pb_hooks); fi
+          "${pb[@]}" migrate up
+          n=$(find pb_migrations -maxdepth 1 \( -name '*.js' -o -name '*.ts' \) 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$n" -gt 0 ]; then
+            printf 'y\n' | "${pb[@]}" migrate down "$n"
+            "${pb[@]}" migrate up
+          fi
+      # Hooks: a hook that fails to load stops the server; the health endpoint must answer.
+      - name: serve (hooks load, /api/health answers)
+        run: |
+          pb=("$RUNNER_TEMP/pb/pocketbase" --dir "$RUNNER_TEMP/pb_data")
+          if [ -d pb_migrations ]; then pb+=(--migrationsDir pb_migrations); fi
+          if [ -d pb_hooks ]; then pb+=(--hooksDir pb_hooks --hooksWatch=false); fi
+          "${pb[@]}" serve --http 127.0.0.1:8090 >"$RUNNER_TEMP/pb.log" 2>&1 &
+          pid=$!
+          up=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8090/api/health >/dev/null 2>&1; then up=1; break; fi
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          kill "$pid" 2>/dev/null || true
+          if [ "$up" != 1 ]; then cat "$RUNNER_TEMP/pb.log"; exit 1; fi
+          echo "PocketBase answered on /api/health"
+      # Known vulnerabilities in the Go modules compiled into this PocketBase release. Report only: binary mode lists
+      # symbols present in the binary, reachable or not, and only a new PocketBase release fixes them (seen on
+      # 0.40.6 on 2026-11-13: 4 findings). Read the log, then bump PB_VERSION when a release fixes a reachable one.
+      - uses: https://data.forgejo.org/actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - name: govulncheck (binary, report only)
+        continue-on-error: true
+        run: |
+          GOTOOLCHAIN=auto go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          "$(go env GOPATH)/bin/govulncheck" -mode=binary "$RUNNER_TEMP/pb/pocketbase"

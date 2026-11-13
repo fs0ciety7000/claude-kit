@@ -13,8 +13,7 @@ l'utilisateur corrige d'un mot.
 ## Exécution
 
 - Plan en lots (`docs/plan.md`), un agent par lot, brief complet. Le fil principal fait les petites choses.
-- Après un lot : vérifie toi-même diff, tests et build. Pas de relecture par tâche ; relecteurs seulement en L ou
-  sur demande.
+- Après un lot : vérifie toi-même diff, tests et build. Relecteurs seulement en L ou sur demande.
 - Valide **dans le chat**, seulement pour : le plan, la première mise en prod d'un projet, une suppression, une
   migration de données en prod, un écart au plan, un échec répété deux fois.
 - Skill ou agent réellement manquant : `kit equip search`, installation `--project`. Sinon silence.
@@ -41,6 +40,7 @@ décision durable dans `decisions.md`. `/handoff` sur demande ou en fin de sessi
 - Avant de conclure : tests, lint et build, résultats réels.
 - Dépendances : dernière version stable vérifiée au registre, jamais de mémoire.
 - Pas de `docker build` pour vérifier : le build du projet suffit.
+- CI dans `.forgejo/workflows/`, jamais `.github/workflows/`.
 
 ## Permissions
 

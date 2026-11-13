@@ -1,0 +1,123 @@
+# CI for a Tauri 2 desktop application, Linux only, on the self-hosted Forgejo runner (`kit project ci`).
+# The runner has neither macOS nor Windows: the .dmg and .exe/.msi packages are still built locally (`npx tauri
+# build` on each system). Here: frontend checks, Rust checks of src-tauri/, and an unbundled Linux release build.
+# The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate (built-in
+# github-actions manager, forgejo-tags) bumps the SHA from the version comment. No secret is used (no updater signing key: nothing is signed or published).
+# Layout: package.json at the root with @tauri-apps/cli, Rust crate in src-tauri/ with its Cargo.lock committed.
+# Node version as in the web templates; Rust version: src-tauri/rust-toolchain.toml if present, else stable.
+name: ci-tauri
+on: [push]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CI: "true"
+  NODE_DEFAULT_VERSION: "26" # current Node LTS (Lithium), checked on nodejs.org 2026-11-13
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUSTUP_INIT_VERSION: 1.29.3
+  RUSTUP_INIT_SHA256: b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
+  CARGO_AUDIT_VERSION: 0.23.0
+
+jobs:
+  tauri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # System libraries of Tauri 2 on Debian/Ubuntu (v2.tauri.app/start/prerequisites), plus the C toolchain.
+      - name: system dependencies
+        run: |
+          sudo=""; if [ "$(id -u)" != 0 ]; then sudo=sudo; fi
+          $sudo apt-get update -q
+          $sudo apt-get install -y -q --no-install-recommends build-essential curl wget file pkg-config \
+            libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      # Node version, first found: the Dockerfile (FROM node:<v>), .nvmrc, .node-version, package.json engines.node;
+      # otherwise NODE_DEFAULT_VERSION (an exact major: `lts/*` needs the GitHub API, rate-limited without a token).
+      - name: node version
+        id: node
+        run: |
+          v=""; f=""
+          if [ -f Dockerfile ]; then
+            v=$(sed -nE 's/^FROM[[:space:]]+(--platform=[^[:space:]]+[[:space:]]+)?([^[:space:]]*\/)?node:([0-9][0-9.]*).*/\3/p' Dockerfile | head -n1)
+          fi
+          if [ -z "$v" ]; then
+            for c in .nvmrc .node-version; do if [ -f "$c" ]; then f=$c; break; fi; done
+          fi
+          if [ -z "$v$f" ] && jq -e '.engines.node // empty' package.json >/dev/null 2>&1; then f=package.json; fi
+          if [ -z "$v$f" ]; then v=$NODE_DEFAULT_VERSION; fi
+          echo "version=$v" >>"$GITHUB_OUTPUT"
+          echo "file=$f" >>"$GITHUB_OUTPUT"
+      - uses: https://data.forgejo.org/actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+          node-version-file: ${{ steps.node.outputs.file }}
+          cache: npm
+      - name: rustup
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl -fsSL -o "$RUNNER_TEMP/rustup-init" \
+              "https://static.rust-lang.org/rustup/archive/${RUSTUP_INIT_VERSION}/x86_64-unknown-linux-gnu/rustup-init"
+            echo "${RUSTUP_INIT_SHA256}  $RUNNER_TEMP/rustup-init" | sha256sum -c -
+            chmod +x "$RUNNER_TEMP/rustup-init"
+            "$RUNNER_TEMP/rustup-init" -y --no-modify-path --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+          fi
+      - name: toolchain
+        working-directory: src-tauri
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          # A toolchain file here (or at the root) wins; it becomes the default, since cargo runs from the root.
+          if [ -f rust-toolchain.toml ] || [ -f rust-toolchain ] || [ -f ../rust-toolchain.toml ] || [ -f ../rust-toolchain ]; then
+            rustup toolchain install
+            rustup component add rustfmt clippy
+            rustup default "$(rustup show active-toolchain | cut -d' ' -f1)"
+          else
+            rustup toolchain install stable --no-self-update --profile minimal --component rustfmt,clippy
+            rustup default stable
+          fi
+          rustc --version
+      - uses: https://data.forgejo.org/actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: tauri-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            tauri-${{ runner.os }}-
+      - uses: https://data.forgejo.org/actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ runner.os }}-${{ env.CARGO_AUDIT_VERSION }}
+      - name: install
+        run: npm ci
+      - name: audit npm (high and critical)
+        run: npm audit --audit-level=high
+      - name: lint
+        run: npm run lint --if-present
+      - name: test (frontend)
+        run: npm test --if-present
+      - name: fmt
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      # Release build of the binary, without the .deb/.rpm/.AppImage bundles. It runs beforeBuildCommand, so the
+      # frontend is built first; clippy and the Rust tests need that output (frontendDist) and come after.
+      - name: tauri build (Linux, --no-bundle)
+        run: npx tauri build --no-bundle
+      - name: clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
+      - name: test (Rust)
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: cargo audit
+        run: |
+          if ! cargo audit --version 2>/dev/null | grep -qF "$CARGO_AUDIT_VERSION"; then
+            cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
+          fi
+          cargo audit --file src-tauri/Cargo.lock

@@ -1,0 +1,45 @@
+# CI for a Go web service (also PocketBase embedded in Go), on the self-hosted Forgejo runner (`kit project ci`).
+# The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate (built-in
+# github-actions manager, forgejo-tags) bumps the SHA from the version comment. No secret is used.
+# Go version: go.mod (`go` and `toolchain` lines), the same file the Dockerfile build reads.
+name: ci-go-web
+on: [push]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CI: "true"
+  GOVULNCHECK_VERSION: v1.9.0
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Module and build caches are restored by setup-go (key: go.sum).
+      - uses: https://data.forgejo.org/actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then printf 'not gofmt-ed:\n%s\n' "$out"; exit 1; fi
+      - name: vet
+        run: go vet ./...
+      # The race detector needs cgo and a C compiler: the act images ship gcc.
+      - name: test
+        run: go test -race -count=1 ./...
+      - name: build
+        run: go build -trimpath ./...
+      # setup-go sets GOTOOLCHAIN=local; a tool may need a newer Go than go.mod: GOTOOLCHAIN=auto for its install only.
+      - name: govulncheck
+        run: |
+          GOTOOLCHAIN=auto go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          "$(go env GOPATH)/bin/govulncheck" ./...

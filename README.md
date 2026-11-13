@@ -15,6 +15,7 @@ Environnement Claude Code réutilisable : 17 sous-agents (plus 4 optionnels), sk
 | `global/settings.json` (+ `settings.vps.json`, `settings.v1.json`, `settings.retired.json`) | appliqué à `~/.claude/settings.json` (réglages gérés, voir plus bas) | permissions + hook anti-fuite ; `settings.v1.json` : instantané des entrées écrites par la v1 ; `settings.retired.json` : deny/ask que le kit retire explicitement |
 | `profiles/*.txt` | utilisés par `kit skills install` | listes de skills par domaine (web, design, brand, android, game, threejs, go, rust, shopify, cloud, media, meta, custom) |
 | `templates/permissions/*.json` | fusionnés dans `.claude/settings.json` d'un projet par `kit project add` / `kit project perms` | autorisations `allow` par pile (node, astro, next, go, rust, pocketbase, python, tofu) ; `types.tsv` : type du registre → piles |
+| `templates/ci/*.yml` | copiés dans `.forgejo/workflows/` d'un projet par `kit project ci` / `kit project add` | CI Forgejo par pile (astro, next, vite, go-web, go-cli, pocketbase, rust, tauri, static) : `on: [push]`, actions `data.forgejo.org` épinglées par SHA, audit de dépendances ; `types.tsv` : type du registre → gabarit ; `fixtures/README.md` : mini-projets de recette |
 | `scripts/` | `~/.local/bin/kit` | CLI : secrets, skills, agents, MCP |
 
 Les agents et commandes sont des **liens** vers ce dépôt : modifier un fichier ici le modifie partout, et `git pull` met tout à jour.
@@ -165,6 +166,11 @@ Pour que la validation reste l'exception (le mode `auto` reste le défaut), le k
   (`python`, `tofu`) se donne directement : `kit project add python tofu`. Le fragment est commité avec le projet : une
   session cloud sans le kit retrouve ses autorisations. `--no-permissions` les saute. Chaque règle des fragments passe
   `kit perms check` (test), donc la liste blanche et les fragments restent cohérents.
+- **CI du projet** : `kit project ci [pile]` (détection comme `kit project perms` ; `kit project add <type>` l'appelle
+  et laisse en place une CI existante, `--no-ci` la saute) écrit `.forgejo/workflows/ci.yml` (piles suivantes :
+  `ci-<pile>.yml`), un `.fs0/bridge.yaml` minimal et un `renovate.json` (gabarit du kit) s'ils manquent : Renovate met à jour
+  les actions `data.forgejo.org` (SHA et version en commentaire) avec son gestionnaire `github-actions` intégré. Rien n'est écrasé sans `--force` ; liens symboliques et dossier personnel refusés. La CI tourne sur
+  le Forgejo auto-hébergé (le pont pousse branches, `pr/<n>` et tags), jamais dans `.github/workflows/`.
 - En fin de session, le skill `fewer-permission-prompts` propose les `allow` de projet qui auraient évité des invites.
 
 Ce qui demande encore une validation : `git rebase -i` (et `--exec`/`-x`), `kit autoupdate …`, `kit overlay …`, les

@@ -1,0 +1,10 @@
+# Registry type (kit project types) <TAB> CI template written by kit project add / kit project ci (templates/ci/<stack>.yml).
+# A type absent from this list gets no CI from kit project add (kit project ci <stack> remains available).
+web-frontend	vite
+nextjs-cloudflare	next
+astro-static	astro
+threejs-3d	vite
+motion	vite
+backend-go	go-web
+backend-rust	rust
+pocketbase	pocketbase

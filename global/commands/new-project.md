@@ -45,7 +45,7 @@ rejetées ; par défaut, identité propre). Idée floue : skill `brainstorming` 
 
 ## 4. Mise en place et exécution
 Après validation :
-1. `kit project size <S|M|L> --reason "…"`, puis `kit project add <type>...`, puis l'équipement validé
+1. `kit project size <S|M|L> --reason "…"`, puis `kit project add <type>...` (pose aussi la CI Forgejo), puis l'équipement validé
    (`kit add-skill … --project`, `kit add-agent … --project`). Un skill installé en cours de session se lit avec
    `Read` sur `.claude/skills/<nom>/SKILL.md` : jamais de redémarrage de session.
 2. Remplis « Projet courant » dans `CLAUDE.md` et `AGENTS.md` (commandes et structure réelles), `docs/memory/stack.md`,

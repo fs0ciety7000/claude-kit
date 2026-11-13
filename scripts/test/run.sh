@@ -2140,6 +2140,186 @@ jqc '(.permissions.allow | index("Bash(go vet ./...)") != null) and (.hooks | ha
   && ok_ "project new backend-go : règles de pile et hook de démarrage du gabarit réunis" || ko_ "project new : règles de pile" "$(jq -c . "$PNEW/.claude/settings.json" 2>&1 | cut -c1-200)"
 "$ROOT/scripts/kit.sh" help 2>&1 | grep -q 'kit project perms' && ok_ "usage : kit project perms documenté" || ko_ "usage : kit project perms"
 
+# ---------------------------------------------------------------------------
+section "gabarits de CI (templates/ci)"
+CID="$ROOT/templates/ci"
+ci_stacks=$(sed -n 's/^CI_STACKS="\(.*\)"$/\1/p' "$ROOT/scripts/kit.sh")
+ci_files=$(cd "$CID" && ls ./*.yml 2>/dev/null | sed 's#^\./##; s#\.yml$##' | sort | paste -sd' ' -)
+[[ $(tr ' ' '\n' <<<"$ci_stacks" | sort | paste -sd' ' -) == "$ci_files" && $(wc -w <<<"$ci_files") -eq 9 ]] \
+  && ok_ "templates/ci : 9 gabarits, les piles de CI_STACKS (kit.sh)" || ko_ "templates/ci : gabarits et CI_STACKS divergent" "$ci_files / $ci_stacks"
+bad=""
+while IFS=$'\t' read -r ty st; do
+  [[ -z $ty || $ty == '#'* ]] && continue
+  grep -qx "$ty" <<<"$reg_types" || bad="$bad type:$ty"
+  [[ -f $CID/$st.yml ]] || bad="$bad gabarit:$st"
+done <"$CID/types.tsv"
+[[ -z $bad ]] && ok_ "templates/ci/types.tsv : chaque type est au registre et chaque gabarit existe" || ko_ "templates/ci/types.tsv incohérent" "$bad"
+for f in "$CID"/*.yml; do
+  n=$(basename "$f")
+  # Every uses: is a data.forgejo.org action (or a GitHub action) pinned by a full SHA, with its version in a comment.
+  ubad=$(grep -E '^[[:space:]]*(-[[:space:]]+)?uses:' "$f" | grep -vE 'uses:[[:space:]]+https://(data\.forgejo\.org/actions|github\.com/[A-Za-z0-9_.-]+)/[A-Za-z0-9_.-]+@[0-9a-f]{40}[[:space:]]+#[[:space:]]*v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+  [[ -z $ubad && $(grep -cE 'uses:' "$f") -ge 1 ]] && ok_ "$n : uses épinglés par SHA (40 hex) avec la version en commentaire" || ko_ "$n : uses non épinglé" "$ubad"
+  grep -qE '^on: \[push\]$' "$f" && ok_ "$n : on: [push]" || ko_ "$n : déclencheur"
+  if grep -qE 'secrets\.|\$\{\{[[:space:]]*secrets' "$f"; then ko_ "$n : utilise un secret"; else ok_ "$n : aucun secret"; fi
+  grep -qE '^permissions:|^[[:space:]]+permissions:' "$f" && ko_ "$n : permissions (inutile sur Forgejo)" || ok_ "$n : pas de permissions:"
+  grep -qE '^concurrency:' "$f" && ok_ "$n : concurrency" || ko_ "$n : concurrency absente"
+done
+if command -v python3 >/dev/null && python3 -c 'import yaml' 2>/dev/null; then
+  ymlout=$(python3 - "$CID" <<'PY'
+import glob, sys, yaml
+for f in sorted(glob.glob(sys.argv[1] + "/*.yml")):
+    n = f.rsplit("/", 1)[1]
+    try:
+        d = yaml.safe_load(open(f, encoding="utf-8"))
+    except Exception as e:
+        print(f"{n}: YAML: {str(e).splitlines()[0]}"); continue
+    on = d.get("on", d.get(True))  # YAML 1.1 reads the key `on` as true
+    if on != ["push"]:
+        print(f"{n}: on = {on!r}")
+    if not d.get("name", "").startswith("ci-"):
+        print(f"{n}: name")
+    for j, job in (d.get("jobs") or {}).items():
+        if not isinstance(job.get("timeout-minutes"), int):
+            print(f"{n}: job {j} without timeout-minutes")
+        if job.get("runs-on") != "ubuntu-latest":
+            print(f"{n}: job {j} runs-on {job.get('runs-on')!r}")
+        if not job.get("steps"):
+            print(f"{n}: job {j} without steps")
+    if not d.get("jobs"):
+        print(f"{n}: no jobs")
+PY
+)
+  [[ -z $ymlout ]] && ok_ "gabarits de CI : YAML valide, on: [push], timeout-minutes et runs-on par job (parseur strict)" || ko_ "gabarits de CI : YAML" "$(head -3 <<<"$ymlout")"
+else
+  echo "  (python3 + PyYAML absents : analyse YAML stricte ignorée)"
+fi
+# Renovate: the built-in github-actions manager updates the data.forgejo.org actions (forgejo-tags datasource), so the
+# project template has no custom manager and nothing disables github-actions. Validator: opt-in (KIT_TEST_RENOVATE=1,
+# downloads renovate from npm).
+RENOVATE_VERSION=44.238.0
+jqc '(has("customManagers") or has("regexManagers") | not)
+     and ((.packageRules // []) | all((.matchManagers // []) | index("github-actions") == null))
+     and (.minimumReleaseAge == "3 days")' "$ROOT/templates/project/renovate.json" \
+  && ok_ "templates/project/renovate.json : ni customManagers ni github-actions désactivé, minimumReleaseAge 3 jours" || ko_ "templates/project/renovate.json : règle Renovate"
+[[ ! -e $CID/renovate.json ]] && ok_ "templates/ci : plus de fragment Renovate (gestionnaire intégré)" || ko_ "templates/ci/renovate.json existe encore"
+if [[ ${KIT_TEST_RENOVATE:-0} == 1 ]] && command -v npx >/dev/null 2>&1; then
+  if rvout=$(cd "$TMP" && npx --yes --package "renovate@$RENOVATE_VERSION" -- renovate-config-validator --strict "$ROOT/templates/project/renovate.json" 2>&1); then
+    ok_ "renovate-config-validator $RENOVATE_VERSION : templates/project/renovate.json valide"
+  else
+    ko_ "renovate-config-validator" "$(tail -3 <<<"$rvout")"
+  fi
+else
+  echo "  (renovate-config-validator : KIT_TEST_RENOVATE=1 pour le lancer)"
+fi
+# actionlint: on PATH, or built at the pinned version with Go into the temp dir; skipped when neither works (offline).
+ACTIONLINT_VERSION=v1.7.12
+AL=$(command -v actionlint 2>/dev/null || true)
+if [[ -z $AL ]] && command -v go >/dev/null 2>&1; then
+  if GOBIN="$TMP/gobin" GOFLAGS=-mod=mod go install "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION" >/dev/null 2>&1; then AL="$TMP/gobin/actionlint"; fi
+fi
+if [[ -n $AL ]]; then
+  # Forgejo-only syntax (`uses: https://<host>/...`) is the one expected finding.
+  if alout=$("$AL" -ignore 'specifying action "https://data\.forgejo\.org/' "$CID"/*.yml 2>&1); then ok_ "actionlint ($("$AL" -version 2>/dev/null | head -n1)) : gabarits sans erreur"; else ko_ "actionlint" "$(head -5 <<<"$alout")"; fi
+else
+  echo "  (actionlint absent et non installable : ignoré)"
+fi
+
+section "kit project ci"
+KIT="$ROOT/scripts/kit.sh"
+CIP="$TMP/ci"
+mkdir -p "$CIP"
+cidet() { # dossier : piles détectées, une ligne
+  ( # shellcheck disable=SC1090
+    source <(sed -n '/^detect_ci_stacks()/,/^}/p' "$KIT"); detect_ci_stacks "$1" | paste -sd' ' - )
+}
+mkdir -p "$CIP/astro" "$CIP/next" "$CIP/vite" "$CIP/gocli" "$CIP/goweb" "$CIP/rust" "$CIP/tauri/src-tauri" "$CIP/pb/pb_hooks" "$CIP/static" "$CIP/empty" "$CIP/pbvite/pb_migrations"
+echo '{"dependencies":{"astro":"^5.0.0"}}' >"$CIP/astro/package.json"
+echo '{"dependencies":{"next":"16.0.0","react":"19.0.0"}}' >"$CIP/next/package.json"
+echo '{"devDependencies":{"vite":"7.0.0"}}' >"$CIP/vite/package.json"
+echo '{"devDependencies":{"vite":"7.0.0"}}' >"$CIP/pbvite/package.json"
+: >"$CIP/gocli/go.mod"; : >"$CIP/gocli/.goreleaser.yaml"; : >"$CIP/goweb/go.mod"
+: >"$CIP/rust/Cargo.toml"
+echo '{"devDependencies":{"@tauri-apps/cli":"2.12.4","vite":"7.0.0"}}' >"$CIP/tauri/package.json"; : >"$CIP/tauri/src-tauri/Cargo.toml"
+echo '<!DOCTYPE html>' >"$CIP/static/index.html"
+dres=""
+for c in "astro:astro" "next:next" "vite:vite" "gocli:go-cli" "goweb:go-web" "rust:rust" "tauri:tauri" "pb:pocketbase" "static:static" "empty:" "pbvite:vite pocketbase"; do
+  got=$(cidet "$CIP/${c%%:*}")
+  [[ $got == "${c#*:}" ]] || dres="$dres ${c%%:*}=[$got]"
+done
+[[ -z $dres ]] && ok_ "project ci : détection (astro, next, vite, go-cli, go-web, rust, tauri, pocketbase, static, vide, pocketbase+vite)" || ko_ "project ci : détection" "$dres"
+cout=$("$KIT" project ci --dir "$CIP/astro" 2>&1)
+cmp -s "$CIP/astro/.forgejo/workflows/ci.yml" "$CID/astro.yml" && grep -q 'piles de CI détectées : astro' <<<"$cout" \
+  && ok_ "project ci : sans argument, pose .forgejo/workflows/ci.yml de la pile détectée" || ko_ "project ci : écriture" "$cout"
+[[ $(grep -v '^#' "$CIP/astro/.fs0/bridge.yaml") == 'enabled: true' ]] && ok_ "project ci : .fs0/bridge.yaml minimal (enabled: true)" || ko_ "project ci : bridge.yaml"
+cmp -s "$CIP/astro/renovate.json" "$ROOT/templates/project/renovate.json" && ok_ "project ci : renovate.json absent = gabarit du projet" || ko_ "project ci : renovate.json créé"
+echo "# edited" >>"$CIP/astro/.forgejo/workflows/ci.yml"
+cp "$CIP/astro/.forgejo/workflows/ci.yml" "$TMP/ci-edited.yml"
+"$KIT" project ci --dir "$CIP/astro" >/dev/null 2>&1 && ko_ "project ci : un ci.yml existant doit être refusé sans --force" || ok_ "project ci : ci.yml existant refusé sans --force"
+cmp -s "$CIP/astro/.forgejo/workflows/ci.yml" "$TMP/ci-edited.yml" && ok_ "project ci : ci.yml existant intact" || ko_ "project ci : ci.yml écrasé"
+echo 'enabled: false' >"$CIP/astro/.fs0/bridge.yaml"
+"$KIT" project ci vite --force --dir "$CIP/astro" >/dev/null 2>&1
+cmp -s "$CIP/astro/.forgejo/workflows/ci.yml" "$CID/vite.yml" && ok_ "project ci vite --force : écrase avec la pile donnée" || ko_ "project ci --force"
+[[ $(cat "$CIP/astro/.fs0/bridge.yaml") == 'enabled: false' ]] && ok_ "project ci : un .fs0/bridge.yaml existant n'est jamais réécrit" || ko_ "project ci : bridge.yaml réécrit"
+"$KIT" project ci backend-go pocketbase --force --dir "$CIP/astro" >/dev/null 2>&1
+cmp -s "$CIP/astro/.forgejo/workflows/ci.yml" "$CID/go-web.yml" && cmp -s "$CIP/astro/.forgejo/workflows/ci-pocketbase.yml" "$CID/pocketbase.yml" \
+  && ok_ "project ci backend-go pocketbase : type du registre traduit (go-web), seconde pile dans ci-pocketbase.yml" || ko_ "project ci : plusieurs piles"
+"$KIT" project ci nonsense --dir "$CIP/empty" >/dev/null 2>&1 && ko_ "project ci : une pile inconnue doit échouer" || ok_ "project ci : pile inconnue refusée"
+cout=$("$KIT" project ci --dir "$CIP/empty" 2>&1)
+[[ ! -e $CIP/empty/.forgejo && ! -e $CIP/empty/.fs0 ]] && grep -q 'aucune pile de CI' <<<"$cout" && ok_ "project ci : rien détecté, rien écrit" || ko_ "project ci : dossier sans pile" "$cout"
+# Symbolic links: the workflow file, the workflows directory, bridge.yaml, renovate.json.
+mkdir -p "$CIP/l1/.forgejo/workflows" "$TMP/ci-out"
+: >"$CIP/l1/go.mod"
+echo keep >"$TMP/ci-out/target.yml"
+ln -s "$TMP/ci-out/target.yml" "$CIP/l1/.forgejo/workflows/ci.yml"
+"$KIT" project ci --force --dir "$CIP/l1" >/dev/null 2>&1 && ko_ "project ci : ci.yml en lien symbolique doit être refusé" || ok_ "project ci : ci.yml en lien symbolique refusé (même avec --force)"
+[[ $(cat "$TMP/ci-out/target.yml") == keep ]] && ok_ "project ci : la cible du lien n'est pas modifiée" || ko_ "project ci : cible du lien modifiée"
+mkdir -p "$CIP/l2/.forgejo"
+: >"$CIP/l2/go.mod"
+ln -s "$TMP/ci-out" "$CIP/l2/.forgejo/workflows"
+"$KIT" project ci --dir "$CIP/l2" >/dev/null 2>&1 && ko_ "project ci : .forgejo/workflows en lien doit être refusé" || ok_ "project ci : dossier .forgejo/workflows en lien refusé"
+[[ ! -e $TMP/ci-out/ci.yml ]] && ok_ "project ci : rien écrit à travers le lien" || ko_ "project ci : écrit à travers le lien"
+mkdir -p "$CIP/l3"
+: >"$CIP/l3/go.mod"
+echo '{}' >"$TMP/ci-out/renovate.json"
+ln -s "$TMP/ci-out/renovate.json" "$CIP/l3/renovate.json"
+"$KIT" project ci --dir "$CIP/l3" >/dev/null 2>&1 && ko_ "project ci : renovate.json en lien doit être refusé" || ok_ "project ci : renovate.json en lien refusé"
+[[ ! -e $CIP/l3/.forgejo && $(cat "$TMP/ci-out/renovate.json") == '{}' ]] && ok_ "project ci : refus avant toute écriture" || ko_ "project ci : écriture partielle avant refus"
+: >"$HOME/go.mod"
+"$KIT" project ci --dir "$HOME" >/dev/null 2>&1 && ko_ "project ci : le dossier personnel doit être refusé" || ok_ "project ci : dossier personnel refusé"
+[[ ! -e $HOME/.forgejo ]] && ok_ "project ci : rien écrit dans le dossier personnel" || ko_ "project ci : écrit dans le dossier personnel"
+rm -f "$HOME/go.mod"
+# Renovate: an existing renovate.json is never touched; another Renovate config file means none is created.
+mkdir -p "$CIP/r1" "$CIP/r3"
+for d in r1 r3; do : >"$CIP/$d/go.mod"; done
+echo '{"extends":["config:base"]}' >"$CIP/r1/renovate.json"
+"$KIT" project ci --dir "$CIP/r1" >/dev/null 2>&1
+[[ $(cat "$CIP/r1/renovate.json") == '{"extends":["config:base"]}' ]] && ok_ "project ci : renovate.json existant laissé intact" || ko_ "project ci : renovate.json existant modifié"
+echo '{}' >"$CIP/r3/renovate.json5"
+"$KIT" project ci --dir "$CIP/r3" >/dev/null 2>&1
+[[ ! -e $CIP/r3/renovate.json && $(cat "$CIP/r3/renovate.json5") == '{}' ]] \
+  && ok_ "project ci : autre fichier Renovate (renovate.json5) : aucun renovate.json créé" || ko_ "project ci : renovate.json5"
+mkdir -p "$CIP/gh/.github/workflows"
+: >"$CIP/gh/go.mod"
+cout=$("$KIT" project ci --dir "$CIP/gh" 2>&1)
+grep -q '.github/workflows/ existe' <<<"$cout" && ok_ "project ci : prévient quand .github/workflows/ existe" || ko_ "project ci : avertissement .github" "$cout"
+# kit project add / new: CI of the type when absent, existing workflow left untouched, --no-ci.
+PA="$TMP/ci-add"
+mkdir -p "$PA"
+"$KIT" project add astro-static --no-skills --dir "$PA" >/dev/null 2>&1
+cmp -s "$PA/.forgejo/workflows/ci.yml" "$CID/astro.yml" && [[ -f $PA/.fs0/bridge.yaml ]] && ok_ "project add astro-static : pose la CI astro et .fs0/bridge.yaml" || ko_ "project add : CI"
+echo "# mine" >"$PA/.forgejo/workflows/ci.yml"
+cout=$("$KIT" project add backend-go --no-skills --dir "$PA" 2>&1); rc=$?
+[[ $rc == 0 && $(cat "$PA/.forgejo/workflows/ci.yml") == '# mine' ]] && grep -q 'CI déjà présente' <<<"$cout" \
+  && ok_ "project add : CI existante laissée telle quelle, sans erreur" || ko_ "project add : CI existante" "$cout"
+PB="$TMP/ci-add2"
+mkdir -p "$PB"
+"$KIT" project add backend-rust --no-skills --no-ci --dir "$PB" >/dev/null 2>&1
+[[ ! -e $PB/.forgejo && ! -e $PB/.fs0 ]] && ok_ "project add --no-ci : aucune CI posée" || ko_ "project add --no-ci"
+cmp -s "$PNEW/.forgejo/workflows/ci.yml" "$CID/go-web.yml" && ok_ "project new backend-go : CI go-web posée" || ko_ "project new : CI"
+"$KIT" help 2>&1 | grep -q 'kit project ci' && ok_ "usage : kit project ci documenté" || ko_ "usage : kit project ci"
+grep -q 'kit project add <type>...` (pose aussi la CI Forgejo)' "$ROOT/global/commands/new-project.md" && ok_ "/new-project : kit project add pose la CI" || ko_ "/new-project : CI non citée"
+grep -qF -- '- CI dans `.forgejo/workflows/`, jamais `.github/workflows/`.' "$ROOT/global/CLAUDE.md" && ok_ "CLAUDE.md global : CI dans .forgejo/workflows/" || ko_ "CLAUDE.md global : règle de CI absente"
+
 # kit sync ne salit pas le dépôt du kit, et refuse d'appliquer des réglages si scripts/ ou global/settings*.json y ont des
 # modifications non commitées (un agent aurait pu y écrire un hook ou une règle).
 KG="$TMP/kitgit"
