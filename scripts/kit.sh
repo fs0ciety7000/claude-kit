@@ -160,10 +160,12 @@ cmd_skills() {
   esac
 }
 
-regen_registry() {
-  local reg="$KIT_HOME/global/skills-registry.md" tmp blk p content
-  [[ -f $reg ]] || return 0
-  grep -q 'kit:profiles:start' "$reg" || { warn "marqueurs absents dans $reg : table non régénérée"; return 0; }
+# render_registry <source> <destination> : copies the registry with its generated profiles table rebuilt from
+# profiles/*.txt; writes only when the content changes. Returns 1 when the markers are missing.
+render_registry() {
+  local src=$1 dst=$2 tmp blk p content
+  [[ -f $src ]] || return 0
+  grep -q 'kit:profiles:start' "$src" || { warn "marqueurs absents dans $src : table non régénérée"; return 1; }
   tmp=$(mktemp)
   blk=$(mktemp)
   {
@@ -182,10 +184,27 @@ regen_registry() {
     /<!-- kit:profiles:start -->/ { while ((getline l < blk) > 0) print l; skip = 1; next }
     /<!-- kit:profiles:end -->/   { skip = 0; next }
     !skip { print }
-  ' "$reg" >"$tmp"
-  cmp -s "$tmp" "$reg" || cat "$tmp" >"$reg"   # n'écrit que si le contenu change
+  ' "$src" >"$tmp"
+  if [[ ! -f $dst ]] || ! cmp -s "$tmp" "$dst"; then cat "$tmp" >"$dst"; fi   # n'écrit que si le contenu change
   rm -f "$tmp" "$blk"
+}
+
+# kit registry / kit add-skill : regenerates the table in the TRACKED registry of the kit (the user then commits it).
+regen_registry() {
+  local reg="$KIT_HOME/global/skills-registry.md"
+  [[ -f $reg ]] || return 0
+  render_registry "$reg" "$reg" || return 0
   ok "registre mis à jour"
+}
+
+# kit sync : the registry Claude reads is a copy in $KIT_CONFIG, so the kit clone stays clean.
+sync_registry() {
+  local reg="$KIT_HOME/global/skills-registry.md" dst="$KIT_CONFIG/skills-registry.md"
+  [[ -f $reg ]] || return 0
+  [[ -d $KIT_CONFIG ]] || { mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; }
+  render_registry "$reg" "$dst" || return 0
+  chmod 644 "$dst" 2>/dev/null || true
+  ok "registre mis à jour (${dst/#$HOME/~})"
 }
 
 cmd_add_skill() {
@@ -1074,7 +1093,7 @@ cmd_sync() {
   if ((dry)); then apply_managed_settings --dry-run ${opts[@]+"${opts[@]}"}; return 0; fi
   link_global
   apply_managed_settings ${opts[@]+"${opts[@]}"}
-  [[ ${KIT_SYNC_REGISTRY:-1} == 0 ]] || regen_registry
+  [[ ${KIT_SYNC_REGISTRY:-1} == 0 ]] || sync_registry
   sync_context
   ok "liens et réglages à jour"
 }
@@ -1199,6 +1218,8 @@ cmd_update() {
   if [[ -f $KIT_CONFIG/autoupdate.pin ]]; then
     warn "kit épinglé ($KIT_CONFIG/autoupdate.pin) : pas de git pull ; kit autoupdate unpin pour suivre main"
   else
+    # A registry modified only in its generated table (left by kit sync of older versions) is restored: it would stop the pull.
+    restore_generated_registry "$KIT_HOME"
     git -C "$KIT_HOME" pull --ff-only
   fi
   cmd_sync

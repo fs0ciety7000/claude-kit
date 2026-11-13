@@ -98,6 +98,21 @@ link_file() { # src dst
   fi
 }
 
+# Text of a registry without its generated profiles block (between the kit:profiles markers).
+registry_strip() { # fichier
+  awk '/<!-- kit:profiles:start -->/ { skip = 1; next } /<!-- kit:profiles:end -->/ { skip = 0; next } !skip { print }' "$1"
+}
+# If the registry of the kit clone differs from HEAD only by its generated profiles block (what kit sync of older versions
+# left behind), restore it: that is the only change `git pull` should not trip on. Anything else is left alone.
+restore_generated_registry() { # dépôt-du-kit
+  local kh=$1 f="$1/global/skills-registry.md" head_txt cur_txt
+  [[ -e $kh/.git && -f $f ]] || return 0
+  git -C "$kh" diff --quiet HEAD -- global/skills-registry.md 2>/dev/null && return 0
+  head_txt=$(git -C "$kh" show HEAD:global/skills-registry.md 2>/dev/null | awk '/<!-- kit:profiles:start -->/ { skip = 1; next } /<!-- kit:profiles:end -->/ { skip = 0; next } !skip { print }') || return 0
+  cur_txt=$(registry_strip "$f")
+  if [[ $head_txt == "$cur_txt" ]]; then git -C "$kh" checkout -q HEAD -- global/skills-registry.md 2>/dev/null || true; fi
+}
+
 link_global() {
   # Le dossier de config (registre des réglages, surcharge locale, secrets chiffrés) n'est lisible que par son propriétaire.
   if [[ ! -d $KIT_CONFIG ]]; then mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; fi
@@ -106,7 +121,10 @@ link_global() {
   link_dir  "$KIT_HOME/global/commands" "$CLAUDE_HOME/commands"
   link_dir  "$KIT_HOME/global/skills"   "$CLAUDE_HOME/skills"
   link_file "$KIT_HOME/global/CLAUDE.md"          "$CLAUDE_HOME/CLAUDE.md"
-  link_file "$KIT_HOME/global/skills-registry.md" "$CLAUDE_HOME/skills-registry.md"
+  # The registry Claude reads is a generated copy in $KIT_CONFIG (the profiles table is rebuilt by kit sync): writing it into
+  # the kit clone would dirty the work tree, break `git pull` and trip the work-tree protection of kit sync.
+  if [[ ! -f $KIT_CONFIG/skills-registry.md && -f $KIT_HOME/global/skills-registry.md ]]; then cp "$KIT_HOME/global/skills-registry.md" "$KIT_CONFIG/skills-registry.md"; fi
+  link_file "$KIT_CONFIG/skills-registry.md" "$CLAUDE_HOME/skills-registry.md"
   ln -sfn "$KIT_HOME/scripts/hooks/guard-secrets.sh" "$KIT_CONFIG/hooks/guard-secrets.sh"
   ln -sfn "$KIT_HOME/scripts/hooks/kit-autoupdate.sh" "$KIT_CONFIG/hooks/kit-autoupdate.sh"
   ln -sfn "$KIT_HOME/scripts/hooks/kit-dockerd.sh" "$KIT_CONFIG/hooks/kit-dockerd.sh"

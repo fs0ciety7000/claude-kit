@@ -1018,6 +1018,30 @@ for _ in $(seq 1 50); do [[ -s $MARK ]] && break; sleep 0.1; done
 grep -q 'kit sync après' "$KIT_CONFIG/autoupdate.log" 2>/dev/null && ok_ "journal autoupdate.log écrit" || ko_ "journal autoupdate.log écrit"
 [[ $(wc -l <<<"$OUT") == 1 ]] && ok_ "une seule ligne de sortie" || ko_ "une seule ligne de sortie"
 
+# 3b. Registre modifié seulement dans sa table générée (kit sync d'anciennes versions) : restauré, la mise à jour passe ;
+# une vraie modification du registre n'est jamais touchée.
+mkdir -p "$SEED/global"
+printf '# R\n<!-- kit:profiles:start -->\nA\n<!-- kit:profiles:end -->\nroutage\n' >"$SEED/global/skills-registry.md"
+git -C "$SEED" add -A && git -C "$SEED" commit -q -m reg && git -C "$SEED" push -q origin main
+git -C "$KITCLONE" pull -q --ff-only
+printf '# R\n<!-- kit:profiles:start -->\nB\n<!-- kit:profiles:end -->\nroutage\n' >"$KITCLONE/global/skills-registry.md"
+push_commit v3r
+echo $(($(date +%s) - 30000)) >"$KIT_CONFIG/autoupdate.stamp"
+run_hook A=1
+[[ $RC == 0 && $OUT == "kit mis à jour : "* && -z $(git -C "$KITCLONE" status --porcelain --untracked-files=no) ]] \
+  && ok_ "registre modifié dans sa seule table générée : restauré, mise à jour faite" || ko_ "registre généré : restauré" "code $RC, sortie : $OUT"
+printf '# R\n<!-- kit:profiles:start -->\nA\n<!-- kit:profiles:end -->\nroutage modifié\n' >"$KITCLONE/global/skills-registry.md"
+push_commit v3s
+before=$(head_of)
+echo $(($(date +%s) - 30000)) >"$KIT_CONFIG/autoupdate.stamp"
+run_hook A=1
+[[ $RC == 0 && $OUT == *"ignorée"*"modifications locales"* && $(head_of) == "$before" ]] && grep -q 'routage modifié' "$KITCLONE/global/skills-registry.md" \
+  && ok_ "registre vraiment modifié : conservé, mise à jour ignorée" || ko_ "registre modifié : conservé" "code $RC, sortie : $OUT"
+git -C "$KITCLONE" checkout -q -- global/skills-registry.md
+rm -f "$KIT_CONFIG/autoupdate.skip.stamp"
+echo $(($(date +%s) - 30000)) >"$KIT_CONFIG/autoupdate.stamp"
+run_hook A=1
+
 # 4. Arbre sale : ignoré, code 0.
 push_commit v3
 echo dirty >>"$KITCLONE/VERSION"
@@ -1831,7 +1855,10 @@ rg_out=$(env KIT_HOME="$RG" bash "$RG/scripts/kit.sh" registry 2>&1); rg_rc=$?
   && ok_ "kit registry : un profil sans une seule ligne utile s'affiche (vide), code 0" || ko_ "kit registry : profil de commentaires" "code $rg_rc : $rg_out"
 printf '# Registre\n<!-- kit:profiles:start -->\nancien\n<!-- kit:profiles:end -->\nfin\n' >"$RG/global/skills-registry.md"
 rg_out=$(env KIT_HOME="$RG" KIT_SYNC_CONTEXT=0 bash "$RG/scripts/kit.sh" sync 2>&1); rg_rc=$?
-[[ $rg_rc == 0 ]] && grep -qF '| `custom` | (vide) |' "$RG/global/skills-registry.md" && ok_ "kit sync (registre non masqué) : profil de commentaires, code 0, table régénérée" || ko_ "kit sync : profil de commentaires" "code $rg_rc : $rg_out"
+[[ $rg_rc == 0 ]] && grep -qF '| `custom` | (vide) |' "$KIT_CONFIG/skills-registry.md" && ! grep -q ancien "$KIT_CONFIG/skills-registry.md" \
+  && ok_ "kit sync (registre non masqué) : profil de commentaires, code 0, table régénérée dans \$KIT_CONFIG" || ko_ "kit sync : profil de commentaires" "code $rg_rc : $rg_out"
+grep -q ancien "$RG/global/skills-registry.md" && ok_ "kit sync ne réécrit pas le registre suivi du dépôt du kit" || ko_ "kit sync a réécrit le registre suivi"
+[[ $(readlink "$HOME/.claude/skills-registry.md") == "$KIT_CONFIG/skills-registry.md" ]] && ok_ "le lien skills-registry.md de .claude pointe vers la copie générée" || ko_ "lien du registre" "$(readlink "$HOME/.claude/skills-registry.md")"
 reset_home
 
 # kit --version : tag (ou révision) et date du commit.
@@ -2112,6 +2139,50 @@ PNEW="$TMP/perm-new"
 jqc '(.permissions.allow | index("Bash(go vet ./...)") != null) and (.hooks | has("SessionStart"))' "$PNEW/.claude/settings.json" \
   && ok_ "project new backend-go : règles de pile et hook de démarrage du gabarit réunis" || ko_ "project new : règles de pile" "$(jq -c . "$PNEW/.claude/settings.json" 2>&1 | cut -c1-200)"
 "$ROOT/scripts/kit.sh" help 2>&1 | grep -q 'kit project perms' && ok_ "usage : kit project perms documenté" || ko_ "usage : kit project perms"
+
+# kit sync ne salit pas le dépôt du kit, et refuse d'appliquer des réglages si scripts/ ou global/settings*.json y ont des
+# modifications non commitées (un agent aurait pu y écrire un hook ou une règle).
+KG="$TMP/kitgit"
+mkdir -p "$KG"
+cp -R "$ROOT/global" "$ROOT/profiles" "$ROOT/scripts" "$ROOT/templates" "$KG/"
+rm -rf "$KG/scripts/test"
+git -C "$KG" init -q -b main
+git -C "$KG" add -A && git -C "$KG" commit -q -m kit
+ksync() { env KIT_HOME="$KG" KIT_SYNC_CONTEXT=0 bash "$KG/scripts/kit.sh" sync "$@"; }
+reset_home
+ksout=$(ksync 2>&1)
+[[ -z $(git -C "$KG" status --porcelain --untracked-files=all) ]] && ok_ "kit sync : git status --porcelain du dépôt du kit vide après un sync" || ko_ "kit sync a sali le dépôt du kit" "$(git -C "$KG" status --porcelain | head -3)"
+grep -q 'kit:profiles:start' "$KIT_CONFIG/skills-registry.md" && [[ ! -L $KIT_CONFIG/skills-registry.md ]] && ok_ "kit sync : copie générée du registre dans \$KIT_CONFIG" || ko_ "copie du registre" "$ksout"
+jqc '.permissions.allow | index("Bash(git status*)") != null' "$(cur_settings)" && ok_ "kit sync : réglages appliqués (arbre propre)" || ko_ "kit sync : réglages" "$ksout"
+jqc 'any(.permissions.deny[]; startswith("Edit(") and endswith("/scripts/**)") and contains("kitgit"))' "$(cur_settings)" \
+  && ok_ "kit sync : deny Edit/Write du kit installé (scripts/**) posé pour ce poste" || ko_ "deny du kit installé" "$(jq -c '[.permissions.deny[] | select(startswith("Edit("))]' "$(cur_settings)")"
+jqc 'any(.permissions.deny[]; startswith("Write(") and endswith("/global/settings*.json)") and contains("kitgit"))' "$(cur_settings)" \
+  && ok_ "kit sync : deny Write du kit installé (global/settings*.json) posé" || ko_ "deny Write du kit installé"
+cp "$(cur_settings)" "$TMP/ks0.json"
+echo "# modifié hors du dépôt par un agent" >>"$KG/scripts/hooks/guard-secrets.sh"
+jq '.permissions.allow += ["Bash(evil *)"]' "$KG/global/settings.json" >"$TMP/ks-evil.json" && cp "$TMP/ks-evil.json" "$KG/global/settings.json"
+ksout=$(ksync 2>&1)
+grep -q 'réglages non appliqués' <<<"$ksout" && cmp -s "$(cur_settings)" "$TMP/ks0.json" \
+  && ok_ "kit sync : modifications non commitées de scripts/ ou global/settings*.json : réglages non appliqués, fichier intact" || ko_ "kit sync : arbre modifié" "$ksout"
+kdry=$(ksync --dry-run 2>&1)
+grep -q 'réglages non appliqués' <<<"$kdry" && grep -qF '+ "Bash(evil *)"' <<<"$kdry" && cmp -s "$(cur_settings)" "$TMP/ks0.json" \
+  && ok_ "kit sync --dry-run : prévient et montre quand même l'écart, sans rien écrire" || ko_ "kit sync --dry-run : arbre modifié" "$kdry"
+ksout=$(ksync --yes 2>&1)
+jqc '.permissions.allow | index("Bash(evil *)") != null' "$(cur_settings)" && ok_ "kit sync --yes : accepte les modifications relues" || ko_ "kit sync --yes" "$ksout"
+git -C "$KG" checkout -q -- .
+# Un registre suivi modifié par erreur (table générée) ne bloque pas kit sync ; kit update le restaure.
+printf '\n<!-- bruit -->\n' >>"$KG/global/skills-registry.md"
+ksout=$(ksync 2>&1)
+grep -q 'réglages non appliqués' <<<"$ksout" && ko_ "un registre modifié ne doit pas bloquer kit sync" "$ksout" || ok_ "kit sync : le registre suivi n'entre pas dans la protection de l'arbre"
+git -C "$KG" checkout -q -- .
+awk '/kit:profiles:start/ { print; print "| fantôme | x |"; next } { print }' "$KG/global/skills-registry.md" >"$TMP/reg-gen.md" && cp "$TMP/reg-gen.md" "$KG/global/skills-registry.md"
+( source "$ROOT/scripts/lib.sh"; restore_generated_registry "$KG" )
+[[ -z $(git -C "$KG" status --porcelain) ]] && ok_ "restore_generated_registry : la table générée modifiée est restaurée" || ko_ "restore_generated_registry (table)"
+printf '\nligne ajoutée à la main\n' >>"$KG/global/skills-registry.md"
+( source "$ROOT/scripts/lib.sh"; restore_generated_registry "$KG" )
+grep -q 'ligne ajoutée à la main' "$KG/global/skills-registry.md" && ok_ "restore_generated_registry : une vraie modification est conservée" || ko_ "restore_generated_registry (vraie modification)"
+git -C "$KG" checkout -q -- .
+reset_home
 
 # ---------------------------------------------------------------------------
 section "dépôt du kit"

@@ -156,6 +156,13 @@ elif [[ -n $pin ]]; then
 elif [[ $branch != main ]]; then
   skip "kit : mise à jour auto ignorée (branche « ${branch:-détachée} », pas main) dans $KIT_HOME."
 fi
+# A registry modified only in its generated profiles table (older kit sync versions rewrote it in the clone) is restored.
+if [[ -n $(g 3 status --porcelain --untracked-files=no -- global/skills-registry.md) ]]; then
+  strip_gen='/<!-- kit:profiles:start -->/ { skip = 1; next } /<!-- kit:profiles:end -->/ { skip = 0; next } !skip { print }'
+  head_txt=$(g 3 show HEAD:global/skills-registry.md | awk "$strip_gen")
+  cur_txt=$(awk "$strip_gen" "$KIT_HOME/global/skills-registry.md" 2>/dev/null)
+  if [[ -n $head_txt && $head_txt == "$cur_txt" ]]; then g 3 checkout -q HEAD -- global/skills-registry.md; fi
+fi
 if [[ -n $(g 3 status --porcelain --untracked-files=no) ]]; then
   skip "kit : mise à jour auto ignorée (modifications locales dans $KIT_HOME)."
 fi
