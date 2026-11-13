@@ -253,10 +253,10 @@ one() { # key file : metrics <key>.words/.chars (0 when the file is absent)
 one new_project_command "$ROOT/global/commands/new-project.md"
 one skills_registry "$ROOT/global/skills-registry.md"
 one team_builder "$ROOT/global/skills/team-builder/SKILL.md"
-# Superpowers on the path: brainstorming (phase 1, vague idea) and writing-plans (phase 7), then the executors that
-# writing-plans hands over to (subagent-driven-development recommended, executing-plans alternative). SKILL.md only:
-# the companion files are read on demand. A skill that is not in global/skills (removed in v2) counts for nothing.
-PATH_SKILLS="brainstorming writing-plans subagent-driven-development executing-plans"
+# Superpowers on the path: brainstorming (phase 1, vague idea) and writing-plans (phase 3), the two Superpowers skills
+# the kit keeps (the nine others were removed in v2). SKILL.md only: the companion files are read on demand. A skill
+# that is not in global/skills counts for nothing.
+PATH_SKILLS="brainstorming writing-plans"
 sp_w=0 sp_c=0 sp_n=0
 : >"$TMP/sp.tsv"
 for s in $PATH_SKILLS; do

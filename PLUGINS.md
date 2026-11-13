@@ -8,12 +8,15 @@ Un plugin peut embarquer des **hooks** (commandes exécutées sur ta machine) : 
 
 | Plugin | Utilité | Commandes |
 |---|---|---|
-| **Superpowers** (obra) | workflow : brainstorming, plan, TDD, revue | `/plugin marketplace add obra/superpowers` puis `/plugin install superpowers@superpowers-marketplace` |
 | **Cloudflare** (cloudflare/skills, Apache-2.0) | wrangler, Workers, Durable Objects, Next sur Cloudflare, MCP Cloudflare | `/plugin marketplace add cloudflare/skills` puis `/plugin install cloudflare@cloudflare` |
 | **logo-design** (kaankiziltug, MIT) | logos SVG, tests de lisibilité, export d'icônes et favicons | `/plugin marketplace add kaankiziltug/logo-design-skill` puis `/plugin install logo-design@logo-design-skill` |
 | **web-animation-skills** (iart-ai, MIT, jeune projet) | GSAP, 60 fps, micro-interactions, Lottie, SVG | `/plugin marketplace add iart-ai/web-animation-skills` puis `/plugin install web-animation-skills` |
 | **ponytail** (DietrichGebert, MIT) | pousse l'agent à écrire le minimum de code ; `/ponytail-review`, `/ponytail-audit` (a des hooks : à relire) | `/plugin marketplace add DietrichGebert/ponytail` puis `/plugin install ponytail@ponytail` |
 | **Agents VoltAgent** | 100+ sous-agents génériques par catégorie | `/plugin marketplace add VoltAgent/awesome-claude-code-subagents` puis `/plugin install voltagent-qa-sec` (ou `voltagent-core-dev`, `voltagent-lang`...) |
+
+Le plugin **Superpowers** n'est volontairement pas installé : il ramènerait les onze skills (dont neuf retirés du kit en
+v2) et un hook de démarrage. Le kit n'en garde que `brainstorming` et `writing-plans`, corrigés
+(`vendor/superpowers/PATCHES.md`).
 
 ## Collections indexées (sans installation)
 
