@@ -108,13 +108,6 @@
       "Bash(kit perms allow *)",
       "Bash(kit perms list*)",
       "Bash(kit perms check *)",
-      "mcp__kit-control__checkpoint",
-      "mcp__kit-control__ask",
-      "mcp__kit-control__wait_for_answer",
-      "mcp__kit-control__task_create",
-      "mcp__kit-control__task_update",
-      "mcp__kit-control__task_list",
-      "Bash(kit dash *)",
       "Bash(node *)",
       "Bash(npx quartz*)",
       "Bash(npm view*)",
@@ -244,28 +237,9 @@
             "command": "$HOME/.config/claude-kit/hooks/guard-secrets.sh"
           }
         ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
-            "timeout": 5
-          }
-        ]
       }
     ],
     "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
-            "timeout": 5
-          }
-        ]
-      },
       {
         "matcher": "startup|resume",
         "hooks": [
@@ -278,84 +252,6 @@
             "type": "command",
             "command": "$HOME/.config/claude-kit/hooks/kit-dockerd.sh",
             "timeout": 25
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh",
-            "timeout": 5
           }
         ]
       }

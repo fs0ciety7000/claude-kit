@@ -66,12 +66,6 @@ API COOLIFY / CLOUDFLARE / GITHUB (jeton jamais visible dans `ps`)
         ouvre une PR sur claude-kit qui ajoute une stack au registre (ligne de routage, profil de skills, détection)
         JSON : {"type","detection","profile","skills":[{"source","skill"}],"load":[...],"agents":[...],"detect":[{"kind":"file|pkg","pattern"}]}
 
-DASHBOARD (vue en direct des sessions, agents, mémoire : claude-kit-dashboard)
-  kit dash setup <url>                    active le hook kit-emit et le serveur MCP kit-control (ex. https://kit.fs0ciety.org)
-        jeton : kit secrets add KIT_DASH_TOKEN -g (local) ; variable KIT_DASH_TOKEN (session cloud)
-  kit dash status                         configuration et joignabilité du dashboard
-  kit dash off                            désactive l'envoi
-
 INFOS & MAINTENANCE
   kit list                                agents, skills et profils disponibles
   kit mcp setup                           déclare le serveur MCP Coolify (jeton injecté, jamais écrit en clair)
@@ -682,29 +676,6 @@ cmd_detect() {
   echo "Appliquer : kit project add $(paste -sd' ' - <<<"$utypes")"
 }
 
-# Déclare le serveur MCP kit-control (portée utilisateur). En cloud, le proxy injecte le jeton ;
-# en local, headersHelper le tire du secret chiffré au moment de la connexion (jamais écrit en clair).
-dash_mcp() {
-  local url=$1 conf
-  command -v claude >/dev/null 2>&1 || { warn "claude introuvable : serveur MCP kit-control non déclaré"; return 0; }
-  if [[ -n ${KIT_DASH_TOKEN:-} ]]; then
-    # Jeton présent dans l'environnement (worker VPS) : le helper le lit à chaque connexion.
-    conf=$(jq -cn --arg u "$url/mcp" --arg h "$KIT_CONFIG/hooks/kit-emit.sh --headers" \
-      '{type: "http", url: $u, headersHelper: $h}')
-  elif [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
-    conf=$(jq -cn --arg u "$url/mcp" '{type: "http", url: $u}')
-  else
-    conf=$(jq -cn --arg u "$url/mcp" --arg h "kit secrets run -g -- $KIT_CONFIG/hooks/kit-emit.sh --headers" \
-      '{type: "http", url: $u, headersHelper: $h}')
-  fi
-  claude mcp remove --scope user kit-control >/dev/null 2>&1 || true
-  if claude mcp add-json --scope user kit-control "$conf" >/dev/null 2>&1; then
-    ok "serveur MCP kit-control déclaré ($url/mcp)"
-  else
-    warn "déclaration MCP échouée : claude mcp add-json --scope user kit-control '$conf'"
-  fi
-}
-
 # ---------- équipement : recherche de skills et d'agents ----------
 
 # kit equip search <mot-clé>... : JSON {skills:[...], agents:[...]} (contenu tiers : à relire avant installation)
@@ -815,43 +786,6 @@ registry_propose() {
     head: ("kit/registry-" + $t), base: "main",
     body: ("Proposé automatiquement par `kit registry propose` après un projet qui utilisait cette stack.\n\n- Type : `" + $t + "`\n- Profil : `" + $p + "`\n- Skills : " + (($s[0].skills // []) | map("`" + .source + "@" + .skill + "`") | join(", ")) + "\n- Agents : " + (($s[0].agents // []) | join(", ")) + "\n\nRelis les skills tiers avant de fusionner.")}')
   "$KIT_HOME/scripts/api.sh" github POST "/repos/$full/pulls" --json "$body" --jq '{number, html_url}'
-}
-
-# kit dash : branche le hook kit-emit sur le dashboard.
-cmd_dash() {
-  local sub=${1:-status} url
-  case $sub in
-    setup)
-      url=${2:-}
-      [[ $url =~ ^https?://[A-Za-z0-9.:-]+/?$ ]] || die "usage : kit dash setup https://kit.example.org"
-      mkdir -p "$KIT_CONFIG"
-      printf '%s\n' "${url%/}" >"$KIT_CONFIG/dash.url"
-      link_global
-      apply_managed_settings
-      ok "hook kit-emit actif vers ${url%/}"
-      dash_mcp "${url%/}"
-      if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
-        echo "Session cloud : variable KIT_DASH_URL dans l'environnement, jeton en secret réseau de l'hôte $(sed -E 's#https?://##; s#/.*##' <<<"$url") (Authorization: Bearer)."
-      else
-        echo "Jeton (copie-le depuis ${url%/}/#/settings) : kit secrets add KIT_DASH_TOKEN -g"
-      fi
-      cmd_dash status
-      ;;
-    status)
-      url=${KIT_DASH_URL:-$(cat "$KIT_CONFIG/dash.url" 2>/dev/null || true)}
-      [[ -n $url ]] || { info "dashboard non configuré (kit dash setup <url>)"; return 0; }
-      info "dashboard : $url"
-      local code
-      code=$(curl -s -o /dev/null --max-time 8 -w '%{http_code}' "$url/health" || echo 000)
-      [[ $code == 200 ]] && ok "joignable (/health $code)" || warn "/health répond $code (Access, réseau ou app arrêtée ?)"
-      [[ -x $KIT_CONFIG/hooks/kit-emit.sh ]] && ok "hook installé" || warn "hook absent : kit sync"
-      ;;
-    off)
-      rm -f "$KIT_CONFIG/dash.url"
-      command -v claude >/dev/null 2>&1 && claude mcp remove --scope user kit-control >/dev/null 2>&1
-      ok "envoi désactivé (KIT_DASH_URL dans l'environnement reste prioritaire)" ;;
-    *) die "usage : kit dash setup <url> | status | off" ;;
-  esac
 }
 
 cmd_project() {
@@ -1114,7 +1048,6 @@ main() {
     equip) cmd_equip "$@" ;;
     index) cmd_index "$@" ;;
     detect) cmd_detect "$@" ;;
-    dash) cmd_dash "$@" ;;
     repo) cmd_repo "$@" ;;
     list) cmd_list ;;
     mcp) cmd_mcp "$@" ;;

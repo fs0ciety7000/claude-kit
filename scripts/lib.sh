@@ -108,9 +108,25 @@ link_global() {
   link_file "$KIT_HOME/global/CLAUDE.md"          "$CLAUDE_HOME/CLAUDE.md"
   link_file "$KIT_HOME/global/skills-registry.md" "$CLAUDE_HOME/skills-registry.md"
   ln -sfn "$KIT_HOME/scripts/hooks/guard-secrets.sh" "$KIT_CONFIG/hooks/guard-secrets.sh"
-  ln -sfn "$KIT_HOME/scripts/hooks/kit-emit.sh" "$KIT_CONFIG/hooks/kit-emit.sh"
   ln -sfn "$KIT_HOME/scripts/hooks/kit-autoupdate.sh" "$KIT_CONFIG/hooks/kit-autoupdate.sh"
   ln -sfn "$KIT_HOME/scripts/hooks/kit-dockerd.sh" "$KIT_CONFIG/hooks/kit-dockerd.sh"
+  retire_dashboard
+}
+
+# The kit-control dashboard was abandoned (sessions are followed with `claude remote-control`). Removes what earlier
+# versions of `kit sync` left on this machine: the kit-emit hook link, its URL file and the user-scope MCP server
+# declaration. The settings entries (hooks, permissions) are retired by the managed-settings merge. Never fatal.
+retire_dashboard() {
+  local cj="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
+  rm -f "$KIT_CONFIG/hooks/kit-emit.sh" "$KIT_CONFIG/dash.url"
+  [[ -f $cj ]] || return 0
+  jq -e '(.mcpServers // {}) | has("kit-control")' "$cj" >/dev/null 2>&1 || return 0
+  if command -v claude >/dev/null 2>&1 && claude mcp remove --scope user kit-control >/dev/null 2>&1; then
+    ok "serveur MCP kit-control retiré (tableau de bord abandonné)"
+  else
+    warn "serveur MCP kit-control encore déclaré : claude mcp remove --scope user kit-control"
+  fi
+  return 0
 }
 
 # write_atomic <fichier> <contenu> [droits] : écrit dans un fichier temporaire du même dossier puis mv (jamais de fichier tronqué

@@ -176,7 +176,6 @@ run_start_hook() { # command
   local out ctx
   out=$(cd "$P" && timeout_cmd 15 env -i PATH="$PATH" HOME="$H" LC_ALL="$LC_ALL" TMPDIR="$SB" \
     CLAUDE_PROJECT_DIR="$P" CLAUDE_CODE_REMOTE= KIT_AUTOUPDATE=0 KIT_DOCKERD=0 \
-    KIT_DASH_URL="https://dashboard.invalid" KIT_DASH_TOKEN=measure \
     https_proxy=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 NO_PROXY= \
     bash -c "$1" <<<"$INPUT" 2>/dev/null) || true
   ctx=$(printf '%s' "$out" | jq -er '.hookSpecificOutput.additionalContext // empty' 2>/dev/null) || ctx=$out
@@ -187,7 +186,6 @@ hook_note() { # hook basename
   case "$1" in
     kit-autoupdate.sh) echo "network (git fetch): measured with KIT_AUTOUPDATE=0, i.e. 0; empty when the kit is up to date, one line after an update" ;;
     kit-dockerd.sh) echo "cloud sessions only: 0 on a local session" ;;
-    kit-emit.sh) echo "measured with a dashboard URL configured (owner's setup); the send itself is detached" ;;
     *) echo "" ;;
   esac
 }

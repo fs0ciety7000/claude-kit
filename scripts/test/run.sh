@@ -420,8 +420,10 @@ out=$(KIT_DOCKERD=0 CLAUDE_CODE_REMOTE=true bash "$ROOT/scripts/hooks/kit-docker
 [[ $rc == 0 && -z $out ]] && ok_ "kit-dockerd : KIT_DOCKERD=0 ne fait rien" || ko_ "kit-dockerd : KIT_DOCKERD=0"
 out=$(env -u CLAUDE_CODE_REMOTE -u KIT_DOCKERD bash "$ROOT/scripts/hooks/kit-dockerd.sh" </dev/null); rc=$?
 [[ $rc == 0 && -z $out ]] && ok_ "kit-dockerd : hors cloud, ne fait rien" || ko_ "kit-dockerd : hors cloud"
-jq -e '.hooks.SessionStart | length == 2 and any(.matcher == "startup|resume" and .hooks[0].timeout == 30)' "$TMP/merged.json" >/dev/null 2>&1 \
-  && ok_ "SessionStart : kit-emit conservé + autoupdate (startup|resume, timeout 30)" || ko_ "SessionStart : kit-emit conservé + autoupdate"
+jq -e '.hooks.SessionStart | length == 1 and any(.matcher == "startup|resume" and .hooks[0].timeout == 30)' "$TMP/merged.json" >/dev/null 2>&1 \
+  && ok_ "SessionStart : autoupdate seul (startup|resume, timeout 30)" || ko_ "SessionStart : autoupdate seul"
+jq -e '[.. | .command? // empty | select(type == "string")] | map(select(test("kit-emit"))) | length == 0' "$TMP/merged.json" >/dev/null 2>&1 \
+  && ok_ "settings.json du kit : plus aucun hook kit-emit" || ko_ "settings.json du kit : kit-emit présent"
 jq -e '.permissions.allow | index("Bash(kit perms allow *)") != null and index("mcp__claude-code-remote__add_repo") != null' "$TMP/merged.json" >/dev/null 2>&1 \
   && ok_ "allow : kit perms et add_repo présents" || ko_ "allow : kit perms et add_repo présents"
 "$ROOT/scripts/kit.sh" help 2>&1 | grep -q 'kit perms allow' && ok_ "usage : section PERMISSIONS" || ko_ "usage : section PERMISSIONS"
@@ -433,7 +435,7 @@ echo '{"model":"sonnet","hooks":{"Stop":[{"hooks":[{"type":"command","command":"
 chmod 600 "$TMP/real-settings.json"
 ln -s "$TMP/real-settings.json" "$HOME/.claude/settings.json"
 ( source "$ROOT/scripts/lib.sh"; apply_managed_settings >/dev/null 2>&1 )
-[[ -L $HOME/.claude/settings.json ]] && jq -e '.model == "sonnet" and (.hooks.Stop | length == 2) and (.hooks.SessionStart | length == 2)' "$TMP/real-settings.json" >/dev/null 2>&1 \
+[[ -L $HOME/.claude/settings.json ]] && jq -e '.model == "sonnet" and (.hooks.Stop | length == 1) and (.hooks.SessionStart | length == 1)' "$TMP/real-settings.json" >/dev/null 2>&1 \
   && ok_ "apply_managed_settings : lien conservé, cible fusionnée" || ko_ "apply_managed_settings : lien conservé, cible fusionnée"
 [[ $(stat -c %a "$TMP/real-settings.json" 2>/dev/null || stat -f %Lp "$TMP/real-settings.json") == 600 ]] && ok_ "apply_managed_settings : droits conservés" || ko_ "apply_managed_settings : droits conservés"
 [[ -z $(find "$TMP" -maxdepth 1 -name '.real-settings.json.*') ]] && ok_ "apply_managed_settings : aucun fichier temporaire résiduel" || ko_ "apply_managed_settings : fichier temporaire résiduel"
@@ -497,11 +499,11 @@ cmp -s "$(cur_settings)" "$TMP/i1.json" && ok_ "idempotence : fichier identique 
 [[ $(n_backups) == "$b1" ]] && ok_ "idempotence : pas de nouvelle sauvegarde" || ko_ "idempotence : nouvelle sauvegarde"
 cmp -s "$KIT_CONFIG/settings.managed.json" "$TMP/r1.json" && ok_ "idempotence : registre identique" || ko_ "idempotence : registre"
 
-# 5. Le groupe SessionStart dupliqué (kit-emit, autre timeout) est fusionné ; les groupes de hooks du kit retirés aussi.
+# 5. Le groupe SessionStart dupliqué (kit-autoupdate, autre timeout) est fusionné ; les groupes de hooks du kit retirés aussi.
 reset_home
 msync >/dev/null 2>&1
 n_ss=$(jq '.hooks.SessionStart | length' "$(cur_settings)")
-jq '.hooks.SessionStart += [{"hooks": [{"type": "command", "command": "$HOME/.config/claude-kit/hooks/kit-emit.sh", "timeout": 10}]}]
+jq '.hooks.SessionStart += [{"matcher": "startup|resume", "hooks": [{"type": "command", "command": "$HOME/.config/claude-kit/hooks/kit-autoupdate.sh", "timeout": 10}]}]
     | .hooks.SessionStart += [.hooks.SessionStart[1]]' "$(cur_settings)" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
 msync >/dev/null 2>&1
 [[ $(jq '.hooks.SessionStart | length' "$(cur_settings)") == "$n_ss" ]] && ok_ "doublon : SessionStart ramené à $n_ss groupes" || ko_ "doublon : SessionStart" "$(jq -c '.hooks.SessionStart | length' "$(cur_settings)")"
@@ -556,9 +558,70 @@ msync >/dev/null 2>&1
 jqc '.permissions.allow | index("Bash(make lint)") != null' "$(cur_settings)" && ok_ "migration : ajout utilisateur conservé" || ko_ "migration : ajout utilisateur"
 jqc '[.hooks.Stop[].hooks[].command] | index("echo mon-hook") != null' "$(cur_settings)" && ok_ "migration : hook utilisateur conservé" || ko_ "migration : hook utilisateur"
 jqc --arg r "$RULE" '.permissions.allow | index($r) == null' "$(cur_settings)" && ok_ "migration : règle v1 retirée du kit supprimée" || ko_ "migration : règle v1 retirée"
-jqc '.hooks.SessionStart | length == 2' "$(cur_settings)" && ok_ "migration : SessionStart dédoublonné" || ko_ "migration : SessionStart"
+jqc '.hooks.SessionStart | length == 1' "$(cur_settings)" && ok_ "migration : SessionStart dédoublonné" || ko_ "migration : SessionStart"
 [[ -f $KIT_CONFIG/settings.managed.json ]] && ok_ "migration : registre créé" || ko_ "migration : registre créé"
 cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+
+# 8a. Tableau de bord abandonné (2c) : un poste v1 (sans registre) et un poste v2 (registre de la 2b) perdent le hook
+# d'émission et ses autorisations au sync ; les hooks et règles de l'utilisateur restent, même dans un groupe du kit.
+EMIT='$HOME/.config/claude-kit/hooks/kit-emit.sh'
+CTL_RULES='["mcp__kit-control__ask","mcp__kit-control__task_create","Bash(kit dash *)"]'
+no_emit() { jqc '[.. | .command? // empty | select(type == "string") | select(test("kit-emit"))] | length == 0' "$1"; }
+# v1 : fichier de la v1 + hooks de l'utilisateur (un groupe à lui, un hook à lui dans un groupe de kit-emit).
+reset_home
+jq --arg e "$EMIT" '.hooks.Stop += [{"hooks": [{"type": "command", "command": "echo mon-hook"}]}]
+    | (.hooks.SessionEnd[] | select(any(.hooks[]; .command == $e)) | .hooks) += [{"type": "command", "command": "echo mon-hook-de-groupe"}]
+    | .permissions.allow += ["Bash(make lint)"]' "$ROOT/global/settings.v1.json" >"$(cur_settings)"
+jqc --arg e "$EMIT" '[.hooks[][].hooks[].command | select(. == $e)] | length >= 5' "$(cur_settings)" \
+  && ok_ "poste v1 : le fichier contient bien les hooks kit-emit au départ" || ko_ "poste v1 : kit-emit au départ"
+msync >/dev/null 2>&1
+no_emit "$(cur_settings)" && ok_ "poste v1 : plus aucun hook kit-emit après sync" || ko_ "poste v1 : kit-emit encore présent" "$(jq -c '[.hooks | to_entries[] | select(any(.value[].hooks[]; (.command // "") | test("kit-emit"))) | .key]' "$(cur_settings)")"
+jqc '[.hooks.Stop[].hooks[].command] | index("echo mon-hook") != null' "$(cur_settings)" && ok_ "poste v1 : hook utilisateur conservé" || ko_ "poste v1 : hook utilisateur"
+jqc '[.hooks.SessionEnd[].hooks[].command] == ["echo mon-hook-de-groupe"]' "$(cur_settings)" \
+  && ok_ "poste v1 : le hook de l'utilisateur placé dans un groupe kit-emit reste, seul" || ko_ "poste v1 : hook dans un groupe kit-emit" "$(jq -c '.hooks.SessionEnd' "$(cur_settings)")"
+jqc --argjson r "$CTL_RULES" '(.permissions.allow | index("Bash(make lint)") != null) and ([.permissions.allow[] | select(. as $x | $r | index($x))] | length == 0)' "$(cur_settings)" \
+  && ok_ "poste v1 : autorisations du tableau de bord retirées, règle utilisateur conservée" || ko_ "poste v1 : autorisations kit-control"
+jqc '[.hooks.PreToolUse[].hooks[].command | select(endswith("guard-secrets.sh"))] | length == 1' "$(cur_settings)" \
+  && ok_ "poste v1 : guard-secrets reste le seul hook PreToolUse du kit" || ko_ "poste v1 : guard-secrets"
+# v2 (poste synchronisé avec la 2b) : le registre est l'ancien K, qui contient kit-emit.
+reset_home
+OLDK="$TMP/oldk.json"
+jq --arg e "$EMIT" --argjson r "$CTL_RULES" '
+    .hooks.SessionStart = [{"hooks": [{"type": "command", "command": $e, "timeout": 5}]}] + .hooks.SessionStart
+    | .hooks.PostToolUse = [{"matcher": "*", "hooks": [{"type": "command", "command": $e, "timeout": 5}]}]
+    | .hooks.PreToolUse += [{"matcher": "*", "hooks": [{"type": "command", "command": $e, "timeout": 5}]}]
+    | .permissions.allow += $r' "$ROOT/global/settings.json" >"$OLDK"
+mkdir -p "$KIT_CONFIG"
+jq '. + {profile: "local"}' "$OLDK" >"$KIT_CONFIG/settings.managed.json"
+jq '.hooks.Stop += [{"hooks": [{"type": "command", "command": "echo mon-hook"}]}] | .permissions.allow += ["Bash(make lint)"]' "$OLDK" >"$(cur_settings)"
+dout=$(msync 2>&1)
+no_emit "$(cur_settings)" && ok_ "poste v2 : plus aucun hook kit-emit après sync" || ko_ "poste v2 : kit-emit encore présent"
+jqc '[.hooks.Stop[].hooks[].command] | index("echo mon-hook") != null' "$(cur_settings)" && ok_ "poste v2 : hook utilisateur conservé" || ko_ "poste v2 : hook utilisateur"
+jqc --argjson r "$CTL_RULES" '(.permissions.allow | index("Bash(make lint)") != null) and ([.permissions.allow[] | select(. as $x | $r | index($x))] | length == 0)' "$(cur_settings)" \
+  && ok_ "poste v2 : autorisations du tableau de bord retirées, règle utilisateur conservée" || ko_ "poste v2 : autorisations kit-control"
+grep -q 'retiré de hooks.PostToolUse' <<<"$dout" && ok_ "poste v2 : le retrait des hooks est nommé dans la sortie" || ko_ "poste v2 : sortie" "$dout"
+jqc '(.hooks | has("PostToolUse") | not) and (.hooks.SessionStart | length == 1)' "$(cur_settings)" \
+  && ok_ "poste v2 : événements vidés supprimés, SessionStart réduit à autoupdate" || ko_ "poste v2 : événements vidés"
+# Le lien du hook supprimé et le fichier d'URL sont nettoyés ; le serveur MCP est retiré s'il est déclaré.
+reset_home
+mkdir -p "$KIT_CONFIG/hooks" "$TMP/fakebin"
+ln -s "$KITC/scripts/hooks/kit-emit.sh" "$KIT_CONFIG/hooks/kit-emit.sh"
+echo "https://exemple.invalid" >"$KIT_CONFIG/dash.url"
+echo '{"mcpServers":{"kit-control":{"type":"http","url":"https://exemple.invalid/mcp"},"autre":{"type":"stdio","command":"x"}}}' >"$HOME/.claude.json"
+printf '#!/bin/sh\necho "$*" >>"%s/claude-calls"\n' "$TMP" >"$TMP/fakebin/claude"
+chmod +x "$TMP/fakebin/claude"
+rm -f "$TMP/claude-calls"
+PATH="$TMP/fakebin:$PATH" msync >/dev/null 2>&1
+[[ ! -e $KIT_CONFIG/hooks/kit-emit.sh && ! -L $KIT_CONFIG/hooks/kit-emit.sh && ! -e $KIT_CONFIG/dash.url ]] \
+  && ok_ "sync : lien kit-emit et dash.url supprimés" || ko_ "sync : lien kit-emit ou dash.url restent"
+[[ $(cat "$TMP/claude-calls" 2>/dev/null) == "mcp remove --scope user kit-control" ]] \
+  && ok_ "sync : serveur MCP kit-control retiré (et lui seul)" || ko_ "sync : retrait du serveur MCP" "$(cat "$TMP/claude-calls" 2>/dev/null)"
+echo '{"mcpServers":{"autre":{"type":"stdio","command":"x"}}}' >"$HOME/.claude.json"
+rm -f "$TMP/claude-calls"
+PATH="$TMP/fakebin:$PATH" msync >/dev/null 2>&1
+[[ ! -e $TMP/claude-calls ]] && ok_ "sync : aucun appel à claude quand kit-control n'est pas déclaré" || ko_ "sync : appel inutile à claude"
+rm -f "$HOME/.claude.json"
+reset_home
 
 # 8b. Migration sans registre, autoMode : l'instantané v1 ne contient que des empreintes SHA-256 (le dépôt est public).
 jqc 'has("autoMode") | not' "$ROOT/global/settings.v1.json" && jqc '.autoModeSha256 | [.[][]] | length > 0 and all(test("^[0-9a-f]{64}$"))' "$ROOT/global/settings.v1.json" \

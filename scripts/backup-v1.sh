@@ -405,7 +405,7 @@ fi
     else
       echo "  (jq absent : liste non extraite)"
     fi
-    echo "Les recréer en v1 : kit mcp setup (Coolify) et kit dash setup <url> (kit-control)."
+    echo "Les recréer en v1 : kit mcp setup (Coolify) ; le serveur MCP du tableau de bord n'existe plus en v2."
   else
     echo "~/.claude.json : absent"
   fi
@@ -510,7 +510,7 @@ cat <<EOF
        - la clé age du poste (par défaut ~/.config/sops/age/keys.txt) : sans elle, les secrets chiffrés sont perdus ;
        - le fichier de secrets globaux chiffré (~/.config/claude-kit/secrets/global.enc.json), qui n'est dans aucun dépôt.
   4. ~/.claude.json n'est pas archivé (jetons MCP possibles) : les serveurs MCP se recréent avec kit mcp setup
-     et kit dash setup ; leur liste (noms seulement) est dans .claude-kit-backup-v1/claude-json-note.txt.
+     (Coolify ; celui du tableau de bord n'existe plus en v2) ; leur liste (noms seulement) est dans .claude-kit-backup-v1/claude-json-note.txt.
   5. Lance ce script sur CHAQUE poste (macOS et Linux), puis suis docs/rollback-v1.md pour le retour arrière.
 EOF
 exit 0

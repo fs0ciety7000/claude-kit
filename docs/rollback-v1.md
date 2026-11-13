@@ -177,7 +177,7 @@ l'archive (présent seulement avec `--with-transcripts`). Les copies de contexte
 informatifs.
 
 Les serveurs MCP vivent dans `~/.claude.json`, que le script n'archive pas : recrée-les avec `kit mcp setup` (Coolify)
-et `kit dash setup <url>` (kit-control). Leurs noms sont dans `.claude-kit-backup-v1/claude-json-note.txt`. La clé age
+(le serveur MCP du tableau de bord, abandonné en v2, ne se recrée que depuis la branche `legacy/v1`). Leurs noms sont dans `.claude-kit-backup-v1/claude-json-note.txt`. La clé age
 et les secrets globaux, remis depuis le gestionnaire de mots de passe, se contrôlent par `kit secrets doctor`.
 
 ### 1.5 Vérifier
@@ -192,7 +192,7 @@ KIT_CONFIG=$(mktemp -d) ~/.config/claude-kit/hooks/kit-autoupdate.sh </dev/null
 La dernière commande, avec un dossier de config vide (le vrai tampon n'est pas touché), doit afficher
 « kit : mise à jour auto ignorée (branche « legacy/v1 », pas main) ». Même commande avec `KIT_AUTOUPDATE=0` : aucune
 sortie. Ensuite, ouvre une session `claude` et demande de citer les titres du `CLAUDE.md` global : la v1 contient
-« Router avant de coder » et « Dashboard (kit-control) », que la v2 doit supprimer. `/hooks` et `/permissions` montrent
+« Router avant de coder » et une section « Dashboard », que la v2 doit supprimer. `/hooks` et `/permissions` montrent
 les réglages restaurés.
 
 ### 1.6 Revenir à la v2 plus tard
