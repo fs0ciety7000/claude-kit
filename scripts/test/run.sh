@@ -1856,7 +1856,7 @@ printf '%s\n' "$sso" | ss_utf8_ok && [[ $sso == *tronqué* ]] && ok_ "démarrage
 # regen_registry : un profil qui n'a que des commentaires ne doit pas faire échouer kit registry ni kit sync (pipefail).
 RG="$TMP/rgkit"
 mkdir -p "$RG/global" "$RG/profiles" "$RG/scripts/hooks"
-cp "$ROOT/scripts/lib.sh" "$ROOT/scripts/kit.sh" "$ROOT/scripts/managed-settings.jq" "$RG/scripts/"
+cp "$ROOT/scripts/lib.sh" "$ROOT/scripts/kit.sh" "$ROOT/scripts/new.sh" "$ROOT/scripts/managed-settings.jq" "$RG/scripts/"
 cp "$ROOT"/scripts/hooks/*.sh "$RG/scripts/hooks/"
 cp "$ROOT"/global/settings*.json "$RG/global/"
 printf '# commentaire seulement\n\n# autre commentaire\n' >"$RG/profiles/custom.txt"
@@ -1903,7 +1903,7 @@ FLS="$TMP/fl-seed"; FLO="$TMP/fl-origin.git"; FLC="$TMP/fl-clone"
 git init -q --bare -b main "$FLO"
 git init -q -b main "$FLS"
 mkdir -p "$FLS/scripts/hooks"
-cp "$ROOT/scripts/lib.sh" "$ROOT/scripts/kit.sh" "$ROOT/scripts/managed-settings.jq" "$FLS/scripts/"
+cp "$ROOT/scripts/lib.sh" "$ROOT/scripts/kit.sh" "$ROOT/scripts/new.sh" "$ROOT/scripts/managed-settings.jq" "$FLS/scripts/"
 cp "$ROOT"/scripts/hooks/*.sh "$FLS/scripts/hooks/"
 sed '/^KIT_PIN_FLOOR=/d' "$ROOT/scripts/hooks/kit-autoupdate.sh" >"$FLS/scripts/hooks/kit-autoupdate.sh"
 git -C "$FLS" add -A && git -C "$FLS" commit -q -m pre-floor
@@ -2330,7 +2330,8 @@ mkdir -p "$PB"
 [[ ! -e $PB/.forgejo && ! -e $PB/.fs0 ]] && ok_ "project add --no-ci : aucune CI posée" || ko_ "project add --no-ci"
 cmp -s "$PNEW/.forgejo/workflows/ci.yml" "$CID/go-web.yml" && ok_ "project new backend-go : CI go-web posée" || ko_ "project new : CI"
 "$KIT" help 2>&1 | grep -q 'kit project ci' && ok_ "usage : kit project ci documenté" || ko_ "usage : kit project ci"
-grep -q 'kit project add <type>...` (pose aussi la CI Forgejo)' "$ROOT/global/commands/new-project.md" && ok_ "/new-project : kit project add pose la CI" || ko_ "/new-project : CI non citée"
+grep -q 'kit new <nom> --stack' "$ROOT/global/commands/new-project.md" && grep -q '/ship' "$ROOT/global/commands/new-project.md" \
+  && ok_ "/new-project : délègue le squelette à kit new et la mise en prod à /ship" || ko_ "/new-project : kit new ou /ship non cités"
 grep -qF -- '- CI dans `.forgejo/workflows/`, jamais `.github/workflows/`.' "$ROOT/global/CLAUDE.md" && ok_ "CLAUDE.md global : CI dans .forgejo/workflows/" || ko_ "CLAUDE.md global : règle de CI absente"
 
 # kit sync ne salit pas le dépôt du kit, et refuse d'appliquer des réglages si scripts/ ou global/settings*.json y ont des
@@ -2416,6 +2417,64 @@ kh=$(mktemp -d); mkdir -p "$kh/global/agents" "$kh/global/skills"
   [[ $(fm_get "$kh/t.md" description) == 'Fait x : y, "z" et \w' ]] ) \
   && ok_ "yaml_q puis fm_get rendent la description d'origine" || ko_ "yaml_q / fm_get : aller-retour faux"
 rm -rf "$kh"
+
+# ---------------------------------------------------------------------------
+section "kit new"
+NB="$TMP/newbin"
+NR="$TMP/new-remotes"
+mkdir -p "$NB" "$NR"
+# Fake gh: auth status (fails with FAKE_GH_FAIL, prints a fake token otherwise), repo create (local bare repo), api.
+cat >"$NB/gh" <<EOF
+#!/bin/sh
+case "\$1 \$2" in
+  "auth status") [ -n "\${FAKE_GH_FAIL:-}" ] && exit 1; echo "Token: gho_faketoken0123456789"; exit 0 ;;
+  "repo create") n=\$3; shift 3; src=.; while [ \$# -gt 0 ]; do [ "\$1" = --source ] && src=\$2; shift; done
+    echo "\$n" >>"$TMP/gh-created"
+    git init -q --bare "$NR/\$n.git" && git -C "\$src" remote add origin "$NR/\$n.git" ;;
+  "api user") echo tester ;;
+  "api repos/tester/project-template") echo true ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$NB/gh"
+yaml_get_t() { awk -v k="$2" 'index($0, k ":") == 1 { sub(/^[^:]*:[ \t]*/, ""); print; exit }' "$1" 2>/dev/null; }
+knew() { env PATH="$NB:$PATH" "$ROOT/scripts/kit.sh" new "$@"; }
+NP="$TMP/new-parent"
+nout=$(knew site --stack astro-static --size S --reason "un petit site" --dir "$NP" --dry-run 2>&1); rc=$?
+[[ $rc == 0 && ! -e $NP && $nout == *"kit project add astro-static"* ]] && ok_ "kit new --dry-run : plan affiché, rien d'écrit" || ko_ "kit new --dry-run" "$nout"
+knew site --stack astro-static --size S --reason "un petit site" --dir "$NP" --no-skills >/dev/null 2>&1; rc=$?
+[[ $rc == 0 ]] && ok_ "kit new : réussit (gh factice)" || ko_ "kit new : code $rc"
+[[ $(yaml_get_t "$NP/site/project.yaml" name) == site && $(yaml_get_t "$NP/site/project.yaml" stack) == astro-static \
+  && $(yaml_get_t "$NP/site/project.yaml" size) == S && $(yaml_get_t "$NP/site/project.yaml" size_reason) == "un petit site" ]] \
+  && ok_ "kit new : project.yaml avec nom, pile, taille et raison" || ko_ "kit new : project.yaml" "$(cat "$NP/site/project.yaml" 2>&1)"
+cmp -s "$NP/site/.forgejo/workflows/ci.yml" "$ROOT/templates/ci/astro.yml" && ok_ "kit new astro-static : CI astro posée" || ko_ "kit new : CI absente"
+jq -e '.permissions.allow | index("Bash(npx astro check)") != null' "$NP/site/.claude/settings.json" >/dev/null 2>&1 \
+  && ok_ "kit new : autorisations de la pile posées" || ko_ "kit new : autorisations"
+[[ -f $NP/site/CLAUDE.md && -f $NP/site/.claude/agents/frontend-dev.md ]] && ok_ "kit new : gabarit et agents du type copiés" || ko_ "kit new : gabarit ou agents"
+[[ $(git -C "$NP/site" rev-list --count HEAD 2>/dev/null) == 1 && -z $(git -C "$NP/site" status --porcelain) ]] \
+  && ok_ "kit new : dépôt git avec un seul commit, arbre propre" || ko_ "kit new : commits" "$(git -C "$NP/site" log --oneline 2>&1 | head -3)"
+[[ $(git -C "$NR/site.git" rev-parse main 2>/dev/null) == "$(git -C "$NP/site" rev-parse HEAD)" ]] \
+  && ok_ "kit new : dépôt créé (privé) et main poussée" || ko_ "kit new : push"
+grep -qx site "$TMP/gh-created" 2>/dev/null && ok_ "kit new : gh repo create appelé une fois" || ko_ "kit new : gh repo create non appelé"
+nout=$(knew site --stack astro-static --dir "$NP" --no-skills 2>&1); rc=$?
+[[ $rc == 0 && $(grep -cx site "$TMP/gh-created") == 1 && $(git -C "$NP/site" rev-list --count HEAD) == 1 ]] \
+  && ok_ "kit new relancé : reprise sans second dépôt ni second commit" || ko_ "kit new : relance" "$nout"
+mkdir -p "$NP/other"; : >"$NP/other/keep.txt"
+knew other --stack backend-go --dir "$NP" --no-skills >/dev/null 2>&1 && ko_ "kit new : un dossier non vide doit être refusé" || ok_ "kit new : dossier non vide refusé"
+[[ $(ls -A "$NP/other") == keep.txt ]] && ok_ "kit new : dossier non vide laissé intact" || ko_ "kit new : dossier non vide modifié"
+knew bad --stack nonsense --dir "$NP" >/dev/null 2>&1 && ko_ "kit new : pile inconnue acceptée" || ok_ "kit new : pile inconnue refusée"
+[[ ! -e $NP/bad ]] && ok_ "kit new : rien créé pour une pile inconnue" || ko_ "kit new : dossier créé malgré l'erreur"
+knew sz --stack go --size M --dir "$NP" >/dev/null 2>&1 && ko_ "kit new : --size sans --reason accepté" || ok_ "kit new : --size exige --reason"
+nout=$(FAKE_GH_FAIL=1 CLAUDE_CODE_REMOTE=true knew cl --stack backend-go --dir "$NP" --no-skills 2>&1); rc=$?
+[[ $rc == 0 && $nout == *"session cloud"* && $nout == *"gh repo create cl --private"* && $nout == *"push -u origin main"* ]] \
+  && ok_ "kit new en cloud sans gh : le dit et donne la commande pour le poste" || ko_ "kit new : message cloud" "$nout"
+[[ $(git -C "$NP/cl" rev-list --count HEAD 2>/dev/null) == 1 ]] && ok_ "kit new en cloud : projet commité malgré tout" || ko_ "kit new en cloud : commit"
+"$ROOT/scripts/kit.sh" help 2>&1 | grep -q 'kit new <nom>' && ok_ "usage : kit new documenté" || ko_ "usage : kit new"
+dout=$(env PATH="$NB:$PATH" "$ROOT/scripts/kit.sh" doctor 2>&1)
+[[ $dout == *"gh authentifié"* && $dout == *"project-template présent"* && $dout != *faketoken* && $dout == *GITHUB_TOKEN* ]] \
+  && ok_ "kit doctor : gh authentifié, modèle et GITHUB_TOKEN vérifiés, aucun jeton affiché" || ko_ "kit doctor : prérequis GitHub" "$(grep -iE 'gh|token|template' <<<"$dout")"
+dout=$(env PATH="$NB:$PATH" FAKE_GH_FAIL=1 "$ROOT/scripts/kit.sh" doctor 2>&1)
+[[ $dout == *"gh non authentifié"* ]] && ok_ "kit doctor : gh non authentifié signalé" || ko_ "kit doctor : gh non authentifié"
 
 # ---------------------------------------------------------------------------
 section "dépôt du kit"

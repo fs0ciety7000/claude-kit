@@ -4,6 +4,8 @@ set -euo pipefail
 SELF=$(readlink -f "${BASH_SOURCE[0]}")
 # shellcheck source=lib.sh
 source "$(dirname "$SELF")/lib.sh"
+# shellcheck source=new.sh
+source "$(dirname "$SELF")/new.sh"
 
 usage() {
   cat <<'EOF'
@@ -25,6 +27,10 @@ SKILLS PAR PROFIL
   kit registry                            régénère la table des profils dans skills-registry.md
 
 PROJETS
+  kit new <nom> --stack <pile>[,<pile>] [--size S|M|L --reason "…"] [--public] [--dir parent] [--dry-run] [--no-skills]
+        projet neuf en une commande : dossier, gabarit, pile (kit project add, CI), project.yaml, premier commit,
+        dépôt GitHub privé (kit repo create, sinon gh) et push de main ; refuse un dossier non vide (sauf reprise
+        d'un kit new interrompu) ; en session cloud, donne la commande à lancer sur ton poste si gh ne peut pas
   kit project new <dossier> [type...] [--no-skills]
         crée un dossier neuf + gabarit + git init ; avec des types, y copie aussi leurs agents et skills
         ex. kit project new ma-boutique nextjs-cloudflare pocketbase
@@ -1384,6 +1390,7 @@ cmd_doctor() {
   else
     command -v ssh-keygen >/dev/null 2>&1 && ok "ssh-keygen" || echo "! ssh-keygen manquant (openssh-client) : requis par « kit repo create »"
   fi
+  new_doctor "$cloud"
   if [[ -n "$(git config --global user.name 2>/dev/null)" && -n "$(git config --global user.email 2>/dev/null)" ]]; then
     ok "identité git configurée"
   else
@@ -1443,6 +1450,7 @@ main() {
     new-skill) cmd_new_skill "$@" ;;
     registry) if [[ ${1:-} == propose ]]; then shift; registry_propose "$@"; else regen_registry; fi ;;
     project) cmd_project "$@" ;;
+    new) cmd_new "$@" ;;
     equip) cmd_equip "$@" ;;
     index) cmd_index "$@" ;;
     detect) cmd_detect "$@" ;;
