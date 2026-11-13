@@ -79,6 +79,16 @@ pass=$((pass + ${sh_p:-0}))
 fail=$((fail + ${sh_f:-0}))
 if [[ $sh_rc != 0 && ${sh_f:-0} == 0 ]]; then ko_ "ship-test.sh a échoué sans résumé" "$(tail -3 <<<"$sh_out")"; fi
 
+# kit retire: same fakes (cases in scripts/test/retire-test.sh).
+rt_out=$(bash "$ROOT/scripts/test/retire-test.sh" 2>&1)
+rt_rc=$?
+grep -E '^(==|  FAIL|       )' <<<"$rt_out"
+rt_p=$(sed -n 's/^retire: \([0-9][0-9]*\) passed, \([0-9][0-9]*\) failed$/\1/p' <<<"$rt_out")
+rt_f=$(sed -n 's/^retire: \([0-9][0-9]*\) passed, \([0-9][0-9]*\) failed$/\2/p' <<<"$rt_out")
+pass=$((pass + ${rt_p:-0}))
+fail=$((fail + ${rt_f:-0}))
+if [[ $rt_rc != 0 && ${rt_f:-0} == 0 ]]; then ko_ "retire-test.sh a échoué sans résumé" "$(tail -3 <<<"$rt_out")"; fi
+
 # ---------------------------------------------------------------------------
 section "kit perms : règles acceptées"
 PROJ="$TMP/proj"
