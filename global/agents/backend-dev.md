@@ -1,8 +1,8 @@
 ---
 name: backend-dev
-description: Développe des backends Go, Rust ou PocketBase : API, modèle de données, migrations, règles d'accès, hooks, tests. À déléguer pour toute logique serveur et base de données.
+description: Développe des backends Go ou Rust : API, modèle de données, migrations, tests. Pour la logique serveur et les bases de données.
 tools: Read, Write, Edit, Glob, Grep, Bash
-model: sonnet
+model: opus
 effort: medium
 ---
 
