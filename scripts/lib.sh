@@ -177,9 +177,10 @@ automode_v1_owned() {
 # Clés gérées : permissions.allow|ask|deny|defaultMode, hooks, autoMode.*. Le reste du fichier n'est jamais touché.
 #   K = réglages du kit pour ce poste : global/settings.json, + settings.vps.json (profil vps),
 #       + $KIT_CONFIG/settings.local.json (surcharge propre au poste, jamais dans Git, absente par défaut).
-#   L = registre $KIT_CONFIG/settings.managed.json = le K appliqué la dernière fois (+ le profil). Absent ou illisible
-#       (première exécution après la mise à niveau) : L = K + global/settings.v1.json, instantané des entrées allow,
-#       hooks et autoMode (en empreintes SHA-256) que le kit v1 a écrites.
+#   L = registre $KIT_CONFIG/settings.managed.json = le K appliqué la dernière fois (+ le profil), toujours uni à
+#       global/settings.v1.json, instantané des entrées allow, hooks et autoMode (en empreintes SHA-256) que le kit v1 a
+#       écrites : ce que la v1 réécrit après coup est retiré au sync suivant. Registre absent ou illisible (première
+#       exécution après la mise à niveau) : L = K + cet instantané.
 #   U = ajouts de l'utilisateur = C (fichier actuel) moins L, pour allow et autoMode.environment|allow.
 #   deny, ask, autoMode.soft_deny|hard_deny ne sont JAMAIS retirés automatiquement : seules les règles listées dans
 #   global/settings.retired.json le sont. Hooks : seules les entrées exactement <dossier des hooks du kit>/<script du
@@ -377,6 +378,17 @@ apply_managed_settings() {
       warn "$snap introuvable : les anciennes entrées du kit ne seront pas retirées"
       cp "$tmpd/k.json" "$tmpd/l.json"
     fi
+  fi
+  # L contient toujours l'instantané v1 (union avec le registre) : un sync de la v1 (retour arrière, autre poste) réécrit
+  # des entrées que le kit v2 ne livre plus (hooks, autorisations, phrases) ; le sync v2 suivant les retire. Seuls allow,
+  # hooks et autoMode.environment|allow en dépendent : deny, ask, soft_deny et hard_deny restent régis par
+  # global/settings.retired.json.
+  if ((!migrating)) && [[ -f $snap ]]; then
+    jq --arg p "$profile" '.profiles[$p] // {}' "$snap" >"$tmpd/snapprof.json" || die "lecture de $snap échouée"
+    jq -s --arg mode build -f "$jqf" "$tmpd/l.json" "$snap" "$tmpd/snapprof.json" >"$tmpd/l1.json" || die "lecture de $snap échouée"
+    automode_v1_owned "$snap" "$tmpd/c.json" >"$tmpd/lx.json" \
+      && jq -s --arg mode build -f "$jqf" "$tmpd/l1.json" "$tmpd/lx.json" >"$tmpd/l.json" \
+      || die "lecture des empreintes autoMode de $snap échouée"
   fi
   # Règles que le kit a explicitement retirées (deny, ask, autoMode.soft_deny|hard_deny).
   if [[ -f $retired ]] && jq -e 'type == "object"' "$retired" >/dev/null 2>&1; then cp "$retired" "$tmpd/r.json"; else echo '{}' >"$tmpd/r.json"; fi

@@ -76,16 +76,20 @@ d'abord `git remote set-branches --add origin legacy/v1` (voir le piège en 1.2)
 
 Le hook `scripts/hooks/kit-autoupdate.sh` (événement `SessionStart`) décide ainsi :
 
-- `KIT_AUTOUPDATE=0` dans son environnement : il sort sans rien faire. C'est le seul interrupteur prévu.
+- `KIT_AUTOUPDATE=0` dans son environnement, ou (v2) le fichier `~/.config/claude-kit/autoupdate.off` : il sort sans
+  rien faire. La v1 ne connaît que la variable.
 - Sinon, en local, au plus une vérification réussie par 6 h (tampon `~/.config/claude-kit/autoupdate.stamp`) ; en cloud
   (profil `cloud` ou `CLAUDE_CODE_REMOTE=true`), à chaque démarrage.
 - Il ne touche à rien si le dépôt du kit n'est **pas sur la branche `main`** ou a des modifications locales : il
   affiche une ligne (« mise à jour auto ignorée ») et sort. Sur `main`, il fait `git fetch origin main`, puis
   `git merge --ff-only origin/main`, puis lance `kit sync` en arrière-plan.
 
-Il n'existe donc **pas d'option d'épinglage** (ni référence à suivre, ni fichier d'arrêt) : l'épinglage de fait est
-d'être sur une autre branche que `main`, et la couche de sécurité est `KIT_AUTOUPDATE=0`. Procédure minimale, sans
-modifier le code :
+En v2, `kit autoupdate off` crée le fichier d'arrêt (valable pour toute application, sans toucher au profil du shell) et
+`kit autoupdate pin <réf>` épingle un SHA. **L'épinglage n'est pas le moyen de revenir à la v1** : il refuse toute révision
+qui n'est pas dans l'historique de `origin/main` ou dont le hook n'a pas le socle d'épinglage (`KIT_PIN_FLOOR`), donc
+toute version d'avant la v2. Le retour à la v1 est la procédure ci-dessous (arrêt, puis `legacy/v1`, puis suppression du
+registre des réglages). Sur `legacy/v1`, le hook de la v1 reste inactif de toute façon (la branche n'est pas `main`).
+Sans fichier ni code de la v2 (poste déjà revenu en v1), la variable reste l'interrupteur :
 
 ```bash
 # Dans le profil du shell qui lance claude (~/.zshrc, ~/.bashrc ; fish : set -Ux KIT_AUTOUPDATE 0)
@@ -241,12 +245,10 @@ remets l'ancien script de démarrage et supprime `KIT_AUTOUPDATE`.
 
 ## 3. Lacunes constatées (à traiter au lot 2)
 
-- **Pas d'épinglage du kit.** Le hook ne connaît que `KIT_AUTOUPDATE=0` (variable d'environnement, donc à poser dans
-  chaque shell, chaque environnement cloud, et invisible pour une application lancée hors terminal) et le garde-fou
-  « branche ≠ `main` ». Il manque un interrupteur persistant côté kit (fichier dans `~/.config/claude-kit/`) et une
-  référence épinglée (`KIT_PIN=<branche|tag>` ou fichier), lus aussi par `kit update`.
-- `kit doctor` ne signale pas que le kit est volontairement hors de `main` ni la valeur de `KIT_AUTOUPDATE`, et
-  `kit --version` n'existe pas en v1 : la version se lit dans le commit du dépôt.
+- ~~Pas d'épinglage du kit~~ : traité par le lot 2c. En v1, le hook ne connaît que `KIT_AUTOUPDATE=0` et le garde-fou
+  « branche ≠ `main` ». En v2 : fichier `autoupdate.off`, fichier `autoupdate.pin` (SHA complet, ancêtre de `origin/main`,
+  au-dessus du socle d'épinglage, lu aussi par `kit update`), `kit autoupdate`, `kit --version`, et `kit doctor`
+  qui montre l'état. Le retour à la v1 reste la procédure de la section 1, pas l'épinglage.
 - ~~Les réglages fusionnent par union~~ : traité par le lot 2b (`apply_managed_settings`). Le retour vers la v1
   reste à faire à la main (restaurer `settings.json`, supprimer le registre, section 1.4), parce que le `kit sync` de
   la v1 ne connaît pas le registre.

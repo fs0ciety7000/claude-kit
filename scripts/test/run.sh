@@ -1533,6 +1533,35 @@ printf 'HORS-PROJET\n' >"$TMP/ss-outside.md"
 ln -s "$TMP/ss-outside.md" "$SSP/docs/memory/state.md"
 [[ -z $(ss_run "$SSP") ]] && ok_ "démarrage : state.md lien symbolique ignoré" || ko_ "démarrage : lien symbolique suivi"
 rm -f "$SSP/docs/memory/state.md"
+# L est toujours uni à l'instantané v1 : ce qu'un sync v1 réécrit (retour arrière, autre poste) est retiré au sync v2 suivant ;
+# deny et ask restent régis par settings.retired.json.
+cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
+cp "$ROOT/global/settings.v1.json" "$KITC/global/settings.v1.json"
+V1SENT2="Phrase v1 de test, réécrite par un sync v1."
+jq --arg h "$(printf '%s' "$V1SENT2" | sha256_hex_t)" '.autoModeSha256.environment += [$h]' "$KITC/global/settings.v1.json" >"$TMP/g.json" && cp "$TMP/g.json" "$KITC/global/settings.v1.json"
+reset_home
+msync >/dev/null 2>&1
+jq -s --arg s "$V1SENT2" '.[0] as $c | .[1] as $v | $c
+    | .permissions.allow += ($v.permissions.allow + ["Bash(make lint)"])
+    | .permissions.deny += ["Bash(mon-deny)"]
+    | .hooks = (reduce ($v.hooks | keys[]) as $e (.hooks; .[$e] += $v.hooks[$e]))
+    | .hooks.Stop += [{"hooks": [{"type": "command", "command": "echo mon-hook"}]}]
+    | .autoMode.environment += [$s, "Mon serveur de test."]' "$(cur_settings)" "$ROOT/global/settings.v1.json" >"$TMP/d.json" && cp "$TMP/d.json" "$(cur_settings)"
+jqc '(.permissions.allow | index("mcp__kit-control__ask") != null) and (.permissions.allow | index("Bash(kit api coolify *)") != null)' "$(cur_settings)" \
+  && ok_ "L ∪ v1 : le sync v1 simulé a bien réécrit des entrées retirées" || ko_ "L ∪ v1 : fixture"
+msync >/dev/null 2>&1
+no_emit "$(cur_settings)" && jqc '[.permissions.allow[] | select(test("kit-control|kit dash"))] | length == 0' "$(cur_settings)" \
+  && ok_ "L ∪ v1 : hooks kit-emit et autorisations kit-control réécrits par la v1 retirés" || ko_ "L ∪ v1 : hooks et autorisations"
+jqc '.permissions.allow | index("Bash(kit api coolify *)") == null' "$(cur_settings)" && ok_ "L ∪ v1 : une règle allow v1 retirée du kit (kit api coolify *) est retirée" || ko_ "L ∪ v1 : règle allow v1"
+jqc --arg s "$V1SENT2" '.autoMode.environment | index($s) == null' "$(cur_settings)" && ok_ "L ∪ v1 : une phrase d'environnement v1 réécrite est retirée" || ko_ "L ∪ v1 : phrase v1"
+jqc '(.permissions.allow | index("Bash(make lint)") != null) and (.permissions.deny | index("Bash(mon-deny)") != null)
+     and ([.hooks.Stop[].hooks[].command] | index("echo mon-hook") != null) and (.autoMode.environment | index("Mon serveur de test.") != null)' "$(cur_settings)" \
+  && ok_ "L ∪ v1 : règle, hook, phrase de l'utilisateur et deny conservés" || ko_ "L ∪ v1 : ajouts utilisateur"
+jqc '([.permissions.allow[] | select(. == "Bash(git status*)")] | length == 1) and (.hooks.SessionStart | length == 1)' "$(cur_settings)" \
+  && ok_ "L ∪ v1 : les entrées du kit restent, sans doublon" || ko_ "L ∪ v1 : entrées du kit"
+cp "$ROOT/global/settings.v1.json" "$KITC/global/settings.v1.json"
+reset_home
+
 # Domaines internes hors du dépôt public : aucune phrase autoMode ne nomme un hôte hors de la liste des API publiques.
 bad_hosts=$(jq -r '[.autoMode[][] | strings] | map(scan("[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+(?:/[A-Za-z0-9_.-]+)?") | gsub("/.*$"; "") | ascii_downcase) | unique
   | map(select(. as $h | ["github.com", "api.cloudflare.com", "api.tailscale.com", "crates.io", "ghcr.io", "claude.ai", "skills.sh"] | index($h) | not))
