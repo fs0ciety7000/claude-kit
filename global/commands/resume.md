@@ -1,5 +1,5 @@
 ---
-description: Reprend un projet là où la dernière session l'a laissé : relit le relais, l'état, le plan et les tâches, vérifie le dépôt et propose la suite.
+description: "Reprend un projet là où la dernière session l'a laissé : relit le relais, l'état, le plan et les tâches, vérifie le dépôt et propose la suite."
 argument-hint: "[ce que tu veux faire maintenant]"
 ---
 

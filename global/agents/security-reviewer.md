@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Audite en lecture la sécurité d'un projet ou d'un changement : secrets, authentification, injections, dépendances, déploiement. Taille L ou sur demande.
+description: "Audite en lecture la sécurité d'un projet ou d'un changement : secrets, authentification, injections, dépendances, déploiement. Taille L ou sur demande."
 tools: Read, Glob, Grep, Bash
 model: opus
 effort: xhigh

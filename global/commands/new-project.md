@@ -1,5 +1,5 @@
 ---
-description: Démarre un projet : cadrage, taille, stack, plan et équipe en une validation, puis première mise en prod validée.
+description: "Démarre un projet : cadrage, taille, stack, plan et équipe en une validation, puis première mise en prod validée."
 argument-hint: "<description courte du projet>"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: creative-coder
-description: Réalise des expériences visuelles interactives : Three.js, shaders, GSAP, Framer Motion, SVG, Lottie. Pour la 3D web et le mouvement.
+description: "Réalise des expériences visuelles interactives : Three.js, shaders, GSAP, Framer Motion, SVG, Lottie. Pour la 3D web et le mouvement."
 tools: Read, Write, Edit, Glob, Grep, Bash
 model: opus
 effort: medium

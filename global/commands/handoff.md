@@ -1,5 +1,5 @@
 ---
-description: Passe le relais à la prochaine session : écrit docs/memory/handoff.md et state.md, met à jour le plan et la mémoire, commite et pousse.
+description: "Passe le relais à la prochaine session : écrit docs/memory/handoff.md et state.md, met à jour le plan et la mémoire, commite et pousse."
 argument-hint: "[note libre à transmettre]"
 ---
 

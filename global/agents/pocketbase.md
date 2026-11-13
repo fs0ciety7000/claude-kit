@@ -1,6 +1,6 @@
 ---
 name: pocketbase
-description: Développe avec PocketBase : collections, règles d'API, hooks JS, migrations, déploiement. Pour un projet avec pb_data, pb_hooks ou pb_migrations.
+description: "Développe avec PocketBase : collections, règles d'API, hooks JS, migrations, déploiement. Pour un projet avec pb_data, pb_hooks ou pb_migrations."
 tools: Read, Write, Edit, Glob, Grep, Bash
 model: opus
 effort: medium

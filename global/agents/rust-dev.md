@@ -1,6 +1,6 @@
 ---
 name: rust-dev
-description: Développe en Rust : CLI avec clap, interface terminal avec ratatui, applications Tauri. Pour tout binaire ou application de bureau Rust.
+description: "Développe en Rust : CLI avec clap, interface terminal avec ratatui, applications Tauri. Pour tout binaire ou application de bureau Rust."
 tools: Read, Write, Edit, Glob, Grep, Bash
 model: opus
 effort: medium

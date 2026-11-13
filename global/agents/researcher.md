@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: Recherche web sourcée : comparer des outils ou bibliothèques, état d'une technologie, vérification d'un fait.
+description: "Recherche web sourcée : comparer des outils ou bibliothèques, état d'une technologie, vérification d'un fait."
 tools: Read, Glob, Grep, WebSearch, WebFetch
 model: opus
 effort: medium

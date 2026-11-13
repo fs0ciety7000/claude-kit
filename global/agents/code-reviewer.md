@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Relit un diff, une branche ou une PR en lecture seule : correction, simplicité, tests, cas limites. Taille L ou sur demande.
+description: "Relit un diff, une branche ou une PR en lecture seule : correction, simplicité, tests, cas limites. Taille L ou sur demande."
 tools: Read, Glob, Grep, Bash
 model: opus
 effort: high

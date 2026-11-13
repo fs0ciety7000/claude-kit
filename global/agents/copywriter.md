@@ -1,6 +1,6 @@
 ---
 name: copywriter
-description: Rédige les textes d'un produit : pages, microcopie UX, e-mails, fiches produit, en français et en anglais.
+description: "Rédige les textes d'un produit : pages, microcopie UX, e-mails, fiches produit, en français et en anglais."
 tools: Read, Write, Edit, Glob, Grep
 model: opus
 effort: medium

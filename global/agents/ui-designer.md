@@ -1,6 +1,6 @@
 ---
 name: ui-designer
-description: Conçoit ou refond des interfaces : écrans, composants, design tokens, hiérarchie visuelle. Avant le code final d'une UI.
+description: "Conçoit ou refond des interfaces : écrans, composants, design tokens, hiérarchie visuelle. Avant le code final d'une UI."
 tools: Read, Write, Edit, Glob, Grep, WebFetch
 model: opus
 effort: high

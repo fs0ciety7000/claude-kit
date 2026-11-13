@@ -1,6 +1,6 @@
 ---
 name: frontend-dev
-description: Implémente des interfaces React, Next.js, Tailwind ou Shopify Liquid d'après une maquette : composants, pages, formulaires.
+description: "Implémente des interfaces React, Next.js, Tailwind ou Shopify Liquid d'après une maquette : composants, pages, formulaires."
 tools: Read, Write, Edit, Glob, Grep, Bash
 model: opus
 effort: medium

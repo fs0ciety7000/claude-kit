@@ -1,6 +1,6 @@
 ---
 name: pocketbase
-description: Développer avec PocketBase : collections, règles d'API, hooks, migrations, déploiement. À utiliser si un projet contient pb_data, pb_hooks ou pb_migrations.
+description: "Développer avec PocketBase : collections, règles d'API, hooks, migrations, déploiement. À utiliser si un projet contient pb_data, pb_hooks ou pb_migrations."
 ---
 
 # PocketBase

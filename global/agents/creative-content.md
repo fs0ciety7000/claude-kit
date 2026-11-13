@@ -1,6 +1,6 @@
 ---
 name: creative-content
-description: Produit des contenus éditoriaux : scripts vidéo, posts, newsletters, concepts de campagne, noms, accroches, storyboards.
+description: "Produit des contenus éditoriaux : scripts vidéo, posts, newsletters, concepts de campagne, noms, accroches, storyboards."
 tools: Read, Write, Edit, Glob, Grep, WebSearch, WebFetch
 model: opus
 effort: medium
