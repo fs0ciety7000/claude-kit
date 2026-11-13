@@ -155,7 +155,7 @@ section "plan : rien d'écrit"
 s0=$(infra_sum) p0=$(proj_sum "$P")
 rrun plan --dir "$P"
 t "plan : code 0" test "$RC" -eq 0
-t "plan : arrêt annoncé" has "arrêt de l'application (POST /applications/$S/stop)"
+t "plan : arrêt annoncé" has "arrêt de l'application (TRIGGER /applications/$S/stop"
 t "plan : retrait de DEPLOY_ALLOW annoncé" has "acme/site retiré de DEPLOY_ALLOW"
 t "plan : deploy: annoncé" has "deploy: retiré"
 t "plan : DNS, Access, sauvegarde retirés" bash -c 'grep -q "DNS : entrée de kit ship retirée" <<<"$1" && grep -q "Access : entrée de kit ship retirée" <<<"$1" && grep -q "Sauvegarde : entrée de kit ship retirée" <<<"$1"' _ "$OUT"
@@ -191,7 +191,7 @@ rrun run --dir "$P"
 rm -f "$FAKE/envs_lossy"
 t "écriture qui perd une entrée : refus" has "vérification de DEPLOY_ALLOW en échec"
 t "écriture qui perd une entrée : code non nul" test "$RC" -ne 0
-t "écriture qui perd une entrée : pont non redéployé" test "$(logn TRIGGER)" -eq 0
+t "écriture qui perd une entrée : pont non redéployé" test "$(logn "TRIGGER /deploy")" -eq 0
 t "écriture qui perd une entrée : ni PR ni deploy: retiré" test "$(logn 'gh api -X POST')" -eq 0 -a "$(grep -c '^deploy:' "$P/.fs0/bridge.yaml")" -eq 1
 t "verrou retiré après l'échec" test ! -e "$KIT_CONFIG/ship-deploy-allow.lock"
 allow_fixture "acme/other=oldappuuid000000000001, Acme/Site=$S,acme/third=thirduuid00000000000001"
@@ -209,7 +209,7 @@ section "run (access, volumes)"
 : >"$FAKE_LOG"
 rrun run --dir "$P"
 t "run : code 0" test "$RC" -eq 0
-t "run : application arrêtée par POST …/stop" test "$(logn "coolify POST /applications/$S/stop")" -eq 1
+t "run : application arrêtée par TRIGGER …/stop (GET Coolify)" test "$(logn "coolify TRIGGER /applications/$S/stop")" -eq 1 -a "$(logn "POST /applications/$S/stop")" -eq 0
 t "run : annonce avant l'arrêt" has "→ écriture : arrêt de l'application Coolify $S"
 t "DEPLOY_ALLOW : entrée retirée, autres gardées" test "$(allow_written)" = "acme/other=oldappuuid000000000001,acme/third=thirduuid00000000000001"
 t "DEPLOY_ALLOW : valeur jamais affichée" bash -c '! grep -qE "acme/other|acme/third|preview-only" <<<"$1"' _ "$OUT"

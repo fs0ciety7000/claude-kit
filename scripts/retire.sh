@@ -32,9 +32,9 @@ retire_app_check() { # read-only: ownership and current status
 retire_app_stop() { # mode
   [[ -n $P_UUID ]] || return 0
   if [[ $APP_STATUS == exited* || $APP_STATUS == stopped* ]]; then echo "  = application déjà arrêtée"; return 0; fi
-  if [[ $1 != real ]]; then echo "  - arrêt de l'application (POST /applications/$P_UUID/stop)"; return 0; fi
+  if [[ $1 != real ]]; then echo "  - arrêt de l'application (TRIGGER /applications/$P_UUID/stop, GET côté Coolify)"; return 0; fi
   announce "arrêt de l'application Coolify $P_UUID (effet : service hors ligne ; retour arrière : kit api coolify TRIGGER \"/applications/$P_UUID/start\" --jq '.')"
-  api POST "/applications/$P_UUID/stop" --jq '{message: (.message // null)}' >/dev/null || die "arrêt refusé par Coolify (voir le message ci-dessus)"
+  api TRIGGER "/applications/$P_UUID/stop" --jq '{message: (.message // null)}' >/dev/null || die "arrêt refusé par Coolify (voir le message ci-dessus)"
   local st
   st=$(api "/applications/$P_UUID" --jq '.status // ""' 2>/dev/null | jq -r . 2>/dev/null || echo inconnu)
   ok "arrêt demandé (statut lu ensuite : ${st:-inconnu} ; l'arrêt peut prendre quelques secondes)"
