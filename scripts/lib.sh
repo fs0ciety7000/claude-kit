@@ -257,6 +257,47 @@ _ams_check_overlay() { # fichier
     ((.autoMode // {}) | to_entries[] | "  autoMode." + .key + " : +" + (.value | length | tostring) + " entrée(s)")' "$f"
 }
 
+# Phrases autoMode.environment propres au poste (domaines et hôtes internes : le dépôt est public, elles n'y figurent pas).
+#   Source : fichier texte hors dépôt, une phrase par ligne ($KIT_CONFIG/environment.local.txt par défaut ; lignes vides et
+#   lignes commençant par # ignorées). Cible : autoMode.environment de $KIT_CONFIG/settings.local.json (600), seule clé
+#   que cette fonction touche ; le reste du fichier est conservé. Fichier vide ou --clear : la clé est retirée.
+#   Session cloud : la variable KIT_LOCAL_ENVIRONMENT (même format) est d'abord écrite dans le fichier par défaut.
+#   overlay_sync <fichier|""> <dry 0|1> [--verbose]. Écrit seulement si le contenu change. Ne montre jamais les phrases.
+overlay_sync() {
+  local src=${1:-} dry=${2:-0} verbose=${3:-} overlay="$KIT_CONFIG/settings.local.json" arr bad base new n
+  if [[ -z $src ]]; then
+    src="$KIT_CONFIG/environment.local.txt"
+    if [[ -n ${KIT_LOCAL_ENVIRONMENT:-} ]] && ((!dry)); then
+      if [[ ! -d $KIT_CONFIG ]]; then mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; fi
+      write_atomic "$src" "$KIT_LOCAL_ENVIRONMENT" 600
+    fi
+  fi
+  [[ -f $src ]] || return 0
+  arr=$(jq -R -s 'split("\n") | map(gsub("\r"; "") | gsub("^\\s+|\\s+$"; "")) | map(select(length > 0 and (startswith("#") | not)))' "$src") \
+    || die "lecture de $src échouée"
+  bad=$(jq -r 'map(select(length > 800 or test("[\u0001-\u001f]"))) | length' <<<"$arr")
+  [[ $bad == 0 ]] || die "$src : $bad ligne(s) de plus de 800 caractères ou avec un caractère de contrôle"
+  base='{}'
+  if [[ -f $overlay ]]; then
+    _ams_valid "$overlay" || die "$overlay n'est pas un objet JSON de réglages valide"
+    base=$(cat "$overlay")
+  fi
+  new=$(jq --argjson e "$arr" 'if ($e | length) > 0 then .autoMode.environment = $e
+    else del(.autoMode.environment) | (if .autoMode == {} then del(.autoMode) else . end) end' <<<"$base") || die "fusion de $src échouée"
+  n=$(jq 'length' <<<"$arr")
+  if [[ "$(jq -S -c . <<<"$base")" == "$(jq -S -c . <<<"$new")" ]]; then
+    [[ -z $verbose ]] || ok "autoMode.environment local : déjà à jour ($n phrase(s))"
+    return 0
+  fi
+  if ((dry)); then
+    info "autoMode.environment local : $n phrase(s) de $src seraient appliquées à $overlay"
+    return 0
+  fi
+  if [[ ! -d $KIT_CONFIG ]]; then mkdir -p "$KIT_CONFIG" && chmod 700 "$KIT_CONFIG"; fi
+  write_atomic "$overlay" "$(jq . <<<"$new")" 600
+  ok "autoMode.environment local : $n phrase(s) de $src écrites dans $overlay (600)"
+}
+
 apply_managed_settings() {
   local dry=0 yes=0 cur="$CLAUDE_HOME/settings.json" reg="$KIT_CONFIG/settings.managed.json"
   local jqf="$KIT_HOME/scripts/managed-settings.jq" snap="$KIT_HOME/global/settings.v1.json"
@@ -271,6 +312,7 @@ apply_managed_settings() {
   done
   need jq "Installe jq."
   [[ -f $jqf ]] || die "$jqf introuvable"
+  overlay_sync "" "$dry"
 
   # Profil : fichier profile ; à défaut, celui du registre (un profil vps ne retombe pas silencieusement sur local).
   profile=$(cat "$KIT_CONFIG/profile" 2>/dev/null || true)
@@ -394,6 +436,11 @@ apply_managed_settings() {
       _ams_backup "$cur"
       write_atomic "$cur" "$(cat "$tmpd/new.json")"
       ok "réglages mis à jour : $cur (+$nb_add -$nb_rm entrées)"
+      # Phrases d'environnement retirées du kit (domaines internes sortis du dépôt public) et rien en local pour les remplacer.
+      if (($(jq '[.changes[] | select(.name == "autoMode.environment") | .removed | length] | add // 0' "$tmpd/res.json") > 0)) \
+        && ! jq -e '(.autoMode.environment // []) | length > 0' "$overlay" >/dev/null 2>&1; then
+        warn "autoMode.environment : des phrases du kit ont été retirées. Si elles décrivaient tes domaines internes, déclare-les sur ce poste : kit overlay env (voir README) ; l'ancien contenu est dans $cur.pre-kit.<date>"
+      fi
       # Ce que le kit a retiré et qui peut compter : hooks, deny, ask (nommés, jamais silencieux).
       jq -r 'def short: tojson | if length > 160 then .[0:157] + "..." else . end;
         .changes[] | select(.name | test("^hooks[.]|^permissions[.](deny|ask)$|^autoMode[.](soft_deny|hard_deny)$"))

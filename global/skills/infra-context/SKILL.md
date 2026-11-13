@@ -19,7 +19,7 @@ description: Charger la connaissance de l'infrastructure (KNOWLEDGE.md) avant de
    Lis `KNOWLEDGE.md` là. Ne modifie jamais cette copie : un changement passe par une PR sur le dépôt.
 2. **En session cloud** (`CLAUDE_CODE_REMOTE=true`) : lis-le dans `fs0ciety-ops` s'il est attaché à la session (c'est
    le cas dans l'environnement « kit »). Sinon, **demande à l'utilisateur** de l'attacher ; ne l'attache pas toi-même.
-   Le tailnet (`*.in.fs0ciety.org`) n'est pas joignable depuis le cloud ; le dépôt l'est.
+   Le tailnet (ses domaines internes) n'est pas joignable depuis le cloud ; le dépôt l'est.
 3. Ni l'un ni l'autre : dis-le, et demande à l'utilisateur plutôt que de deviner un identifiant.
 
 ## Quand

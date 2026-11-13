@@ -82,6 +82,9 @@ INFOS & MAINTENANCE
         autoupdate.pin épingle une version : pas de pull, le kit reste sur cette référence)
   kit autoupdate [status|off|on|pin <réf>|unpin]
         interrupteur et épinglage de la mise à jour automatique (fichiers ~/.config/claude-kit/autoupdate.off|pin)
+  kit overlay env [fichier|--clear]       pose les phrases autoMode.environment propres au poste (domaines internes) dans
+        ~/.config/claude-kit/settings.local.json (600) depuis un fichier texte hors dépôt, une phrase par ligne
+        (défaut : ~/.config/claude-kit/environment.local.txt, appliqué aussi par kit sync) ; --clear les retire
   kit doctor                              vérifie l'installation
 
 PERMISSIONS (règles que Claude s'accorde, niveau projet uniquement, journalisées)
@@ -1028,6 +1031,27 @@ cmd_autoupdate() {
   esac
 }
 
+# kit overlay env [fichier|--clear] : phrases autoMode.environment locales (voir overlay_sync dans lib.sh).
+cmd_overlay() {
+  [[ ${1:-} == env ]] || die "usage : kit overlay env [fichier|--clear]"
+  need jq
+  local src=${2:-}
+  if [[ $src == --clear ]]; then
+    local empty
+    empty=$(mktemp) || die "mktemp échoué"
+    overlay_sync "$empty" 0 --verbose
+    rm -f "$empty"
+    return 0
+  fi
+  if [[ -z $src ]]; then
+    [[ -f $KIT_CONFIG/environment.local.txt || -n ${KIT_LOCAL_ENVIRONMENT:-} ]] \
+      || die "aucun fichier : crée $KIT_CONFIG/environment.local.txt (une phrase par ligne, modèle : docs/environment.local.example.txt) ou passe un fichier"
+  else
+    [[ -f $src ]] || die "fichier introuvable : $src"
+  fi
+  overlay_sync "$src" 0 --verbose
+}
+
 cmd_update() {
   if [[ -f $KIT_CONFIG/autoupdate.pin ]]; then
     warn "kit épinglé ($KIT_CONFIG/autoupdate.pin) : pas de git pull ; kit autoupdate unpin pour suivre main"
@@ -1113,6 +1137,7 @@ main() {
     sync) cmd_sync "$@" ;;
     update) cmd_update ;;
     autoupdate) cmd_autoupdate "$@" ;;
+    overlay) cmd_overlay "$@" ;;
     doctor) cmd_doctor ;;
     --version|-V|version) cmd_version ;;
     help|-h|--help) usage ;;

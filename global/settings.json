@@ -260,10 +260,9 @@
   "autoMode": {
     "environment": [
       "$defaults",
-      "Organization: solo developer (fs0ciety). Primary use: software development and infrastructure automation of a self-hosted infrastructure (Coolify on two VPS, Cloudflare, Tailscale).",
+      "Organization: solo developer. Primary use: software development and infrastructure automation of a self-hosted infrastructure (Coolify, Cloudflare, Tailscale).",
       "Source control: github.com/fs0ciety7000 and all repositories under it. Repository visibility: all private except fs0ciety7000/claude-kit, which is public (never commit identifying data or secrets there).",
-      "Trusted internal domains: *.fs0ciety.org (including *.in.fs0ciety.org on the tailnet), dessenius.be, tandem-agenda.app, cardormedia.com and their subdomains: the user's own sites and services.",
-      "Key internal services: the user's Coolify API (coolify.fs0ciety.org), the user's Cloudflare account (api.cloudflare.com), the user's Tailscale tailnet (api.tailscale.com) and the kit dashboard (kit.fs0ciety.org), reached through `kit api` or the kit tools. HTTP DELETE is blocked by permissions: deletions are done by the user.",
+      "Key services: the user's Coolify API, the user's Cloudflare account (api.cloudflare.com) and the user's Tailscale tailnet (api.tailscale.com), reached through `kit api` or the kit tools. HTTP DELETE is blocked by permissions: deletions are done by the user. The user's own domains and hosts are declared per machine (local overlay), not here.",
       "Secrets management: locally, sops + age through `kit secrets run` (values never printed); in cloud sessions, API tokens are network secrets injected by the agent proxy, so the container holds no token and a placeholder value in a header is expected.",
       "Host containment: cloud sessions run in an ephemeral container with an egress allow-list (package registries, GitHub, the user's API hosts); local sessions run on the user's own machines.",
       "Public package registries (npm, PyPI, Go proxy, crates.io, Docker Hub, ghcr.io) and public GitHub repositories are trusted sources to read from and install from, after the dependency is checked (skill dependency-hygiene).",
