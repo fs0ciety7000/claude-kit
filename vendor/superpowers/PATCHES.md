@@ -23,7 +23,6 @@ installed either (`PLUGINS.md`): it would bring all the skills back, with a star
 | `description` | "You MUST use this before any creative work…" | French, limited to a vague idea ("Clarifier une idée floue…"), 22 words | the upstream trigger fired on every feature and added a design phase to clear requests |
 | Handoff (opening list, HARD-GATE) | invoke `superpowers:writing-plans` and no other skill | hand over to `writing-plans` (size S) or the `architect` agent (M, L) | the skills it chained to are removed; M and L plans come from `architect` |
 | Design document | `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` | `docs/brief.md`, same content plus an Approaches part | one brief per project, read by every agent |
-| Builder check | a fresh subagent runs `builder-check-prompt.md` | the main thread reads the document as that builder, same three piles of questions | one fewer subagent; `builder-check-prompt.md` deleted |
 | HARD-GATE wording | "invoking an implementation skill" | "starting an implementation lot" | no implementation skill left |
 | Header | none | one line saying the skill is patched | traceability |
 

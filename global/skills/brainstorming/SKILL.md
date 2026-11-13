@@ -5,7 +5,7 @@ description: Clarifier une idée floue avec l'utilisateur avant de planifier : c
 
 # Brainstorming
 
-Patched for claude-kit (see `vendor/superpowers/PATCHES.md`): for vague ideas only; the design goes to `docs/brief.md`; no reviewer subagent.
+Patched for claude-kit (see `vendor/superpowers/PATCHES.md`): for vague ideas only; the design goes to `docs/brief.md`; the builder check subagent is kept.
 
 You are very good at building. You build what you believe your human
 partner wants, and that belief is usually thinner than it feels. This
@@ -248,16 +248,24 @@ builder check.
 plus an **Approaches** part), committed with the project. Outside a software repo, pick a sensible place and say
 where. Your human partner's preferences override both.
 
-**Builder check** (for a project): before you hand the document over, read it once as the builder who will plan from
-it, and write down what that builder would have to ask. Sort the questions into three piles:
+**Builder check** (for a project): dispatch a fresh subagent with
+`builder-check-prompt.md` in this directory. When you tell your human
+partner you're writing it up, say a reviewer will read it first and you
+may come back once with a few questions. Don't hand over the document
+until the check is back. Sort what the builder asks into three piles:
 
-- **Answered already** by the conversation or the project: put the answer in the document.
-- **Minor:** a sensible builder could settle it without changing what gets built. Settle it yourself and mark it in
-  the document as your call.
-- **Theirs:** only your human partner can answer it, and the answer changes what gets built.
+- **Answered already** by the conversation or the project: put the answer
+  in the document.
+- **Minor:** a sensible builder could settle it without changing what gets
+  built. Settle it yourself and mark it in the document as your call.
+- **Theirs:** only your human partner can answer it, and the answer changes
+  what gets built.
 
-Bring the "theirs" pile in one message, most important first. Update the document with their answers, then hand it
-over with a short list of the calls you made so they can check those while reading. No reviewer subagent.
+Bring the "theirs" pile in one message, most important first. Update the
+document with their answers, then hand it over with a short list of the
+calls you made so they can check those while reading. That's the only
+round of questions the check produces. Without a subagent tool, read the
+document as that builder yourself.
 
 <HARD-GATE>
 Nothing gets built until your human partner approves the design doc:
