@@ -95,6 +95,8 @@ SERVER_main=serveruuid00000000000001
 DEFAULT_SERVER=main
 BRIDGE_APP_UUID=bridgeuuid00000000000001
 TAILNET_SUFFIX=in.example.org
+PREVIEW_ZONE=example.org
+PREVIEW_SUFFIX=preview.example.org
 EOF
 }
 mkproj() { # dir name expose domain [volumes]
@@ -428,6 +430,85 @@ for b in '{"name":"BODYMARK1"}' "@$T/b.json"; do
 done
 t "kit api : fichier source @ gardé" test -f "$T/b.json"
 
+# ---------------------------------------------------------------------------
+section "previews setup : joker DNS et Access"
+rm -f "$FAKE/gh_pr"
+s3=$(infra_sum); : >"$FAKE_LOG"
+OUT=$(bash "$SHIP" previews setup --dry-run 2>&1); RC=$?
+t "setup dry-run : code 0" test "$RC" -eq 0
+t "setup dry-run : CNAME joker annoncé" has "+ DNS : CNAME *.preview.example.org vers le tunnel"
+t "setup dry-run : Access joker annoncé" has "+ Access : application *.preview.example.org (policies : me)"
+t "setup dry-run : dépôt d'infra intact, aucun gh" test "$(infra_sum)" = "$s3" -a ! -s "$FAKE_LOG"
+OUT=$(bash "$SHIP" previews setup 2>&1); RC=$?
+t "setup : code 0" test "$RC" -eq 0
+t "setup : une PR" test "$(logn 'gh api -X POST repos/example-owner/example-infra/pulls')" -eq 1
+t "setup : branche kit/previews" git -C "$INFRA_BARE" rev-parse -q --verify kit/previews
+t "setup : contrôle de l'ingress du tunnel signalé" has "ingress du tunnel couvre *.preview.example.org"
+shw() { git -C "$INFRA_BARE" show "kit/previews:$1"; }
+t "setup : CNAME joker proxifié vers le tunnel" bash -c 'grep -A5 "^  \"\*\.preview CNAME\":" <<<"$1" | grep -q "proxied: true" && grep -qF "name: \"*.preview.example.org\"" <<<"$1" && grep -qF cfargotunnel <<<"$1"' _ "$(shw infra/cloudflare/dns/example.org.yaml)"
+t "setup : Access joker avec ACCESS_POLICIES" bash -c 'grep -A9 "^  \"\*\.preview\.example\.org\":" <<<"$1" | grep -qF "policies: [\"me\"]"' _ "$(shw infra/cloudflare/access.yaml)"
+sha2=$(git -C "$INFRA_BARE" rev-parse kit/previews)
+: >"$FAKE_LOG"
+OUT=$(bash "$SHIP" previews setup 2>&1); RC=$?
+t "setup relancé : idempotent (aucun commit, aucune PR)" test "$(git -C "$INFRA_BARE" rev-parse kit/previews)" = "$sha2" -a "$(logn 'gh api -X POST')" -eq 0
+t "setup relancé : déjà déclarés" bash -c 'grep -qF "= DNS : CNAME *.preview.example.org" <<<"$1" && grep -qF "= Access : application *.preview.example.org" <<<"$1"' _ "$OUT"
+rm -f "$FAKE/gh_pr"
+printf 'PREVIEW_SUFFIX=pv.in.example.org\n' >>"$KIT_CONFIG/ship.conf"
+OUT=$(bash "$SHIP" previews setup --dry-run 2>&1)
+t "setup : suffixe sous le tailnet refusé" has "se recouvrent"
+write_conf
+
+section "previews : projet (taille, pile, Access)"
+pw_set() { sed -i.bak -e "s/^size: .*/size: $1/" -e "s/^stack: .*/stack: $2/" -e "s/^previews: .*/previews: $3/" "$PW/project.yaml" && rm -f "$PW/project.yaml.bak"; }
+PW="$T/pw"
+mkproj "$PW" pw access pw.example.org no
+OUT=$(bash "$SHIP" project-get previews --dir "$PW"); t "get : previews false par défaut" test "$OUT" = false
+pw_set S astro true
+run plan --dir "$PW"
+t "taille S : refus" bash -c '[[ $1 -ne 0 ]] && grep -q "taille M ou L" <<<"$2"' _ "$RC" "$OUT"
+pw_set M go-cli true
+run plan --dir "$PW"
+t "pile non web : refus" bash -c '[[ $1 -ne 0 ]] && grep -q "piles web" <<<"$2"' _ "$RC" "$OUT"
+mkproj "$T/inpv" inpv public x.preview.example.org no
+run plan --dir "$T/inpv"
+t "domaine sous le suffixe des prévisualisations : refus" has "réservé"
+pw_set M "astro pocketbase" true
+fixture GET /applications '[]'
+fixture GET /applications/bridgeuuid00000000000001/envs '[]'
+: >"$FAKE_LOG"; p1=$(proj_sum "$PW")
+run app --dir "$PW" --dry-run
+t "Access joker absent de main : prévisualisations coupées" has "coupées (application Access *.preview.example.org absente"
+t "Access absent : corps sans prévisualisation" bash -c 'grep -q "\"is_preview_deployments_enabled\": false" <<<"$1" && ! grep -q preview_url_template <<<"$1"' _ "$OUT"
+t "app dry-run : rien écrit (projet, API)" test "$(proj_sum "$PW")" = "$p1" -a "$(grep -cE ' (POST|PATCH|PUT|TRIGGER|DELETE) ' "$FAKE_LOG")" -eq 0
+# The owner merges the setup PR: the Access application is now on the base branch.
+git -C "$INFRA" pull -q --no-rebase origin main && git -C "$INFRA" merge -q --no-edit origin/kit/previews && git -C "$INFRA" push -q origin main
+PWNEW=pwappuuid000000000000001
+fixture POST /applications/private-github-app "{\"uuid\":\"$PWNEW\"}"
+fixture GET "/applications/$PWNEW" '{"git_repository":"acme/pw","preview_url_template":"{{pr_id}}-pw.preview.example.org","settings":{"is_auto_deploy_enabled":false,"is_preview_deployments_enabled":true}}'
+: >"$FAKE_LOG"
+run app --dir "$PW"
+body=$(grep -A1 'POST /applications/private-github-app' "$FAKE_LOG" | sed -n 's/^BODY //p')
+t "Access présent : prévisualisations activées" jb '.is_preview_deployments_enabled == true and .is_pr_deployments_public_enabled == false'
+t "Access présent : modèle sous le suffixe protégé" jb '.preview_url_template == "{{pr_id}}-pw.preview.example.org"'
+t "Access présent : relu sans alerte" bash -c '! grep -q "pas gardé le réglage" <<<"$1"' _ "$OUT"
+printf 'ACCESS_POLICIES=me,other\n' >>"$KIT_CONFIG/ship.conf"
+run app --dir "$PW" --dry-run
+t "Access aux autres policies : coupées" has "policies différentes de ACCESS_POLICIES"
+write_conf
+pw_set M astro false
+: >"$FAKE_LOG"
+run app --dir "$PW"
+body=$(grep -A1 "PATCH /applications/$PWNEW" "$FAKE_LOG" | sed -n 's/^BODY //p')
+t "previews: false : coupées par PATCH" jb '.is_preview_deployments_enabled == false and (has("preview_url_template") | not)'
+t "previews: false : écart relu signalé" has "pas gardé le réglage"
+printf '%s\n' '  "*.pv A":' '    name: "*.pv.example.org"' '    type: "A"' '    proxied: false' >>"$INFRA/infra/cloudflare/dns/example.org.yaml"
+git -C "$INFRA" commit -qam "wildcard taken" && git -C "$INFRA" push -q origin main
+printf 'PREVIEW_SUFFIX=pv.example.org\n' >>"$KIT_CONFIG/ship.conf"
+s4=$(infra_sum); : >"$FAKE_LOG"
+OUT=$(bash "$SHIP" previews setup 2>&1); RC=$?
+t "setup : joker déjà déclaré autrement : refus" bash -c '[[ $1 -ne 0 ]] && grep -q "nom déjà utilisé" <<<"$2"' _ "$RC" "$OUT"
+t "setup refusé : ni push ni PR" test "$(infra_sum)" = "$s4" -a "$(logn 'gh api -X POST')" -eq 0
+write_conf
 # ---------------------------------------------------------------------------
 section "status"
 fixture GET "/deployments/applications/$NEW?take=10" '{"count":2,"deployments":[{"status":"failed","created_at":"2026-11-13T10:00:00Z","commit":"aaaaaaaa"},{"status":"finished","created_at":"2026-11-13T12:00:00Z","is_webhook":false,"commit":"bbbbbbbbbbbb"},{"status":"failed","created_at":"2026-11-12T12:00:00Z"}]}'

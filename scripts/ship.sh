@@ -8,6 +8,8 @@
 #                                         path), env var NAMES checked against .env.example, .fs0/bridge.yaml deploy:,
 #                                         owner/repo=uuid added to the bridge's DEPLOY_ALLOW
 #   kit ship status [--dir D] [--wait S]  last deployment and HTTPS answer of the domain (--wait: poll up to S seconds)
+#   kit ship previews setup [--dry-run]   one-time infra PR: proxied wildcard CNAME *.<PREVIEW_SUFFIX> to the tunnel
+#                                         and an Access application for it (project.yaml previews: true needs it)
 #   --apex                                allow a zone apex as domain (refused otherwise)
 #   kit project get [key] [--dir D]       read the project.yaml fields used here (defaults applied)
 #
@@ -19,7 +21,7 @@ SELF=$(readlink -f "${BASH_SOURCE[0]}")
 source "$(dirname "$SELF")/lib.sh"
 set -f # no pathname expansion: word lists here (ZONES, policies) come from configuration, never from file names
 
-usage() { sed -n '2,15p' "$SELF" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,17p' "$SELF" | sed 's/^# \{0,1\}//'; }
 
 # Test seams: the commands used for the Coolify API, GitHub and HTTPS checks.
 API=${KIT_SHIP_API:-$KIT_HOME/scripts/api.sh}
@@ -71,11 +73,12 @@ pget() { # key
       health_path) v=/ ;;
       volumes) v=no ;;
       branch) v=main ;;
+      previews) v=false ;;
     esac
   fi
   printf '%s\n' "$v"
 }
-SHIP_KEYS="name expose domain server coolify_uuid health_path volumes"
+SHIP_KEYS="name expose domain server coolify_uuid health_path volumes previews"
 
 project_get() {
   local key=""
@@ -94,15 +97,17 @@ project_get() {
 }
 
 # ---------- project ----------
-P_NAME="" P_EXPOSE="" P_DOMAIN="" P_SERVER="" P_UUID="" P_HEALTH="" P_VOLUMES="" P_REPO="" P_BRANCH=""
+P_NAME="" P_EXPOSE="" P_DOMAIN="" P_SERVER="" P_UUID="" P_HEALTH="" P_VOLUMES="" P_REPO="" P_BRANCH="" P_PREVIEWS=""
 load_project() {
   [[ -f $DIR/project.yaml ]] || die "project.yaml absent dans $DIR (kit project init)"
   [[ ! -L $DIR/project.yaml ]] || die "project.yaml est un lien symbolique : refusé"
   P_NAME=$(pget name) P_EXPOSE=$(pget expose) P_DOMAIN=$(pget domain) P_SERVER=$(pget server)
   P_UUID=$(pget coolify_uuid) P_HEALTH=$(pget health_path) P_VOLUMES=$(pget volumes) P_BRANCH=$(pget branch)
+  P_PREVIEWS=$(pget previews)
   [[ $P_NAME =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || die "project.yaml : name invalide ou absent (minuscules, chiffres, tirets)"
   [[ $P_EXPOSE =~ ^(none|tailnet|access|public)$ ]] || die "project.yaml : expose doit valoir none, tailnet, access ou public"
   [[ $P_VOLUMES =~ ^(yes|no)$ ]] || die "project.yaml : volumes doit valoir yes ou no"
+  [[ $P_PREVIEWS =~ ^(true|false)$ ]] || die "project.yaml : previews doit valoir true ou false"
   [[ $P_HEALTH =~ ^/[A-Za-z0-9._~/-]*$ ]] || die "project.yaml : health_path invalide (ex. /health)"
   [[ $P_BRANCH =~ ^[A-Za-z0-9._/-]+$ ]] || die "project.yaml : branch invalide"
   [[ -z $P_UUID || $P_UUID =~ ^[a-z0-9]{8,40}$ ]] || die "project.yaml : coolify_uuid invalide"
@@ -221,10 +226,10 @@ taken() { die "$1 : nom déjà utilisé : à régler à la main (rien n'a été 
 
 # Each step prints "+ ..." (added), "= ..." (already there, exactly as kit ship writes it) or "- ..." (not
 # applicable); anything else under the same name stops the run before any commit. CHANGES counts additions.
-CHANGES=0 SUMMARY=()
+CHANGES=0 SUMMARY=() DNS_ZONE="" # DNS_ZONE: zone forced by the caller (previews setup), else the longest match
 step_dns() { # root
   local root=$1 zone f sub key snip ents keys k
-  zone=$(zone_of "$P_DOMAIN")
+  zone=${DNS_ZONE:-$(zone_of "$P_DOMAIN")}
   [[ -n $zone ]] || die "aucune zone de ship.conf (ZONES) ne contient $P_DOMAIN"
   f="$root/$DNS_DIR/$zone.yaml"
   [[ -f $f ]] || die "fichier de zone absent : $DNS_DIR/$zone.yaml"
@@ -379,6 +384,67 @@ check_exposure() {
   fi
   return 0
 }
+# ---------- PR previews (Coolify preview deployments, always behind the Access wildcard) ----------
+# A preview is named <pr>-<name>.<PREVIEW_SUFFIX>: one label under the suffix, so the wildcard DNS record, the wildcard
+# Access application and an edge certificate for *.<PREVIEW_SUFFIX> cover exactly that level, and nothing else.
+WEB_STACKS=" astro next nextjs vite go-web static nuxt svelte sveltekit remix react vue angular solid qwik web web-frontend laravel php django rails "
+PREVIEW_SUFFIX="" PREVIEW_ZONE="" PREVIEWS_ON=0 PREVIEW_WHY=""
+load_preview_conf() { # PREVIEW_SUFFIX and PREVIEW_ZONE, validated against ZONES and TAILNET_SUFFIX
+  local tsfx z ok=0
+  PREVIEW_SUFFIX=$(conf_req PREVIEW_SUFFIX "$DOMAIN_RE")
+  PREVIEW_ZONE=$(conf_req PREVIEW_ZONE "$DOMAIN_RE")
+  [[ $PREVIEW_SUFFIX == *".$PREVIEW_ZONE" ]] || die "ship.conf : PREVIEW_SUFFIX doit être un sous-domaine de PREVIEW_ZONE (ex. preview.$PREVIEW_ZONE)"
+  if [[ -n $(conf ZONES) ]]; then
+    for z in $(conf ZONES); do [[ $z != "$PREVIEW_ZONE" ]] || ok=1; done
+    ((ok)) || die "ship.conf : PREVIEW_ZONE absente de ZONES"
+  fi
+  tsfx=$(conf TAILNET_SUFFIX)
+  if [[ -n $tsfx ]] && [[ $PREVIEW_SUFFIX == "$tsfx" || $PREVIEW_SUFFIX == *".$tsfx" || $tsfx == *".$PREVIEW_SUFFIX" ]]; then
+    die "ship.conf : PREVIEW_SUFFIX et TAILNET_SUFFIX se recouvrent : refusé"
+  fi
+  return 0
+}
+preview_template() { printf '{{pr_id}}-%s.%s' "$P_NAME" "$PREVIEW_SUFFIX"; }
+# previews: true is for web stacks of size M or L with a public name (Coolify derives the preview scheme from it).
+check_previews() {
+  local sfx size w web=0
+  sfx=$(conf PREVIEW_SUFFIX)
+  if [[ -n $sfx && -n $P_DOMAIN ]] && [[ $P_DOMAIN == "$sfx" || $P_DOMAIN == *".$sfx" ]]; then
+    die "$P_DOMAIN est sous le suffixe des prévisualisations ($sfx), réservé : refusé"
+  fi
+  [[ $P_PREVIEWS == true ]] || return 0
+  size=$(pget size)
+  [[ $size == M || $size == L ]] || die "previews: true réservé aux projets de taille M ou L (size: ${size:-absente}) : passe previews à false ou change de taille (kit project size)"
+  for w in $(pget stack); do [[ $WEB_STACKS != *" $w "* ]] || web=1; done
+  ((web)) || die "previews: true réservé aux piles web (stack: $(pget stack)) : passe previews à false"
+  [[ $P_EXPOSE == access || $P_EXPOSE == public ]] || die "previews: true demande expose access ou public (expose: $P_EXPOSE)"
+  ((${#P_NAME} <= 50)) || die "previews: true : name trop long pour un nom de prévisualisation (50 caractères au plus)"
+  load_preview_conf
+}
+# PREVIEWS_ON=1 only if previews: true and the Access application *.<PREVIEW_SUFFIX> (ACCESS_POLICIES) is on the base
+# branch of the infra repo; otherwise previews are switched off on the application.
+preview_state() { # mode
+  local ref f ents pol="" p key
+  PREVIEWS_ON=0 PREVIEW_WHY="previews: false dans project.yaml"
+  [[ $P_PREVIEWS == true ]] || return 0
+  load_infra_conf
+  POLICIES=$(conf_req ACCESS_POLICIES '^[a-z0-9_]+([ ,]+[a-z0-9_]+)*$')
+  [[ $1 != real ]] || git -C "$INFRA_DIR" fetch -q origin || die "git fetch du dépôt d'infra en échec"
+  ref="origin/$INFRA_BASE" key="*.$PREVIEW_SUFFIX"
+  f="$(tmpd)/access.yaml"
+  git -C "$INFRA_DIR" show "$ref:$ACCESS_FILE" >"$f" 2>/dev/null || : >"$f"
+  for p in ${POLICIES//,/ }; do pol+="${pol:+, }\"$p\""; done
+  ents=$(yaml_entries "$f" applications)
+  if ! awk -F'\t' -v k="$key" '$1 == k { f = 1 } END { exit !f }' <<<"$ents"; then
+    PREVIEW_WHY="application Access $key absente de $ref du dépôt d'infra (kit ship previews setup, fusion, tofu apply)"
+  elif [[ $(entry_field "$ents" "$key" policies) != "[$pol]" ]]; then
+    PREVIEW_WHY="application Access $key aux policies différentes de ACCESS_POLICIES ($ref)"
+  else
+    PREVIEWS_ON=1 PREVIEW_WHY=""
+  fi
+  return 0
+}
+
 infra_needed() { [[ $P_EXPOSE == public || $P_EXPOSE == access || $P_VOLUMES == yes ]]; }
 
 # Copies the files an edit may touch, from a git ref, into a scratch tree (plan and --dry-run never touch the clone).
@@ -392,13 +458,17 @@ scratch_tree() { # ref -> dir
   done < <(infra_files "$ref")
   echo "$d"
 }
-infra_ref() { # branch ship/<name> on origin if it exists, else the base branch
-  if git -C "$INFRA_DIR" rev-parse -q --verify "refs/remotes/origin/ship/$P_NAME" >/dev/null; then echo "origin/ship/$P_NAME"
+INFRA_BRANCH="" # PR branch in the infra repo; default ship/<name>
+# A PR branch already merged into the base is stale: checks then run on the base, which may have moved since.
+infra_ref() { # PR branch on origin if it exists and is not merged, else the base branch
+  local b=${INFRA_BRANCH:-ship/$P_NAME}
+  if git -C "$INFRA_DIR" rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null \
+    && ! git -C "$INFRA_DIR" merge-base --is-ancestor "origin/$b" "origin/$INFRA_BASE" 2>/dev/null; then echo "origin/$b"
   else echo "origin/$INFRA_BASE"; fi
 }
 
 ship_infra() { # mode: plan | dry | real
-  local mode=$1 ref root wt branch="ship/$P_NAME" pr title body
+  local mode=$1 ref root wt branch=${INFRA_BRANCH:-ship/$P_NAME} pr title body
   if ! infra_needed; then echo "Infra : rien à changer"; infra_steps /nonexistent; return 0; fi
   load_infra_conf
   echo "Infra : branche $branch sur $INFRA_REPO"
@@ -499,19 +569,25 @@ app_payload() { # pack port -> JSON of the creation request
   local domains=""
   [[ -n $P_DOMAIN ]] && domains="https://$P_DOMAIN"
   jq -n --arg p "$CPROJ" --arg s "$SERVER_UUID" --arg e "$CENV" --arg g "$GHAPP" --arg r "$P_REPO" \
-    --arg b "$P_BRANCH" --arg bp "$1" --arg port "$2" --arg n "$P_NAME" --arg d "$domains" --arg h "$P_HEALTH" '
+    --arg b "$P_BRANCH" --arg bp "$1" --arg port "$2" --arg n "$P_NAME" --arg d "$domains" --arg h "$P_HEALTH" \
+    --argjson pv "$(preview_json)" '
     {project_uuid: $p, server_uuid: $s, environment_name: $e, github_app_uuid: $g, git_repository: $r,
      git_branch: $b, build_pack: $bp, ports_exposes: $port, name: $n,
      description: "kit ship", instant_deploy: false, is_auto_deploy_enabled: false,
      health_check_enabled: true, health_check_path: $h}
     + (if $d == "" then {} else {domains: $d} end)
-    + (if $bp == "static" then {is_static: true} else {} end)'
+    + (if $bp == "static" then {is_static: true} else {} end) + $pv'
+}
+preview_json() { # preview fields of both payloads: on with the Access-protected template, else off
+  jq -n --argjson on "$( ((PREVIEWS_ON)) && echo true || echo false)" --arg t "$( ((PREVIEWS_ON)) && preview_template)" '
+    {is_preview_deployments_enabled: $on, is_pr_deployments_public_enabled: false}
+    + (if $on then {preview_url_template: $t} else {} end)'
 }
 settings_payload() { # JSON of the PATCH that keeps an existing application in line
   local domains=""
   [[ -n $P_DOMAIN ]] && domains="https://$P_DOMAIN"
-  jq -n --arg d "$domains" --arg h "$P_HEALTH" '{is_auto_deploy_enabled: false, health_check_enabled: true, health_check_path: $h}
-    + (if $d == "" then {} else {domains: $d} end)'
+  jq -n --arg d "$domains" --arg h "$P_HEALTH" --argjson pv "$(preview_json)" '{is_auto_deploy_enabled: false, health_check_enabled: true, health_check_path: $h}
+    + (if $d == "" then {} else {domains: $d} end) + $pv'
 }
 jsonfile() { # stdin -> private temporary file, given to kit api as --json @file (api.sh hands the path, not the body, to its inner process)
   local f
@@ -560,6 +636,9 @@ ship_app() { # mode: plan | dry | real
   bp=${bpp% *} port=${bpp#* }
   echo "Coolify : application $P_NAME depuis $P_REPO@$P_BRANCH (GitHub App), build $bp, port $port"
   echo "  domaine : ${dom:-aucun (expose none)} ; santé : $P_HEALTH ; auto-déploiement Coolify coupé (le pont déploie)"
+  preview_state "$mode"
+  if ((PREVIEWS_ON)); then echo "  prévisualisations des PR : activées, https://$(preview_template) (derrière Access *.$PREVIEW_SUFFIX)"
+  else echo "  prévisualisations des PR : coupées ($PREVIEW_WHY)"; fi
   # Read-only checks first (plan included): which application, and whether DEPLOY_ALLOW accepts it.
   if [[ -n $uuid ]]; then
     app_owned "$uuid"
@@ -596,6 +675,7 @@ ship_app() { # mode: plan | dry | real
     announce "coolify_uuid dans project.yaml (retour arrière : git checkout project.yaml)"
     kv_set "$DIR/project.yaml" coolify_uuid "$uuid"
   fi
+  if [[ $mode == real && -n $uuid ]]; then preview_readback "$uuid"; fi
   if ((created)); then
     local auto
     auto=$(api "/applications/$uuid" --jq '.settings.is_auto_deploy_enabled // false' 2>/dev/null || echo unknown)
@@ -608,6 +688,16 @@ ship_app() { # mode: plan | dry | real
     echo "Suite : commite .fs0/bridge.yaml et project.yaml sur $P_BRANCH (PR) : après la CI verte, le pont déploie."
     echo "  Rien à pousser : kit api coolify TRIGGER \"/deploy?uuid=$uuid\" --jq '.' (première mise en ligne seulement)."
   fi
+}
+
+preview_readback() { # uuid : the preview settings Coolify kept (never trusted blindly)
+  local got want=false tpl=""
+  ((PREVIEWS_ON)) && want=true tpl=$(preview_template)
+  got=$(api "/applications/$1" --jq '{on: (.settings.is_preview_deployments_enabled // false), tpl: (.preview_url_template // "")}' 2>/dev/null) || got='{}'
+  if [[ $(jq -r '.on' <<<"$got") != "$want" ]] || { [[ $want == true ]] && [[ $(jq -r '.tpl' <<<"$got") != "$tpl" ]]; }; then
+    warn "prévisualisations : Coolify n'a pas gardé le réglage attendu (actives : $want) ; à corriger dans l'interface (Preview Deployments)"
+  fi
+  return 0
 }
 
 check_env_names() { # mode uuid
@@ -755,6 +845,34 @@ ship_status() {
   return "$rc"
 }
 
+# ---------- previews setup (one-time infra PR, no project) ----------
+previews_cmd() {
+  local sub=${1:-}
+  [[ $sub == setup ]] || die "usage : kit ship previews setup [--dry-run]"
+  shift
+  while (($#)); do
+    case $1 in
+      --dry-run) DRY=1 ;;
+      *) die "option inconnue : $1" ;;
+    esac
+    shift
+  done
+  need jq
+  load_conf
+  load_preview_conf
+  # The wildcard is shipped like an expose: access name: same anchored, idempotent edits, same refusals.
+  P_NAME=previews P_EXPOSE=access P_DOMAIN="*.$PREVIEW_SUFFIX" P_VOLUMES=no P_REPO="kit ship previews setup"
+  INFRA_BRANCH=kit/previews DNS_ZONE=$PREVIEW_ZONE
+  local mode=real
+  ((DRY)) && mode=dry
+  echo "kit ship previews setup : *.$PREVIEW_SUFFIX (zone $PREVIEW_ZONE), CNAME proxifié vers le tunnel et application Access"
+  ship_infra "$mode"
+  echo "  Propriétaire : vérifier que l'ingress du tunnel couvre *.$PREVIEW_SUFFIX (une règle *.$PREVIEW_ZONE le couvre chez cloudflared ; sinon ajouter *.$PREVIEW_SUFFIX avant la règle 404)"
+  echo "  et que le certificat d'edge couvre *.$PREVIEW_SUFFIX (Universal SSL ne couvre qu'un niveau sous la zone : certificat avancé ou Total TLS)."
+  ((DRY)) && echo "Rien n'a été écrit (--dry-run)."
+  return 0
+}
+
 # ---------- entry point ----------
 main() {
   local sub=${1:-help}
@@ -762,6 +880,7 @@ main() {
   case $sub in
     help|-h|--help) usage; return 0 ;;
     project-get) project_get "$@"; return ;;
+    previews) previews_cmd "$@"; return ;;
     plan|infra|app|status) ;;
     *) usage >&2; exit 1 ;;
   esac
@@ -784,15 +903,15 @@ main() {
   case $sub in
     status) ship_status ;;
     plan)
-      load_conf; check_exposure
+      load_conf; check_exposure; check_previews
       echo "kit ship plan : $P_NAME (expose $P_EXPOSE${P_DOMAIN:+, $P_DOMAIN}, serveur ${P_SERVER:-$(conf DEFAULT_SERVER)})"
       if [[ -z $P_UUID ]]; then echo "Première mise en prod : validation du propriétaire avant toute écriture."; fi
       ship_infra plan
       ship_app plan
       echo "Rien n'a été écrit."
       ;;
-    infra) load_conf; check_exposure; ship_infra "$mode"; ((DRY)) && echo "Rien n'a été écrit (--dry-run)." ;;
-    app) load_conf; check_exposure; ship_app "$mode"; ((DRY)) && echo "Rien n'a été écrit (--dry-run)." ;;
+    infra) load_conf; check_exposure; check_previews; ship_infra "$mode"; ((DRY)) && echo "Rien n'a été écrit (--dry-run)." ;;
+    app) load_conf; check_exposure; check_previews; ship_app "$mode"; ((DRY)) && echo "Rien n'a été écrit (--dry-run)." ;;
   esac
   return 0
 }

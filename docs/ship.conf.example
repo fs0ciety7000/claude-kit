@@ -16,6 +16,10 @@ TUNNEL_TARGET=00000000-0000-0000-0000-000000000000.cfargotunnel.com
 # Applications Access (bloc applications:) et policies réutilisables à leur attacher.
 ACCESS_FILE=infra/cloudflare/access.yaml
 ACCESS_POLICIES=me
+# Prévisualisations des PR (previews: true) : <pr>-<projet>.<PREVIEW_SUFFIX>, sous un CNAME joker proxifié et une
+# application Access joker posés une fois par kit ship previews setup ; PREVIEW_ZONE est le fichier de zone édité.
+PREVIEW_ZONE=example.org
+PREVIEW_SUFFIX=preview.example.org
 # Sondes Gatus (bloc endpoints:), pour expose: public seulement.
 GATUS_FILE=gatus/config.yaml
 GATUS_GROUP=Sites

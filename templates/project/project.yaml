@@ -5,10 +5,12 @@ size: TODO
 size_reason: TODO
 stack: TODO
 # Mise en ligne (kit ship, /ship). « "" » = non défini. expose : none | tailnet | access (derrière Cloudflare Access) |
-# public ; domain : nom complet sans https:// ; server : nom défini dans ship.conf du poste ; volumes : yes | no.
+# public ; domain : nom complet sans https:// ; server : nom défini dans ship.conf du poste ; volumes : yes | no ;
+# previews : true | false, prévisualisations des PR derrière Access (piles web, tailles M et L).
 expose: none
 domain: ""
 server: ""
 coolify_uuid: ""
 health_path: /
 volumes: no
+previews: false
