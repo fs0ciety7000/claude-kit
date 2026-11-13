@@ -425,6 +425,14 @@ kit ship status [--wait s]  # dernier déploiement (trié par created_at) et ré
 - **Déploiement** : le pont déploie après la CI verte sur `main` ; aucun déploiement de l'application par l'API après
   une fusion. Chaque écriture est annoncée sur une ligne ; `DELETE` n'est jamais utilisé.
 
+**Retirer** : `/retire` (ou `kit retire plan|run [--dry-run]`) met hors ligne un projet publié par `kit ship`, sans
+rien supprimer : arrêt de l'application Coolify (après contrôle qu'elle est construite depuis le dépôt du projet),
+retrait de l'entrée du dépôt dans `DEPLOY_ALLOW` du pont (relue et vérifiée, valeur jamais affichée), retrait de
+`deploy:` dans `.fs0/bridge.yaml`, PR d'infra `retire/<nom>` qui enlève les entrées DNS, Access, Gatus et sauvegarde
+seulement si elles sont identiques à ce qu'écrit `kit ship` (les autres sont signalées et gardées), puis
+`expose: none` (`coolify_uuid` gardé) et une note dans `DEPLOY.md` et `docs/memory/state.md`. Restent au
+propriétaire : `tofu apply`, la suppression de l'application dans l'interface Coolify et l'archivage du dépôt.
+
 ## VPS
 
 ```bash
