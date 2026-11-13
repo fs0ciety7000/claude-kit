@@ -1079,67 +1079,129 @@ run_hook CLAUDE_CODE_REMOTE=true
 [[ $RC == 0 && $OUT == "kit mis à jour : "* && $(head_of) == "$(git -C "$ORIGIN" rev-parse main)" ]] \
   && ok_ "autoupdate.off retiré : le hook met à jour de nouveau" || ko_ "autoupdate.off retiré" "code $RC, sortie : $OUT"
 
-# 11. autoupdate.pin : le kit reste sur la référence (tag, branche de origin ou révision) et s'y déplace.
+# 11. autoupdate.pin : SHA complet (écrit par kit autoupdate pin) ; le hook ne suit que ce SHA.
+setpin() { printf '%s\n%s\n' "$1" "${2:-nom}" >"$KIT_CONFIG/autoupdate.pin"; }
+pinned_rec() { head -n 1 "$KIT_CONFIG/autoupdate.pinned" 2>/dev/null; }
 v6_sha=$(git -C "$ORIGIN" rev-parse main)
 git -C "$SEED" tag rel1 "$v6_sha"
 push_commit v7
+v7_sha=$(git -C "$ORIGIN" rev-parse main)
 push_commit v8
 v8_sha=$(git -C "$ORIGIN" rev-parse main)
 git -C "$SEED" tag rel2 "$v8_sha"
-git -C "$SEED" push -q origin rel1 rel2
-echo rel1 >"$KIT_CONFIG/autoupdate.pin"
+git -C "$SEED" checkout -q -b side
+echo side >"$SEED/SIDE"
+git -C "$SEED" add SIDE
+git -C "$SEED" commit -q -m side
+side_sha=$(git -C "$SEED" rev-parse HEAD)
+git -C "$SEED" checkout -q main
+git -C "$SEED" push -q origin side rel1 rel2
+git -C "$KITCLONE" fetch -q origin side
+resolve() { "$KITCLONE/scripts/hooks/kit-autoupdate.sh" --resolve "$@" 2>"$TMP/resolve.err"; }
+RES=$(resolve rel1); [[ $RES == "$v6_sha" ]] && ok_ "pin --resolve : un tag donne le SHA complet" || ko_ "pin --resolve tag" "$RES $(cat "$TMP/resolve.err")"
+RES=$(resolve "${v8_sha:0:9}"); [[ $RES == "$v8_sha" ]] && ok_ "pin --resolve : un SHA abrégé donne le SHA complet" || ko_ "pin --resolve SHA abrégé" "$RES"
+RES=$(resolve "$v8_sha"); [[ $RES == "$v8_sha" ]] && ok_ "pin --resolve : un SHA complet" || ko_ "pin --resolve SHA complet" "$RES"
+RES=$(resolve main); [[ $RES == "$(git -C "$ORIGIN" rev-parse main)" ]] && ok_ "pin --resolve : une branche de origin (main)" || ko_ "pin --resolve main" "$RES"
+
+setpin "$v6_sha" rel1
 before=$(head_of)
 run_hook CLAUDE_CODE_REMOTE=true
 [[ $RC == 0 && -z $OUT && $(head_of) == "$before" && $before == "$v6_sha" ]] \
-  && ok_ "pin : déjà sur le tag épinglé, origin/main plus récent ignoré (aucune sortie)" || ko_ "pin : déjà sur le tag" "code $RC, sortie : $OUT"
-echo rel2 >"$KIT_CONFIG/autoupdate.pin"
+  && ok_ "pin : déjà sur le SHA épinglé, origin/main plus récent ignoré (aucune sortie)" || ko_ "pin : déjà sur le SHA" "code $RC, sortie : $OUT"
+setpin "$v8_sha" rel2
 rm -f "$MARK"
 run_hook CLAUDE_CODE_REMOTE=true
-[[ $RC == 0 && $OUT == "kit sur la version épinglée « rel2 » : "* && $(head_of) == "$v8_sha" ]] \
-  && ok_ "pin : déplacé sur le tag épinglé (message, HEAD détaché)" || ko_ "pin : déplacement sur rel2" "code $RC, sortie : $OUT"
-[[ -z $(git -C "$KITCLONE" symbolic-ref -q HEAD) ]] && ok_ "pin : HEAD détaché sur la révision épinglée" || ko_ "pin : HEAD non détaché"
+[[ $RC == 0 && $OUT == "kit sur la version épinglée ${v8_sha:0:7} : "* && $(head_of) == "$v8_sha" ]] \
+  && ok_ "pin : déplacé sur le SHA épinglé (message, HEAD détaché)" || ko_ "pin : déplacement" "code $RC, sortie : $OUT"
+[[ -z $(git -C "$KITCLONE" symbolic-ref -q HEAD) && $(pinned_rec) == "$v8_sha" ]] && ok_ "pin : HEAD détaché, dernier SHA épinglé enregistré" || ko_ "pin : HEAD détaché ou enregistrement"
 for _ in $(seq 1 50); do [[ -s $MARK ]] && break; sleep 0.1; done
 [[ $(cat "$MARK" 2>/dev/null) == "sync" ]] && ok_ "pin : kit sync lancé après le déplacement" || ko_ "pin : kit sync" "$(cat "$MARK" 2>/dev/null)"
 push_commit v9
 run_hook CLAUDE_CODE_REMOTE=true
 [[ $RC == 0 && -z $OUT && $(head_of) == "$v8_sha" ]] && ok_ "pin : un nouveau commit sur origin/main ne déplace pas un kit épinglé" || ko_ "pin : nouveau commit" "code $RC, sortie : $OUT"
-echo rel1 >"$KIT_CONFIG/autoupdate.pin"
+setpin "$v6_sha" rel1
 run_hook CLAUDE_CODE_REMOTE=true
-[[ $RC == 0 && $OUT == *"épinglée « rel1 »"* && $(head_of) == "$v6_sha" ]] \
-  && ok_ "pin : retour à une version plus ancienne" || ko_ "pin : retour à rel1" "code $RC, sortie : $OUT"
-echo "$v8_sha" >"$KIT_CONFIG/autoupdate.pin"
-run_hook CLAUDE_CODE_REMOTE=true
-[[ $RC == 0 && $(head_of) == "$v8_sha" ]] && ok_ "pin : une révision (SHA) fonctionne comme un tag" || ko_ "pin : SHA" "code $RC, sortie : $OUT"
-echo no-such-ref >"$KIT_CONFIG/autoupdate.pin"
+[[ $RC == 0 && $OUT == *"épinglée ${v6_sha:0:7}"* && $(head_of) == "$v6_sha" && $(pinned_rec) == "$v6_sha" ]] \
+  && ok_ "pin : retour à une version plus ancienne (ancêtre de origin/main, au-dessus du socle)" || ko_ "pin : retour à v6" "code $RC, sortie : $OUT"
+# Fichier invalide : un nom au lieu d'un SHA, une option, une valeur trop courte.
+for bad in rel2 --upload-pack=x "${v8_sha:0:12}" "$(printf '%s' "$v8_sha" | tr 'a-f' 'A-F')"; do
+  setpin "$bad"
+  before=$(head_of)
+  run_hook CLAUDE_CODE_REMOTE=true
+  [[ $RC == 0 && $OUT == *"SHA de 40 caractères"* && $(head_of) == "$before" ]] && ok_ "pin : fichier invalide (${bad:0:14}…) : une ligne, rien ne bouge" || ko_ "pin : fichier invalide ${bad:0:14}" "code $RC, sortie : $OUT"
+done
+# SHA absent du dépôt local ; branche non fusionnée (le SHA existe localement mais n'est pas dans origin/main).
+setpin 0123456789012345678901234567890123456789
 before=$(head_of)
 run_hook CLAUDE_CODE_REMOTE=true
-[[ $RC == 0 && $OUT == *"introuvable"* && $(head_of) == "$before" ]] && ok_ "pin : référence inconnue, message, kit inchangé" || ko_ "pin : référence inconnue" "code $RC, sortie : $OUT"
-printf '%s\n' 'rel1; touch /tmp/pwned' >"$KIT_CONFIG/autoupdate.pin"
+[[ $RC == 0 && $OUT == *"refusée"*"absente du dépôt local"* && $(head_of) == "$before" ]] && ok_ "pin : SHA inconnu du dépôt refusé" || ko_ "pin : SHA inconnu" "code $RC, sortie : $OUT"
+setpin "$side_sha" side
 run_hook CLAUDE_CODE_REMOTE=true
-[[ $RC == 0 && $OUT == *"référence invalide"* && $(head_of) == "$before" ]] && ok_ "pin : référence de forme invalide refusée, kit inchangé" || ko_ "pin : référence invalide" "code $RC, sortie : $OUT"
-printf '%s\n' '--upload-pack=x' >"$KIT_CONFIG/autoupdate.pin"
+[[ $RC == 0 && $OUT == *"refusée"*"historique de origin/main"* && $(head_of) == "$before" ]] && ok_ "pin : SHA d'une branche non fusionnée refusé par le hook" || ko_ "pin : branche non fusionnée (hook)" "code $RC, sortie : $OUT"
+RES=$(resolve side); rc=$?
+[[ $rc != 0 && -z $RES && $(cat "$TMP/resolve.err") == *"refusé"*"historique de origin/main"* ]] && ok_ "pin --resolve : une branche non fusionnée est refusée" || ko_ "pin --resolve : branche non fusionnée" "$RES $(cat "$TMP/resolve.err")"
+RES=$(resolve "${side_sha:0:10}"); rc=$?
+[[ $rc != 0 && -z $RES ]] && ok_ "pin --resolve : le SHA d'une branche non fusionnée est refusé aussi" || ko_ "pin --resolve : SHA non fusionné" "$RES"
+# Tag déplacé sur origin : le pin est un SHA, le hook n'en tient aucun compte ; la résolution par nom échoue ou garde l'ancien SHA.
+git -C "$SEED" tag -f rel1 "$v8_sha" >/dev/null
+git -C "$SEED" push -q -f origin rel1
+setpin "$v6_sha" rel1
+before=$(head_of)
 run_hook CLAUDE_CODE_REMOTE=true
-[[ $RC == 0 && $OUT == *"référence invalide"* ]] && ok_ "pin : une référence qui ressemble à une option est refusée" || ko_ "pin : option" "code $RC, sortie : $OUT"
-echo rel2 >"$KIT_CONFIG/autoupdate.pin"
+[[ $RC == 0 && -z $OUT && $(head_of) == "$before" && $before == "$v6_sha" ]] && ok_ "pin : un tag déplacé sur origin est sans effet (le pin est un SHA)" || ko_ "pin : tag déplacé" "code $RC, sortie : $OUT"
+RES=$(resolve rel1); rc=$?
+[[ $RES != "$v8_sha" ]] && ok_ "pin --resolve : un tag déplacé sur origin ne résout pas vers le nouveau commit (rc $rc)" || ko_ "pin --resolve : tag déplacé" "$RES"
+# Opération git en cours : rien ne bouge.
+setpin "$v8_sha" rel2
+for marker_f in BISECT_LOG MERGE_HEAD CHERRY_PICK_HEAD; do
+  touch "$KITCLONE/.git/$marker_f"
+  before=$(head_of)
+  run_hook CLAUDE_CODE_REMOTE=true
+  [[ $RC == 0 && $OUT == *"opération git en cours : $marker_f"* && $(head_of) == "$before" ]] && ok_ "pin : $marker_f présent, le hook ne déplace pas HEAD" || ko_ "pin : $marker_f" "code $RC, sortie : $OUT"
+  rm -f "$KITCLONE/.git/$marker_f"
+done
+for marker_d in rebase-merge rebase-apply; do
+  mkdir "$KITCLONE/.git/$marker_d"
+  before=$(head_of)
+  run_hook CLAUDE_CODE_REMOTE=true
+  [[ $RC == 0 && $OUT == *"opération git en cours : $marker_d"* && $(head_of) == "$before" ]] && ok_ "pin : $marker_d présent, le hook ne déplace pas HEAD" || ko_ "pin : $marker_d" "code $RC, sortie : $OUT"
+  rmdir "$KITCLONE/.git/$marker_d"
+done
+# HEAD détaché ailleurs que sur le dernier SHA épinglé : ignoré.
+git -C "$KITCLONE" checkout -q --detach "$v7_sha"
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"autre révision que la dernière épinglée"* && $(head_of) == "$v7_sha" ]] && ok_ "pin : HEAD détaché ailleurs que sur le dernier SHA épinglé, ignoré" || ko_ "pin : détaché ailleurs" "code $RC, sortie : $OUT"
 git -C "$KITCLONE" checkout -q main
 git -C "$KITCLONE" checkout -q -b feature-pin
 before=$(head_of)
 run_hook CLAUDE_CODE_REMOTE=true
 [[ $RC == 0 && $OUT == *"épinglée ignorée"*"pas main"* && $(head_of) == "$before" ]] && ok_ "pin : branche de travail autre que main, ignoré" || ko_ "pin : branche de travail" "code $RC, sortie : $OUT"
 git -C "$KITCLONE" checkout -q main
+git -C "$KITCLONE" branch -q -D feature-pin
 echo dirty >>"$KITCLONE/VERSION"
 before=$(head_of)
 run_hook CLAUDE_CODE_REMOTE=true
 [[ $RC == 0 && $OUT == *"modifications locales"* && $(head_of) == "$before" ]] && ok_ "pin : arbre modifié, ignoré" || ko_ "pin : arbre modifié" "code $RC, sortie : $OUT"
 git -C "$KITCLONE" checkout -q -- VERSION
-# Épinglage retiré : le kit détaché reste où il est (message « détachée »), puis suit main après `git checkout main`.
+# Fetch en échec : une ligne avec un pin (silence sans pin, voir plus haut).
+git -C "$KITCLONE" remote set-url origin "file://$AU/inexistant.git"
+before=$(head_of)
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"fetch de origin impossible"* && $(head_of) == "$before" ]] && ok_ "pin : fetch en échec, une ligne et rien ne bouge" || ko_ "pin : fetch en échec" "code $RC, sortie : $OUT"
+git -C "$KITCLONE" remote set-url origin "$ORIGIN"
+# Épinglage retiré : suit main de nouveau ; opération git en cours aussi sans pin.
 rm -f "$KIT_CONFIG/autoupdate.pin"
+touch "$KITCLONE/.git/BISECT_LOG"
+before=$(head_of)
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == *"opération git en cours : BISECT_LOG"* && $(head_of) == "$before" ]] && ok_ "sans pin : BISECT_LOG présent, le hook ne déplace pas HEAD" || ko_ "sans pin : BISECT_LOG" "code $RC, sortie : $OUT"
+rm -f "$KITCLONE/.git/BISECT_LOG"
+run_hook CLAUDE_CODE_REMOTE=true
+[[ $RC == 0 && $OUT == "kit mis à jour : "* && $(head_of) == "$(git -C "$ORIGIN" rev-parse main)" ]] && ok_ "épinglage retiré : le kit suit de nouveau origin/main" || ko_ "épinglage retiré" "code $RC, sortie : $OUT"
 git -C "$KITCLONE" checkout -q --detach "$v6_sha"
 run_hook CLAUDE_CODE_REMOTE=true
-[[ $RC == 0 && $OUT == *"détachée"*"pas main"* && $(head_of) == "$v6_sha" ]] && ok_ "épinglage retiré : un kit détaché n'est pas déplacé tout seul" || ko_ "épinglage retiré" "code $RC, sortie : $OUT"
+[[ $RC == 0 && $OUT == *"détachée"*"pas main"* && $(head_of) == "$v6_sha" ]] && ok_ "sans pin : un kit détaché n'est pas déplacé tout seul" || ko_ "sans pin : détaché" "code $RC, sortie : $OUT"
 git -C "$KITCLONE" checkout -q main
-run_hook CLAUDE_CODE_REMOTE=true
-[[ $RC == 0 && $OUT == "kit mis à jour : "* && $(head_of) == "$(git -C "$ORIGIN" rev-parse main)" ]] && ok_ "après git checkout main : le kit suit de nouveau origin/main" || ko_ "retour sur main" "code $RC, sortie : $OUT"
 
 # ---------------------------------------------------------------------------
 section "tailles S/M/L : kit project size, kit project effort"
@@ -1577,13 +1639,62 @@ au_status() { bash "$KIT" autoupdate status 2>&1; }
 [[ -e $KIT_CONFIG/autoupdate.off && $(au_status) == *'désactivée'* ]] && ok_ "kit autoupdate off : crée autoupdate.off, status le dit" || ko_ "kit autoupdate off"
 bash "$KIT" autoupdate on >/dev/null 2>&1
 [[ ! -e $KIT_CONFIG/autoupdate.off && $(au_status) == *'active'* ]] && ok_ "kit autoupdate on : retire autoupdate.off" || ko_ "kit autoupdate on"
-bash "$KIT" autoupdate pin v1.2.3 >/dev/null 2>&1
-[[ $(cat "$KIT_CONFIG/autoupdate.pin" 2>/dev/null) == v1.2.3 && $(au_status) == *'épinglée sur « v1.2.3 »'* ]] && ok_ "kit autoupdate pin : écrit autoupdate.pin, status l'affiche" || ko_ "kit autoupdate pin"
-bash "$KIT" autoupdate pin 'v1; rm -rf /' >/dev/null 2>&1 && ko_ "kit autoupdate pin : référence invalide refusée" || ok_ "kit autoupdate pin : référence invalide refusée"
-bash "$KIT" autoupdate pin -x >/dev/null 2>&1 && ko_ "kit autoupdate pin : option refusée" || ok_ "kit autoupdate pin : référence qui ressemble à une option refusée"
-[[ $(cat "$KIT_CONFIG/autoupdate.pin") == v1.2.3 ]] && ok_ "kit autoupdate pin : refus sans toucher au pin existant" || ko_ "kit autoupdate pin : pin modifié par un refus"
-bash "$KIT" autoupdate unpin >/dev/null 2>&1
-[[ ! -e $KIT_CONFIG/autoupdate.pin ]] && ok_ "kit autoupdate unpin : retire autoupdate.pin" || ko_ "kit autoupdate unpin"
+# Dépôt de test avec les vrais scripts : un commit d'avant le socle d'épinglage, le commit courant (tag v-post), une
+# branche non fusionnée.
+FLS="$TMP/fl-seed"; FLO="$TMP/fl-origin.git"; FLC="$TMP/fl-clone"
+git init -q --bare -b main "$FLO"
+git init -q -b main "$FLS"
+mkdir -p "$FLS/scripts/hooks"
+cp "$ROOT/scripts/lib.sh" "$ROOT/scripts/kit.sh" "$ROOT/scripts/managed-settings.jq" "$FLS/scripts/"
+cp "$ROOT"/scripts/hooks/*.sh "$FLS/scripts/hooks/"
+sed '/^KIT_PIN_FLOOR=/d' "$ROOT/scripts/hooks/kit-autoupdate.sh" >"$FLS/scripts/hooks/kit-autoupdate.sh"
+git -C "$FLS" add -A && git -C "$FLS" commit -q -m pre-floor
+pre_sha=$(git -C "$FLS" rev-parse HEAD)
+cp "$ROOT/scripts/hooks/kit-autoupdate.sh" "$FLS/scripts/hooks/kit-autoupdate.sh"
+git -C "$FLS" commit -q -am post-floor
+post_sha=$(git -C "$FLS" rev-parse HEAD)
+git -C "$FLS" tag v-post
+git -C "$FLS" checkout -q -b side
+echo x >"$FLS/SIDE" && git -C "$FLS" add SIDE && git -C "$FLS" commit -q -m side
+side_sha=$(git -C "$FLS" rev-parse HEAD)
+git -C "$FLS" checkout -q main
+git -C "$FLS" remote add origin "$FLO"
+git -C "$FLS" push -q origin main side v-post
+git clone -q "$FLO" "$FLC"
+fkit() { env KIT_HOME="$FLC" bash "$FLC/scripts/kit.sh" "$@"; }
+fkit autoupdate pin v-post >/dev/null 2>&1
+[[ $(sed -n 1p "$KIT_CONFIG/autoupdate.pin" 2>/dev/null) == "$post_sha" && $(sed -n 2p "$KIT_CONFIG/autoupdate.pin" 2>/dev/null) == v-post ]] \
+  && ok_ "kit autoupdate pin <tag> : écrit le SHA complet (ligne 1) et le nom (ligne 2)" || ko_ "kit autoupdate pin <tag>" "$(cat "$KIT_CONFIG/autoupdate.pin" 2>/dev/null)"
+[[ $(au_status) == *"épinglée sur ${post_sha:0:7} (v-post)"* ]] && ok_ "kit autoupdate status : SHA abrégé et nom" || ko_ "kit autoupdate status : pin" "$(au_status)"
+# Refus : socle d'épinglage (version d'avant), branche non fusionnée ; le pin existant n'est pas touché.
+dout=$(fkit autoupdate pin "$pre_sha" 2>&1); rc=$?
+[[ $rc != 0 && $dout == *"socle d'épinglage"* && $(sed -n 1p "$KIT_CONFIG/autoupdate.pin") == "$post_sha" ]] \
+  && ok_ "kit autoupdate pin : version d'avant le socle d'épinglage refusée (pin inchangé)" || ko_ "kit autoupdate pin : socle" "code $rc : $dout"
+dout=$(fkit autoupdate pin "${pre_sha:0:8}" 2>&1); rc=$?
+[[ $rc != 0 && $dout == *"socle d'épinglage"* ]] && ok_ "kit autoupdate pin : idem par SHA abrégé" || ko_ "kit autoupdate pin : socle (abrégé)" "code $rc : $dout"
+dout=$(fkit autoupdate pin side 2>&1); rc=$?
+[[ $rc != 0 && $dout == *"historique de origin/main"* && $(sed -n 1p "$KIT_CONFIG/autoupdate.pin") == "$post_sha" ]] \
+  && ok_ "kit autoupdate pin : branche non fusionnée refusée (pin inchangé)" || ko_ "kit autoupdate pin : branche non fusionnée" "code $rc : $dout"
+dout=$(fkit autoupdate pin "$side_sha" 2>&1); rc=$?
+[[ $rc != 0 ]] && ok_ "kit autoupdate pin : SHA d'une branche non fusionnée refusé" || ko_ "kit autoupdate pin : SHA non fusionné" "$dout"
+fkit autoupdate pin 'v1; rm -rf /' >/dev/null 2>&1 && ko_ "kit autoupdate pin : référence invalide refusée" || ok_ "kit autoupdate pin : référence invalide refusée"
+fkit autoupdate pin -x >/dev/null 2>&1 && ko_ "kit autoupdate pin : option refusée" || ok_ "kit autoupdate pin : référence qui ressemble à une option refusée"
+fkit autoupdate pin v-introuvable >/dev/null 2>&1 && ko_ "kit autoupdate pin : référence inconnue refusée" || ok_ "kit autoupdate pin : référence inconnue refusée"
+# Un SHA abrégé est un objet, jamais un nom : un tag qui porte ce nom et vise un autre commit n'est pas suivi.
+git -C "$FLS" tag "${post_sha:0:7}" "$pre_sha"
+git -C "$FLS" push -q origin "${post_sha:0:7}"
+rm -f "$KIT_CONFIG/autoupdate.pin"
+dout=$(fkit autoupdate pin "${post_sha:0:7}" 2>&1)
+[[ $(sed -n 1p "$KIT_CONFIG/autoupdate.pin" 2>/dev/null) == "$post_sha" ]] && ok_ "kit autoupdate pin : un SHA abrégé masqué par un tag du même nom résout l'objet, pas le tag" || ko_ "kit autoupdate pin : SHA masqué par un tag" "$(cat "$KIT_CONFIG/autoupdate.pin" 2>/dev/null) $dout"
+# Le hook refuse aussi un pin d'avant le socle écrit à la main.
+printf '%s\n%s\n' "$pre_sha" vieux >"$KIT_CONFIG/autoupdate.pin"
+hout=$(env CLAUDE_CODE_REMOTE=true KIT_CONFIG="$KIT_CONFIG" "$FLC/scripts/hooks/kit-autoupdate.sh" </dev/null 2>&1)
+[[ $hout == *"refusée"*"socle d'épinglage"* && $(git -C "$FLC" rev-parse HEAD) == "$post_sha" ]] && ok_ "hook : un pin d'avant le socle est refusé, HEAD inchangé" || ko_ "hook : pin d'avant le socle" "$hout"
+printf 'garbage\n' >"$KIT_CONFIG/autoupdate.pin"
+[[ $(au_status) == *"invalide"* ]] && ok_ "kit autoupdate status : un pin invalide est signalé" || ko_ "kit autoupdate status : pin invalide" "$(au_status)"
+touch "$KIT_CONFIG/autoupdate.pinned"
+fkit autoupdate unpin >/dev/null 2>&1
+[[ ! -e $KIT_CONFIG/autoupdate.pin && ! -e $KIT_CONFIG/autoupdate.pinned ]] && ok_ "kit autoupdate unpin : retire autoupdate.pin et autoupdate.pinned" || ko_ "kit autoupdate unpin"
 [[ $(KIT_AUTOUPDATE=0 au_status) == *'KIT_AUTOUPDATE=0'* ]] && ok_ "kit autoupdate status : KIT_AUTOUPDATE=0 signalé" || ko_ "kit autoupdate status : variable"
 usage_txt=$("$ROOT/scripts/kit.sh" help 2>&1)
 [[ $usage_txt == *autoupdate.pin* && $usage_txt == *autoupdate.off* ]] && ok_ "usage : autoupdate.off et autoupdate.pin documentés" || ko_ "usage : autoupdate"

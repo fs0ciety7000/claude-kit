@@ -79,9 +79,10 @@ INFOS & MAINTENANCE
   kit update                             git pull du kit + sync + mise à jour des skills globaux
         (au démarrage de session, le hook kit-autoupdate fait déjà un fast-forward sur main puis sync,
         au plus toutes les 6 h en local ; KIT_AUTOUPDATE=0 ou le fichier autoupdate.off le désactive ;
-        autoupdate.pin épingle une version : pas de pull, le kit reste sur cette référence)
+        autoupdate.pin épingle un SHA : pas de pull, le kit reste sur cette révision)
   kit autoupdate [status|off|on|pin <réf>|unpin]
-        interrupteur et épinglage de la mise à jour automatique (fichiers ~/.config/claude-kit/autoupdate.off|pin)
+        interrupteur et épinglage de la mise à jour automatique ; pin résout la référence une fois (tag, branche de origin,
+        révision) et exige un ancêtre de origin/main, au-dessus du socle d'épinglage ; le hook ne suit que le SHA écrit
   kit overlay env [fichier|--clear]       pose les phrases autoMode.environment propres au poste (domaines internes) dans
         ~/.config/claude-kit/settings.local.json (600) depuis un fichier texte hors dépôt, une phrase par ligne
         (défaut : ~/.config/claude-kit/environment.local.txt, appliqué aussi par kit sync) ; --clear les retire
@@ -1001,16 +1002,26 @@ cmd_version() {
 }
 
 # kit autoupdate : interrupteur (autoupdate.off) et épinglage (autoupdate.pin) du hook kit-autoupdate.
+# autoupdate.pin : SHA complet sur la première ligne, nom donné sur la seconde (affichage seulement).
 pin_valid() { [[ ${1:-} =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$ ]]; }
+pin_info() { # imprime « <sha7> (<nom>) » si autoupdate.pin est valide, code 1 sinon
+  local f="$KIT_CONFIG/autoupdate.pin" sha name
+  [[ -f $f ]] || return 1
+  sha=$(sed -n 1p "$f" | tr -d '[:space:]')
+  name=$(sed -n 2p "$f" | tr -d '[:space:]')
+  [[ $sha =~ ^[0-9a-f]{40}$ ]] || return 1
+  pin_valid "$name" || name=""
+  echo "${sha:0:7}${name:+ ($name)}"
+}
 cmd_autoupdate() {
-  local sub=${1:-status} off="$KIT_CONFIG/autoupdate.off" pin="$KIT_CONFIG/autoupdate.pin" ref
+  local sub=${1:-status} off="$KIT_CONFIG/autoupdate.off" pin="$KIT_CONFIG/autoupdate.pin" ref sha info
   case $sub in
     status)
       if [[ ${KIT_AUTOUPDATE:-1} == 0 ]]; then info "mise à jour auto : désactivée (KIT_AUTOUPDATE=0 dans l'environnement)"
       elif [[ -e $off ]]; then info "mise à jour auto : désactivée ($off)"
       elif [[ -f $pin ]]; then
-        ref=$(head -n 1 "$pin" | tr -d '[:space:]')
-        if pin_valid "$ref"; then info "mise à jour auto : version épinglée sur « $ref »"; else warn "autoupdate.pin : référence invalide, la mise à jour auto l'ignore"; fi
+        if info=$(pin_info); then info "mise à jour auto : version épinglée sur $info"
+        else warn "autoupdate.pin invalide (SHA de 40 caractères attendu) : le hook l'ignore ; kit autoupdate pin <réf> le réécrit"; fi
       else info "mise à jour auto : active (main, au plus toutes les 6 h en local)"; fi
       cmd_version ;;
     off) mkdir -p "$KIT_CONFIG" && : >"$off"; ok "mise à jour auto désactivée ($off) ; « kit autoupdate on » la réactive" ;;
@@ -1018,11 +1029,15 @@ cmd_autoupdate() {
     pin)
       ref=${2:-}
       pin_valid "$ref" || die "usage : kit autoupdate pin <tag|branche|révision>  (lettres, chiffres, . _ - /)"
+      # Le hook résout la référence une fois (origin/main et tags), exige un ancêtre de origin/main et un kit qui sait
+      # épingler (KIT_PIN_FLOOR), et imprime le SHA complet : c'est lui, et non le nom, que le hook suit ensuite.
+      sha=$("$KIT_HOME/scripts/hooks/kit-autoupdate.sh" --resolve "$ref") || exit 1
+      [[ $sha =~ ^[0-9a-f]{40}$ ]] || die "résolution inattendue"
       mkdir -p "$KIT_CONFIG"
-      printf '%s\n' "$ref" >"$pin"
-      ok "kit épinglé sur « $ref » : le hook y place le kit au prochain démarrage de session (kit sync suit)" ;;
+      write_atomic "$pin" "$sha"$'\n'"$ref" 600
+      ok "kit épinglé sur ${sha:0:7} ($ref) : le hook y place le kit au prochain démarrage de session (kit sync suit)" ;;
     unpin)
-      rm -f "$pin"
+      rm -f "$pin" "$KIT_CONFIG/autoupdate.pinned"
       ok "épinglage retiré"
       if [[ -z $(git -C "$KIT_HOME" symbolic-ref -q HEAD 2>/dev/null) ]]; then
         echo "Le kit est en HEAD détaché : git -C $KIT_HOME checkout main  (puis la mise à jour auto suit main)"
@@ -1095,7 +1110,8 @@ cmd_doctor() {
     if [[ ${KIT_AUTOUPDATE:-1} == 0 || -e $KIT_CONFIG/autoupdate.off ]]; then
       echo "! mise à jour auto désactivée sur ce poste : kit autoupdate on"
     elif [[ -f $KIT_CONFIG/autoupdate.pin ]]; then
-      info "kit épinglé sur « $(head -n 1 "$KIT_CONFIG/autoupdate.pin" | tr -d '[:space:]') » : kit autoupdate unpin pour suivre main"
+      if t=$(pin_info); then info "kit épinglé sur $t : kit autoupdate unpin pour suivre main"
+      else echo "! autoupdate.pin invalide (SHA de 40 caractères attendu), ignoré par le hook : kit autoupdate pin <réf>"; fi
     fi
   else
     echo "✗ hook de mise à jour auto absent (script ou réglage) : kit sync"; bad=1
