@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npm run build *)",
+      "Bash(npm run lint)",
+      "Bash(npm run lint *)",
+      "Bash(npm run test)",
+      "Bash(npm run test *)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run format)",
+      "Bash(npm run format *)",
+      "Bash(npm run check)",
+      "Bash(npm run check *)",
+      "Bash(npm test)",
+      "Bash(npm test *)",
+      "Bash(npm audit)",
+      "Bash(npm audit *)",
+      "Bash(npm ls *)",
+      "Bash(npm outdated)",
+      "Bash(pnpm run build)",
+      "Bash(pnpm run lint)",
+      "Bash(pnpm run test)",
+      "Bash(pnpm test)",
+      "Bash(pnpm audit)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(npx prettier --check *)",
+      "Bash(npx vitest run)",
+      "Bash(npx vitest run *)",
+      "Bash(node --test *)"
+    ]
+  }
+}

@@ -32,20 +32,25 @@ BASH_SPEC_CHARS_RE='^[A-Za-z0-9 _./:=%,*-]+$'
 BASH_ALLOW_PREFIXES=(
   # Node : tests et outils de la pile (les scripts « npm run <script> » sont traités à part, voir BASH_RUN_PREFIXES)
   "npm test" "pnpm test" "yarn test" "bun test"
+  "npm audit" "npm ls" "npm outdated" "pnpm audit" "pnpm ls" "yarn audit"
   "npx prettier" "npx eslint" "npx tsc" "npx vitest" "npx playwright test"
+  "npx astro check" "npx astro build" "npx astro sync" "npx next lint" "npx next build" "npx svelte-check" "npx biome check" "npx biome lint"
   "node --test"
   "tsc" "eslint" "prettier"
   # Go
-  "go test" "go build" "go vet" "gofmt -l" "go fmt" "go mod tidy" "go mod download"
+  "go test" "go build" "go vet" "gofmt -l" "go fmt" "go mod tidy" "go mod download" "go list" "govulncheck" "golangci-lint run"
   # Rust
-  "cargo test" "cargo build" "cargo check" "cargo clippy" "cargo fmt"
+  "cargo test" "cargo build" "cargo check" "cargo clippy" "cargo fmt" "cargo doc" "cargo audit" "cargo tree" "cargo nextest run" "cargo deny check"
   # Python
-  "pytest" "python -m pytest" "ruff check" "ruff format" "mypy"
+  "pytest" "python -m pytest" "uv run pytest" "uv run ruff" "uv run mypy" "ruff check" "ruff format" "mypy" "pyright" "pip list" "pip check" "pip-audit"
+  # OpenTofu (never apply, destroy or import) and Docker Compose (no `config`: it prints interpolated secrets)
+  "tofu fmt" "tofu validate" "tofu plan" "tofu init" "tofu providers" "tofu version"
+  "docker compose ps" "docker compose logs" "docker compose ls" "docker compose images"
   # git en lecture (les options dangereuses et « push » sont refusées plus bas)
   "git status" "git log" "git diff" "git show" "git fetch" "git rev-parse" "git ls-files" "git blame"
   # kit : API en lecture seule (chemin exigé) et commandes de diagnostic
   "kit api coolify GET" "kit api cloudflare GET" "kit api github GET"
-  "kit detect" "kit doctor" "kit equip search"
+  "kit detect" "kit doctor" "kit equip search" "kit sync --dry-run" "kit --version"
   # Utilitaires de lecture (find : -exec/-delete/-ok… refusés plus bas)
   "ls" "cat" "head" "tail" "wc" "grep" "rg" "find" "jq" "tree" "du" "df" "which" "file" "stat"
 )

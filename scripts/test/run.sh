@@ -1475,9 +1475,9 @@ EH="$TMP/emptyhome"; mkdir -p "$EH"
 HOME=$EH bash "$CB" --json >/dev/null 2>&1
 [[ -z $(ls -A "$EH") ]] && ok_ "arbre réel : un HOME vide le reste (les hooks tournent dans un bac à sable)" || ko_ "arbre réel : effets de bord des hooks"
 # Budgets owned by delivered sub-lots are enforced (2e: global CLAUDE.md, /new-project, registry; 2f: agent and
-# skill/command descriptions, Superpowers on the /new-project path; 2c: state.md at session start); the hook budget
-# (2d) stays a warning until its sub-lot lands.
-ENFORCED='global_claude_md.words new_project_command.words skills_registry.words agent_descriptions.words skill_command_descriptions.words superpowers_path.words project_sessionstart.chars'
+# skill/command descriptions, Superpowers on the /new-project path; 2c: state.md at session start; 2d: one hook process
+# per Bash, Read, Edit, Write and Grep call). All budgets are now enforced.
+ENFORCED='global_claude_md.words new_project_command.words skills_registry.words agent_descriptions.words skill_command_descriptions.words superpowers_path.words project_sessionstart.chars hooks_per_tool_call.Bash hooks_per_tool_call.Read hooks_per_tool_call.Edit hooks_per_tool_call.Write hooks_per_tool_call.Grep'
 grep -E "^($(printf '%s' "$ENFORCED" | tr ' ' '|'))	" "$ROOT/scripts/context-budgets.tsv" >"$TMP/budgets-enforced.tsv"
 if bash_out=$(BUDGET_ENFORCE=1 bash "$CB" --budgets "$TMP/budgets-enforced.tsv" --budget 2>&1); then
   ok_ "budgets appliqués (CLAUDE.md global, /new-project, registre, agents, skills et commandes, Superpowers, démarrage de projet) : respectés"
@@ -1914,6 +1914,180 @@ usage_txt=$("$ROOT/scripts/kit.sh" help 2>&1)
 rm -rf "$KIT_CONFIG"
 [[ $(bash "$CB" --json | jq '.project_sessionstart.chars') -le 1500 ]] && ok_ "context-budget : démarrage de projet <= 1 500 caractères (mémoire pleine)" || ko_ "context-budget : démarrage de projet"
 grep -q 'project_sessionstart.chars' <<<"$ENFORCED" && ok_ "budget project_sessionstart.chars appliqué (liste ENFORCED)" || ko_ "budget project_sessionstart.chars non appliqué"
+
+# ---------------------------------------------------------------------------
+section "2d : autorisations (règles du kit, hook, fragments par pile)"
+GS="$ROOT/global/settings.json"
+GV="$ROOT/global/settings.vps.json"
+GR="$ROOT/global/settings.retired.json"
+# Une règle Bash(<motif>) contre une commande : glob shell, comme Claude Code (« * » = n'importe quelle suite).
+rule_matches() { # règle commande
+  local r=$1 c=$2 pat
+  [[ $r == 'Bash('*')' ]] || return 1
+  pat=${r#Bash(}; pat=${pat%)}
+  # shellcheck disable=SC2053
+  [[ $c == $pat ]]
+}
+hits() { # allow|ask|deny commande fichier... : nombre de règles de la liste qui s'appliquent à la commande
+  local list=$1 cmd=$2 f r n=0
+  shift 2
+  for f in "$@"; do
+    while IFS= read -r r; do if rule_matches "$r" "$cmd"; then n=$((n + 1)); fi; done < <(jq -r --arg l "$list" '(.permissions[$l] // [])[]' "$f")
+  done
+  echo "$n"
+}
+# Décision du propriétaire : fusion de PR, push sur main et docker compose up|down ne demandent jamais.
+for c in "gh pr merge 41 --squash" "git push origin main" "git push" "docker compose up -d" "docker compose down"; do
+  [[ $(hits ask "$c" "$GS" "$GV") == 0 && $(hits deny "$c" "$GS" "$GV") == 0 && $(hits allow "$c" "$GS") -ge 1 ]] \
+    && ok_ "autorisé sans demande : $c" || ko_ "autorisé sans demande : $c" "ask=$(hits ask "$c" "$GS" "$GV") deny=$(hits deny "$c" "$GS" "$GV") allow=$(hits allow "$c" "$GS")"
+done
+# Seul « git rebase -i » demande parmi les opérations git ordinaires ; un rebase non interactif est autorisé.
+for c in "git rebase -i HEAD~3" "git rebase --interactive main" "git rebase main -i"; do
+  [[ $(hits ask "$c" "$GS") -ge 1 ]] && ok_ "ask : $c" || ko_ "ask : $c"
+done
+[[ $(hits ask "git rebase origin/main" "$GS") == 0 && $(hits allow "git rebase origin/main" "$GS") -ge 1 ]] \
+  && ok_ "git rebase non interactif : autorisé" || ko_ "git rebase non interactif"
+[[ $(hits ask "git push --force origin x" "$GS") -ge 1 ]] && ok_ "git push --force reste en ask (réécriture d'historique)" || ko_ "git push --force en ask"
+for c in "kit autoupdate off" "kit autoupdate pin v1.2.0" "kit overlay env /tmp/f" "kit overlay env --clear"; do
+  [[ $(hits ask "$c" "$GS") -ge 1 ]] && ok_ "ask : $c" || ko_ "ask : $c"
+done
+# tofu apply|destroy : refusés, y compris par le script d'infra et -chdir ; plan, fmt et validate : autorisés.
+for c in "tofu apply" "tofu apply -auto-approve" "tofu destroy" "tofu -chdir=infra/cloudflare apply" "tofu -chdir=infra/cloudflare destroy" \
+  "bash infra/tofu.sh cloudflare apply" "bash infra/tofu.sh cloudflare destroy" "terraform apply" "terraform destroy"; do
+  [[ $(hits deny "$c" "$GS") -ge 1 ]] && ok_ "deny : $c" || ko_ "deny : $c"
+done
+for c in "tofu plan -out=plan.tfplan" "tofu fmt -check -recursive infra" "tofu validate" "tofu init -backend=false" "tofu -chdir=infra/cloudflare plan" "bash infra/tofu.sh cloudflare plan"; do
+  [[ $(hits deny "$c" "$GS") == 0 && $(hits allow "$c" "$GS") -ge 1 ]] && ok_ "autorisé : $c" || ko_ "autorisé : $c" "deny=$(hits deny "$c" "$GS") allow=$(hits allow "$c" "$GS")"
+done
+for c in "git worktree add ../x" "git rev-parse HEAD" "git cherry-pick abc" "git merge-base a b" "kit sync" "kit sync --dry-run" "kit equip search laravel" "kit index" \
+  "docker compose config" "docker compose ps" "docker compose logs web" "docker compose build" "echo ok" "sed -n 1p x" "shellcheck -x a.sh"; do
+  [[ $(hits allow "$c" "$GS") -ge 1 && $(hits ask "$c" "$GS") == 0 && $(hits deny "$c" "$GS") == 0 ]] && ok_ "allow : $c" || ko_ "allow : $c"
+done
+[[ $(hits allow "kit sync --yes" "$GS") == 0 ]] && ok_ "kit sync --yes n'est pas autorisé d'office (accepte un defaultMode plus permissif)" || ko_ "kit sync --yes"
+# Les réglages protégés ne s'éditent pas avec Edit ni Write.
+jq -e '.permissions.deny | (index("Edit(~/.config/claude-kit/**)") != null and index("Write(~/.config/claude-kit/**)") != null
+  and index("Edit(~/.claude/settings.json)") != null and index("Write(~/.claude/settings.json)") != null)' "$GS" >/dev/null \
+  && ok_ "deny : Edit et Write sur ~/.config/claude-kit/** et ~/.claude/settings.json" || ko_ "deny : réglages protégés"
+# Règles retirées : listées dans settings.retired.json, jamais à la fois dans le kit et dans la liste des retraits.
+jq -e '.permissions.ask | index("Bash(git push*)") != null' "$GR" >/dev/null && ok_ "retired : ask « git push* » (profil vps) listé" || ko_ "retired : git push*"
+jq -e '.permissions.ask | index("Bash(git push*)") == null' "$GV" >/dev/null && ok_ "vps : plus d'ask sur git push*" || ko_ "vps : ask git push*"
+overlap=$(jq -rn --slurpfile r "$GR" --slurpfile a "$GS" --slurpfile v "$GV" \
+  '[($r[0].permissions.ask // [])[], ($r[0].permissions.deny // [])[]] as $ret
+   | [($a[0].permissions.ask // [])[], ($a[0].permissions.deny // [])[], ($v[0].permissions.ask // [])[], ($v[0].permissions.deny // [])[]] as $kit
+   | [$ret[] | select(. as $x | $kit | index($x) != null)] | join(" ")')
+[[ -z $overlap ]] && ok_ "retired : aucune règle retirée n'est encore dans le kit" || ko_ "retired : règles à la fois retirées et présentes" "$overlap"
+# Hook secrets : un seul processus par appel d'outil, y compris Grep ; les budgets le font respecter.
+cbj=$(bash "$CB" --json 2>/dev/null)
+all_one=1
+for t in Bash Read Edit Write MultiEdit NotebookEdit Grep; do [[ $(jq -r --arg t "$t" '.hooks_per_tool_call[$t]' <<<"$cbj") == 1 ]] || all_one=0; done
+((all_one)) && ok_ "hooks par appel d'outil : 1 pour Bash, Read, Edit, Write, MultiEdit, NotebookEdit et Grep" || ko_ "hooks par appel d'outil" "$(jq -c .hooks_per_tool_call <<<"$cbj")"
+jq -e '[.hooks.PreToolUse[] | select(any(.hooks[]; .command | endswith("guard-secrets.sh")))] | length == 1 and (.[0].matcher | split("|") | index("Grep") != null)' "$GS" >/dev/null \
+  && ok_ "guard-secrets : un seul groupe, matcher avec Grep" || ko_ "guard-secrets : matcher"
+for t in Bash Read Edit Write Grep; do
+  grep -q "^hooks_per_tool_call.$t	1	" "$ROOT/scripts/context-budgets.tsv" && ok_ "budget hooks_per_tool_call.$t = 1" || ko_ "budget hooks_per_tool_call.$t absent"
+done
+
+# kit sync : le changement de règles apparaît dans --dry-run, les règles retirées sont nommées, rien n'est perdu.
+KITD="$TMP/kitcopy2"
+mkdir -p "$KITD/global"
+cp "$ROOT"/global/settings*.json "$KITD/global/"
+cp -R "$ROOT/scripts" "$KITD/scripts"
+dsync() { env KIT_HOME="$KITD" KIT_SYNC_CONTEXT=0 "$KITD/scripts/kit.sh" sync "$@"; }
+reset_home
+# Poste « avant 2d » : le kit sans les nouvelles règles ni Grep dans le matcher, déjà synchronisé (registre écrit).
+cp "$KITD/global/settings.json" "$TMP/new-settings.json"
+jq '.hooks.PreToolUse[0].matcher = "Bash|Read|Edit|Write|MultiEdit|NotebookEdit"
+    | .permissions.ask |= map(select(. != "Bash(git rebase -i*)" and . != "Bash(git rebase --interactive*)" and . != "Bash(git rebase * -i*)" and . != "Bash(kit autoupdate *)" and . != "Bash(kit overlay *)"))
+    | .permissions.deny |= map(select((test("tofu|terraform|^(Edit|Write)[(]") | not)))' "$TMP/new-settings.json" >"$KITD/global/settings.json"
+dsync >/dev/null 2>&1
+jq '.permissions.ask += ["Bash(git push*)", "Bash(mine)"] | .permissions.deny += ["Bash(mine-deny)"]' "$(cur_settings)" >"$TMP/u.json" && cp "$TMP/u.json" "$(cur_settings)"
+cp "$TMP/new-settings.json" "$KITD/global/settings.json"
+before_sum=$(cksum <"$(cur_settings)")
+dry=$(dsync --dry-run 2>&1)
+[[ $(cksum <"$(cur_settings)") == "$before_sum" ]] && ok_ "sync --dry-run : rien n'est écrit" || ko_ "sync --dry-run a écrit"
+grep -q 'permissions.deny : +' <<<"$dry" && grep -qF '+ "Bash(tofu apply*)"' <<<"$dry" && grep -qF '+ "Edit(~/.claude/settings.json)"' <<<"$dry" \
+  && ok_ "sync --dry-run : deny ajoutés (tofu apply, Edit de settings.json)" || ko_ "sync --dry-run : deny" "$dry"
+grep -qF '+ "Bash(git rebase -i*)"' <<<"$dry" && grep -qF '+ "Bash(kit autoupdate *)"' <<<"$dry" \
+  && ok_ "sync --dry-run : ask ajoutés (git rebase -i, kit autoupdate)" || ko_ "sync --dry-run : ask"
+grep -qF -- '- "Bash(git push*)"' <<<"$dry" && ok_ "sync --dry-run : le retrait de ask git push* apparaît" || ko_ "sync --dry-run : retrait de git push*" "$dry"
+grep -q 'hooks.PreToolUse : +1 -1' <<<"$dry" && ok_ "sync --dry-run : le groupe guard-secrets est remplacé (Grep ajouté), pas dupliqué" || ko_ "sync --dry-run : hooks" "$dry"
+sout=$(dsync 2>&1)
+grep -qF '→ retiré de permissions.ask : "Bash(git push*)"' <<<"$sout" && ok_ "sync : la règle retirée est nommée (settings.retired.json)" || ko_ "sync : règle retirée non nommée" "$sout"
+jqc '(.permissions.ask | index("Bash(git push*)") == null and index("Bash(mine)") != null and index("Bash(git rebase -i*)") != null)
+     and (.permissions.deny | index("Bash(mine-deny)") != null and index("Bash(tofu destroy*)") != null)' "$(cur_settings)" \
+  && ok_ "sync : ask et deny de l'utilisateur gardés, ceux du kit posés" || ko_ "sync : ask et deny"
+jqc '[.hooks.PreToolUse[] | select(any(.hooks[]; .command | endswith("guard-secrets.sh")))] | length == 1 and (.[0].matcher | contains("Grep"))' "$(cur_settings)" \
+  && ok_ "sync : un seul guard-secrets, avec Grep" || ko_ "sync : guard-secrets"
+cp "$(cur_settings)" "$TMP/s1.json"
+dsync >/dev/null 2>&1
+cmp -s "$(cur_settings)" "$TMP/s1.json" && ok_ "sync : idempotent après le changement de règles" || ko_ "sync : idempotence"
+reset_home
+
+# Fragments par pile : forme, cohérence avec la liste blanche de kit perms, carte type -> pile, pose par kit project add.
+PF="$ROOT/templates/permissions"
+for st in node astro next go rust pocketbase python tofu; do
+  [[ -f $PF/$st.json ]] && ok_ "fragment : $st.json existe" || ko_ "fragment : $st.json absent"
+done
+for f in "$PF"/*.json; do
+  st=$(basename "$f" .json)
+  jq -e '(keys == ["permissions"]) and (.permissions | keys == ["allow"]) and (.permissions.allow | length > 0 and (length == (unique | length)) and all(type == "string" and startswith("Bash(")))' "$f" >/dev/null \
+    && ok_ "fragment $st : seulement permissions.allow, sans doublon" || ko_ "fragment $st : forme"
+  bad=""
+  while IFS= read -r r; do "$PERMS" check "$r" >/dev/null 2>&1 || bad="$bad $r"; done < <(jq -r '.permissions.allow[]' "$f")
+  [[ -z $bad ]] && ok_ "fragment $st : toutes les règles passent kit perms check" || ko_ "fragment $st : règles refusées par kit perms check" "$bad"
+  clash=""
+  while IFS= read -r r; do
+    c=${r#Bash(}; c=${c%)}; c=${c% \*}
+    [[ $(hits deny "$c" "$GS") == 0 && $(hits ask "$c" "$GS") == 0 ]] || clash="$clash $r"
+  done < <(jq -r '.permissions.allow[]' "$f")
+  [[ -z $clash ]] && ok_ "fragment $st : aucune règle ne tombe sous un deny ou un ask du kit" || ko_ "fragment $st : règles en conflit" "$clash"
+done
+reg_types=$(awk -F'|' '/^## Table de routage/ { on = 1; next } /^## / { on = 0 } on && /^\| `/ { gsub(/[ `]/, "", $2); print $2 }' "$ROOT/global/skills-registry.md")
+bad=""
+while IFS=$'\t' read -r ty sts; do
+  [[ -z $ty || $ty == '#'* ]] && continue
+  grep -qx "$ty" <<<"$reg_types" || bad="$bad type:$ty"
+  for s in $sts; do [[ -f $PF/$s.json ]] || bad="$bad pile:$s"; done
+done <"$PF/types.tsv"
+[[ -z $bad ]] && ok_ "types.tsv : chaque type est au registre et chaque pile a son fragment" || ko_ "types.tsv incohérent" "$bad"
+
+PP="$TMP/perm-proj"
+mkdir -p "$PP/.claude" "$PP/docs/memory"
+echo '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"echo bonjour"}]}]},"permissions":{"allow":["Bash(make lint)"],"deny":["Bash(make deploy)"]}}' >"$PP/.claude/settings.json"
+pout=$("$ROOT/scripts/kit.sh" project add astro-static --no-skills --dir "$PP" 2>&1)
+jqc '(.permissions.allow | index("Bash(npx astro check)") != null and index("Bash(npm run build)") != null and index("Bash(make lint)") != null and index("Bash(make lint)") < index("Bash(npm run build)"))
+     and (.permissions.deny == ["Bash(make deploy)"]) and (.hooks.SessionStart[0].hooks[0].command == "echo bonjour")' "$PP/.claude/settings.json" \
+  && ok_ "project add astro-static : règles de pile ajoutées après celles du projet, deny et hooks intacts" || ko_ "project add : fusion" "$pout"
+grep -q 'piles : node astro' <<<"$pout" && ok_ "project add : annonce les piles posées (node astro)" || ko_ "project add : annonce" "$pout"
+cp "$PP/.claude/settings.json" "$TMP/pp1.json"
+pout=$("$ROOT/scripts/kit.sh" project add astro-static --no-skills --dir "$PP" 2>&1)
+cmp -s "$PP/.claude/settings.json" "$TMP/pp1.json" && grep -q 'déjà présentes' <<<"$pout" && ok_ "project add : relançable, fichier identique, sans doublon" || ko_ "project add : idempotence" "$pout"
+[[ $(jq '.permissions.allow | length - (unique | length)' "$PP/.claude/settings.json") == 0 ]] && ok_ "project add : aucun doublon" || ko_ "project add : doublons"
+grep -q 'autorisations de pile (node astro)' "$PP/docs/memory/permissions.md" 2>/dev/null && ok_ "project add : journal docs/memory/permissions.md" || ko_ "project add : journal"
+"$ROOT/scripts/kit.sh" project add python tofu --no-skills --dir "$PP" >/dev/null 2>&1
+jqc '.permissions.allow | index("Bash(pytest *)") != null and index("Bash(tofu plan *)") != null and index("Bash(npx astro check)") != null' "$PP/.claude/settings.json" \
+  && ok_ "project add python tofu : une pile seule (hors registre) pose ses règles, sans retirer les autres" || ko_ "project add python tofu"
+"$ROOT/scripts/kit.sh" project add nonsense --dir "$PP" >/dev/null 2>&1 && ko_ "project add : un type inconnu doit échouer" || ok_ "project add : type ou pile inconnus refusés"
+PG="$TMP/perm-go"
+mkdir -p "$PG"
+: >"$PG/go.mod"
+"$ROOT/scripts/kit.sh" project perms --dir "$PG" >/dev/null 2>&1
+jqc '.permissions.allow | index("Bash(go test ./...)") != null' "$PG/.claude/settings.json" && ok_ "project perms : sans argument, détecte la pile (go.mod)" || ko_ "project perms : détection"
+PN="$TMP/perm-none"
+mkdir -p "$PN"
+"$ROOT/scripts/kit.sh" project add backend-rust --no-skills --no-permissions --dir "$PN" >/dev/null 2>&1
+[[ ! -e $PN/.claude/settings.json ]] && ok_ "project add --no-permissions : aucun réglage posé" || ko_ "project add --no-permissions"
+PL="$TMP/perm-link"
+mkdir -p "$PL/.claude"
+echo '{"permissions":{"allow":[]}}' >"$TMP/link-target.json"
+ln -s "$TMP/link-target.json" "$PL/.claude/settings.json"
+"$ROOT/scripts/kit.sh" project perms go --dir "$PL" >/dev/null 2>&1 && ko_ "project perms : un lien symbolique doit être refusé" || ok_ "project perms : lien symbolique refusé"
+jqc '.permissions.allow == []' "$TMP/link-target.json" && ok_ "project perms : la cible du lien n'est pas modifiée" || ko_ "project perms : cible du lien modifiée"
+PNEW="$TMP/perm-new"
+"$ROOT/scripts/kit.sh" project new "$PNEW" backend-go --no-skills >/dev/null 2>&1
+jqc '(.permissions.allow | index("Bash(go vet ./...)") != null) and (.hooks | has("SessionStart"))' "$PNEW/.claude/settings.json" \
+  && ok_ "project new backend-go : règles de pile et hook de démarrage du gabarit réunis" || ko_ "project new : règles de pile" "$(jq -c . "$PNEW/.claude/settings.json" 2>&1 | cut -c1-200)"
+"$ROOT/scripts/kit.sh" help 2>&1 | grep -q 'kit project perms' && ok_ "usage : kit project perms documenté" || ko_ "usage : kit project perms"
 
 # ---------------------------------------------------------------------------
 section "dépôt du kit"

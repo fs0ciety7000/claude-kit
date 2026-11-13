@@ -1,0 +1,11 @@
+# Registry type (kit project types) <TAB> permission fragments applied by kit project add (templates/permissions/<stack>.json).
+# A stack name that is not a registry type (python, tofu...) can be given to kit project add or kit project perms directly.
+web-frontend	node
+nextjs-cloudflare	node next
+astro-static	node astro
+threejs-3d	node
+motion	node
+shopify	node
+backend-go	go
+backend-rust	rust
+pocketbase	pocketbase
