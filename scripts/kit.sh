@@ -67,6 +67,7 @@ API COOLIFY / CLOUDFLARE / GITHUB (jeton jamais visible dans `ps`)
         JSON : {"type","detection","profile","skills":[{"source","skill"}],"load":[...],"agents":[...],"detect":[{"kind":"file|pkg","pattern"}]}
 
 INFOS & MAINTENANCE
+  kit --version                           version du kit (tag ou révision) et date du commit
   kit list                                agents, skills et profils disponibles
   kit mcp setup                           déclare le serveur MCP Coolify (jeton injecté, jamais écrit en clair)
   kit sync [--dry-run] [--yes]            (re)crée les liens vers ~/.claude et applique les réglages gérés
@@ -77,7 +78,10 @@ INFOS & MAINTENANCE
         registre des profils)
   kit update                             git pull du kit + sync + mise à jour des skills globaux
         (au démarrage de session, le hook kit-autoupdate fait déjà un fast-forward sur main puis sync,
-        au plus toutes les 6 h en local ; KIT_AUTOUPDATE=0 le désactive)
+        au plus toutes les 6 h en local ; KIT_AUTOUPDATE=0 ou le fichier autoupdate.off le désactive ;
+        autoupdate.pin épingle une version : pas de pull, le kit reste sur cette référence)
+  kit autoupdate [status|off|on|pin <réf>|unpin]
+        interrupteur et épinglage de la mise à jour automatique (fichiers ~/.config/claude-kit/autoupdate.off|pin)
   kit doctor                              vérifie l'installation
 
 PERMISSIONS (règles que Claude s'accorde, niveau projet uniquement, journalisées)
@@ -983,8 +987,53 @@ sync_context() {
   done <"$list"
 }
 
+# kit --version : tag (ou révision) et date du commit du kit.
+cmd_version() {
+  local desc date
+  if git -C "$KIT_HOME" rev-parse --git-dir >/dev/null 2>&1; then
+    desc=$(git -C "$KIT_HOME" describe --tags --always --dirty 2>/dev/null || true)
+    date=$(git -C "$KIT_HOME" log -1 --date=short --format=%cd 2>/dev/null || true)
+  fi
+  if [[ -n ${desc:-} ]]; then echo "kit $desc (${date:-date inconnue})"; else echo "kit version inconnue (pas un dépôt git)"; fi
+}
+
+# kit autoupdate : interrupteur (autoupdate.off) et épinglage (autoupdate.pin) du hook kit-autoupdate.
+pin_valid() { [[ ${1:-} =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$ ]]; }
+cmd_autoupdate() {
+  local sub=${1:-status} off="$KIT_CONFIG/autoupdate.off" pin="$KIT_CONFIG/autoupdate.pin" ref
+  case $sub in
+    status)
+      if [[ ${KIT_AUTOUPDATE:-1} == 0 ]]; then info "mise à jour auto : désactivée (KIT_AUTOUPDATE=0 dans l'environnement)"
+      elif [[ -e $off ]]; then info "mise à jour auto : désactivée ($off)"
+      elif [[ -f $pin ]]; then
+        ref=$(head -n 1 "$pin" | tr -d '[:space:]')
+        if pin_valid "$ref"; then info "mise à jour auto : version épinglée sur « $ref »"; else warn "autoupdate.pin : référence invalide, la mise à jour auto l'ignore"; fi
+      else info "mise à jour auto : active (main, au plus toutes les 6 h en local)"; fi
+      cmd_version ;;
+    off) mkdir -p "$KIT_CONFIG" && : >"$off"; ok "mise à jour auto désactivée ($off) ; « kit autoupdate on » la réactive" ;;
+    on) rm -f "$off"; ok "mise à jour auto réactivée" ;;
+    pin)
+      ref=${2:-}
+      pin_valid "$ref" || die "usage : kit autoupdate pin <tag|branche|révision>  (lettres, chiffres, . _ - /)"
+      mkdir -p "$KIT_CONFIG"
+      printf '%s\n' "$ref" >"$pin"
+      ok "kit épinglé sur « $ref » : le hook y place le kit au prochain démarrage de session (kit sync suit)" ;;
+    unpin)
+      rm -f "$pin"
+      ok "épinglage retiré"
+      if [[ -z $(git -C "$KIT_HOME" symbolic-ref -q HEAD 2>/dev/null) ]]; then
+        echo "Le kit est en HEAD détaché : git -C $KIT_HOME checkout main  (puis la mise à jour auto suit main)"
+      fi ;;
+    *) die "usage : kit autoupdate [status|off|on|pin <réf>|unpin]" ;;
+  esac
+}
+
 cmd_update() {
-  git -C "$KIT_HOME" pull --ff-only
+  if [[ -f $KIT_CONFIG/autoupdate.pin ]]; then
+    warn "kit épinglé ($KIT_CONFIG/autoupdate.pin) : pas de git pull ; kit autoupdate unpin pour suivre main"
+  else
+    git -C "$KIT_HOME" pull --ff-only
+  fi
   cmd_sync
   if command -v npx >/dev/null 2>&1; then npx --yes skills update -g -y </dev/null || warn "mise à jour des skills globaux échouée"; fi
 }
@@ -1006,6 +1055,7 @@ cmd_doctor() {
   else
     echo '! identité git absente : git config --global user.name "Ton Nom" && git config --global user.email "toi@exemple.org"'
   fi
+  ok "$(cmd_version)"
   [[ -L $CLAUDE_HOME/CLAUDE.md ]] && ok "CLAUDE.md global lié" || { echo "✗ CLAUDE.md global non lié : kit sync"; bad=1; }
   if [[ -f $CLAUDE_HOME/settings.json ]] && jq -e '.hooks.PreToolUse | length > 0' "$CLAUDE_HOME/settings.json" >/dev/null 2>&1; then
     ok "hook anti-fuite actif"
@@ -1017,9 +1067,18 @@ cmd_doctor() {
   [[ -x $KIT_CONFIG/hooks/guard-secrets.sh ]] && ok "hook installé" || { echo "✗ hook introuvable : kit sync"; bad=1; }
   if [[ -x $KIT_CONFIG/hooks/kit-autoupdate.sh ]] && [[ -f $CLAUDE_HOME/settings.json ]] \
     && jq -e '[.hooks.SessionStart[]?.hooks[]?.command // empty] | any(endswith("kit-autoupdate.sh"))' "$CLAUDE_HOME/settings.json" >/dev/null 2>&1; then
-    ok "hook de mise à jour auto du kit actif (KIT_AUTOUPDATE=0 pour le couper)"
+    ok "hook de mise à jour auto du kit actif (KIT_AUTOUPDATE=0 ou autoupdate.off pour le couper)"
+    if [[ ${KIT_AUTOUPDATE:-1} == 0 || -e $KIT_CONFIG/autoupdate.off ]]; then
+      echo "! mise à jour auto désactivée sur ce poste : kit autoupdate on"
+    elif [[ -f $KIT_CONFIG/autoupdate.pin ]]; then
+      info "kit épinglé sur « $(head -n 1 "$KIT_CONFIG/autoupdate.pin" | tr -d '[:space:]') » : kit autoupdate unpin pour suivre main"
+    fi
   else
     echo "✗ hook de mise à jour auto absent (script ou réglage) : kit sync"; bad=1
+  fi
+  # Restes du tableau de bord abandonné : retirés par kit sync.
+  if dashboard_hook_left "$CLAUDE_HOME/settings.json"; then
+    echo "! un hook du tableau de bord abandonné reste dans settings.json : kit sync"
   fi
   if ((cloud)); then
     command -v kit >/dev/null 2>&1 && ok "kit dans le PATH" || { echo "✗ kit absent du PATH"; bad=1; }
@@ -1053,7 +1112,9 @@ main() {
     mcp) cmd_mcp "$@" ;;
     sync) cmd_sync "$@" ;;
     update) cmd_update ;;
+    autoupdate) cmd_autoupdate "$@" ;;
     doctor) cmd_doctor ;;
+    --version|-V|version) cmd_version ;;
     help|-h|--help) usage ;;
     *) usage >&2; exit 1 ;;
   esac

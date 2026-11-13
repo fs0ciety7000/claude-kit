@@ -116,6 +116,9 @@ link_global() {
 # The kit-control dashboard was abandoned (sessions are followed with `claude remote-control`). Removes what earlier
 # versions of `kit sync` left on this machine: the kit-emit hook link, its URL file and the user-scope MCP server
 # declaration. The settings entries (hooks, permissions) are retired by the managed-settings merge. Never fatal.
+dashboard_hook_left() { # settings.json : vrai si un hook du tableau de bord y figure encore
+  [[ -f $1 ]] && jq -e '[.. | .command? // empty | select(type == "string" and test("kit-emit"))] | length > 0' "$1" >/dev/null 2>&1
+}
 retire_dashboard() {
   local cj="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
   rm -f "$KIT_CONFIG/hooks/kit-emit.sh" "$KIT_CONFIG/dash.url"
