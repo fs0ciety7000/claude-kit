@@ -1,0 +1,61 @@
+# Tests of the kit, on the self-hosted Forgejo runner. The bridge mirrors every ref to Forgejo with a push (branches,
+# pull requests as pr/<n>, tags): `on: [push]` covers them all, and the bridge reports the result as the `ci/forgejo`
+# commit status on GitHub. Actions are pinned by commit SHA on data.forgejo.org; Renovate (built-in github-actions
+# manager) bumps the SHA from the version comment. No secret is used.
+# shellcheck: release binary at a pinned version, checked against its SHA-256 (bump both together); the act image has
+# bash 5, the bash 3.2 run of the backup test needs Docker on the runner and is optional.
+name: ci
+on: [push]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CI: "true"
+  SHELLCHECK_VERSION: v0.11.0
+  SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: install shellcheck (pinned)
+        run: |
+          set -euo pipefail
+          tarball="$RUNNER_TEMP/shellcheck.tar.xz"
+          curl -fsSL --retry 3 -o "$tarball" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          echo "${SHELLCHECK_SHA256}  $tarball" | sha256sum -c -
+          tar -xJf "$tarball" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/shellcheck-${SHELLCHECK_VERSION}" >>"$GITHUB_PATH"
+      - name: shellcheck (every .sh of the repository)
+        run: |
+          set -euo pipefail
+          shellcheck --version
+          find . \( -name .git -o -name node_modules \) -prune -o -name '*.sh' -type f -print0 | sort -z \
+            | xargs -0 shellcheck -x -S warning
+      # run.sh also runs shellcheck on scripts/ now that it is on the PATH.
+      - name: tests (scripts/test/run.sh)
+        run: bash scripts/test/run.sh
+      - name: guard-secrets hook
+        run: bash scripts/test/guard-secrets-test.sh
+      - name: backup-v1 (bash of the runner image)
+        run: bash scripts/test/backup-v1-test.sh --local
+      - name: backup-v1 (bash 3.2 in Docker, optional)
+        continue-on-error: true
+        run: |
+          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            bash scripts/test/backup-v1-test.sh
+          else
+            echo "no Docker daemon on the runner: bash 3.2 run skipped"
+          fi
+      - name: context budgets
+        run: BUDGET_ENFORCE=1 scripts/context-budget.sh --budget
