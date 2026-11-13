@@ -24,7 +24,14 @@ ACTION_RE='/(deploy|start|stop|restart|validate|cancel)(/|\?|$)'
 # --- mode interne : exécuté DANS `kit secrets run`, les variables sont déjà présentes ---
 if [[ ${1:-} == --inner ]]; then
   shift
-  svc=$1 method=$2 path=$3 filter=$4 body=$5
+  # The body arrives as a file path (never as an argument: argv is readable by every local user through ps).
+  # $6 = 1: temporary file written by the public mode, removed here once read.
+  svc=$1 method=$2 path=$3 filter=$4 body_in=$5 body_tmp=${6:-0}
+  body=""
+  if [[ -n $body_in ]]; then
+    body=$(<"$body_in")
+    if [[ $body_tmp == 1 ]]; then rm -f "$body_in"; fi
+  fi
   # Cloud session with network secrets: the agent proxy injects the real token into the Authorization header of
   # requests to the host, so the container never holds it. A missing token is then replaced by a placeholder.
   # Must succeed outside the cloud too: under set -e a failing $(...) in an assignment exits silently,
@@ -143,19 +150,26 @@ fi
 if [[ $method == GET && -n $body ]]; then die "GET n'accepte pas --json"; fi
 if [[ $method == DELETE && -n $body ]]; then die "DELETE n'accepte pas --json"; fi
 
-if [[ $body == @* ]]; then
-  f=${body#@}
-  [[ -f $f && ! -L $f ]] || die "fichier JSON introuvable : $f"
-  (($(file_size "$f") <= 1048576)) || die "fichier JSON trop gros (> 1 Mo)"
-  body=$(<"$f")
-fi
-
 need jq
 need curl
-if [[ -n $body ]]; then jq -e . <<<"$body" >/dev/null 2>&1 || die "--json : JSON invalide"; fi
+# The body goes to the inner mode as a file: the caller's file for @fichier, else a private temporary copy.
+body_file="" body_tmp=0
+if [[ $body == @* ]]; then
+  body_file=${body#@}
+  [[ -f $body_file && ! -L $body_file ]] || die "fichier JSON introuvable : $body_file"
+  (($(file_size "$body_file") <= 1048576)) || die "fichier JSON trop gros (> 1 Mo)"
+  jq -e . "$body_file" >/dev/null 2>&1 || die "--json : JSON invalide"
+elif [[ -n $body ]]; then
+  jq -e . <<<"$body" >/dev/null 2>&1 || die "--json : JSON invalide"
+  tdir=${XDG_RUNTIME_DIR:-/dev/shm}
+  [[ -d $tdir && -w $tdir ]] || tdir=${TMPDIR:-/tmp}
+  body_file=$(umask 077 && mktemp -p "$tdir")
+  printf '%s' "$body" >"$body_file"
+  body_tmp=1
+fi
 
 # Session cloud (install.sh --cloud) : pas de sops, les jetons sont des variables de l'environnement cloud.
 if [[ "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]; then
-  exec "$SELF" --inner "$svc" "$method" "$path" "$filter" "$body"
+  exec "$SELF" --inner "$svc" "$method" "$path" "$filter" "$body_file" "$body_tmp"
 fi
-exec "$KIT_HOME/scripts/secrets.sh" run -g -- "$SELF" --inner "$svc" "$method" "$path" "$filter" "$body"
+exec "$KIT_HOME/scripts/secrets.sh" run -g -- "$SELF" --inner "$svc" "$method" "$path" "$filter" "$body_file" "$body_tmp"
