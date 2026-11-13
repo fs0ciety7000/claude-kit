@@ -11,7 +11,7 @@ Environnement Claude Code réutilisable : 17 sous-agents (plus 4 optionnels), sk
 | `extras/agents/*.md` (4) | copiés dans `.claude/agents/` d'un projet | agents optionnels, jamais en global : sysop, data-engineer, game-designer, android-ui-reviewer. `kit add-agent <nom> --project` (ou `kit project add <type>` quand le registre les cite) |
 | `global/skills/` (11) | `~/.claude/skills/` | `pocketbase`, `secrets-handling`, `deploy-coolify-cloudflare`, `dependency-hygiene`, `infra-context`, `opsec`, `engram`, `project-size`, `team-builder`, `brainstorming`, `writing-plans` |
 | `global/commands/` | `~/.claude/commands/` | `/new-project`, `/add-skill`, `/add-agent`, `/env-check` |
-| `global/skills-registry.md` | `~/.claude/skills-registry.md` | type de projet → profils, skills, agents |
+| `global/skills-registry.md` | copié par `kit sync` dans `~/.config/claude-kit/skills-registry.md` (table des profils régénérée), lié depuis `~/.claude/skills-registry.md` | type de projet → profils, skills, agents ; le dépôt du kit n'est jamais réécrit par `kit sync` (seul `kit registry` régénère le fichier suivi, à commiter) |
 | `global/settings.json` (+ `settings.vps.json`, `settings.v1.json`, `settings.retired.json`) | appliqué à `~/.claude/settings.json` (réglages gérés, voir plus bas) | permissions + hook anti-fuite ; `settings.v1.json` : instantané des entrées écrites par la v1 ; `settings.retired.json` : deny/ask que le kit retire explicitement |
 | `profiles/*.txt` | utilisés par `kit skills install` | listes de skills par domaine (web, design, brand, android, game, threejs, go, rust, shopify, cloud, media, meta, custom) |
 | `templates/permissions/*.json` | fusionnés dans `.claude/settings.json` d'un projet par `kit project add` / `kit project perms` | autorisations `allow` par pile (node, astro, next, go, rust, pocketbase, python, tofu) ; `types.tsv` : type du registre → piles |
@@ -152,8 +152,12 @@ Tout le reste est refusé : `Edit`/`Write`, écritures `kit api`, outils MCP qui
 Pour que la validation reste l'exception (le mode `auto` reste le défaut), le kit pose deux niveaux d'`allow` :
 
 - **Base globale** (`global/settings.json`) : git courant (`rebase`, `worktree`, `rev-parse`, `merge`, `cherry-pick`…),
-  `gh pr *` (donc la fusion d'une PR), `git push` (donc sur `main`), `docker compose config|ps|logs|build|up|down…`,
-  `tofu fmt|validate|plan|init`, `kit sync` (sans `--yes`), `kit equip`, `kit index`, utilitaires de lecture et de texte.
+  `gh pr *` (donc la fusion d'une PR), `git push` (donc sur `main`), `docker compose ps|logs|build|up|down…` (pas
+  `config`, qui imprime les secrets interpolés), `tofu fmt|validate|plan|init`, les formes ancrées
+  `bash infra/tofu.sh cloudflare|tailscale plan` et `tofu -chdir=infra/cloudflare|tailscale plan|validate|init` (aucun
+  `*` au milieu d'une règle qui laisserait passer une autre sous-commande), `kit sync` (sans `--yes`), `kit equip`,
+  `kit index` (sans `--out`), utilitaires de lecture. Les commandes capables d'écrire un fichier (`sed`, `awk`, `sort -o`,
+  `uniq`, `date -s`…) ne sont plus autorisées d'office : Claude Code admet déjà leurs formes sûres.
 - **Pile du projet** : `kit project add <type>` (ou `kit project perms`, qui détecte la pile d'après `package.json`,
   `go.mod`, `Cargo.toml`, `pyproject.toml`, `*.tf`…) fusionne `templates/permissions/<pile>.json` dans le
   `.claude/settings.json` du projet : seulement `permissions.allow`, sans doublon, après tes règles, relançable ; le
@@ -163,12 +167,16 @@ Pour que la validation reste l'exception (le mode `auto` reste le défaut), le k
   `kit perms check` (test), donc la liste blanche et les fragments restent cohérents.
 - En fin de session, le skill `fewer-permission-prompts` propose les `allow` de projet qui auraient évité des invites.
 
-Ce qui demande encore une validation : `git rebase -i`, `kit autoupdate …`, `kit overlay …`, les écritures destructrices
-déjà listées en `ask` (`git push --force`, `git reset --hard`, `rm`, `docker run|exec|rm`, `gh secret`…). Ce qui est
-refusé : `tofu|terraform apply|destroy` (y compris `bash infra/tofu.sh <dossier> apply|destroy`), `Edit` et `Write` sur
-`~/.config/claude-kit/**` et `~/.claude/settings.json`, `sudo`, `sops -d`, `printenv`. Une règle qu'un kit plus récent
-retire (`settings.retired.json`) disparaît de ton fichier au prochain `kit sync`, nommée dans sa sortie ; ainsi l'ask sur
-`git push*` du profil `vps` est retiré.
+Ce qui demande encore une validation : `git rebase -i` (et `--exec`/`-x`), `kit autoupdate …`, `kit overlay …`, les
+écritures destructrices déjà listées en `ask` (`git push --force|-f|+ref|--mirror|--delete|-d`, `git reset [opts] --hard`,
+`git clean`, `git branch -D`, `rm`, `docker run|exec|rm`, `gh secret`…). Ce qui est refusé : `tofu|terraform
+apply|destroy` (y compris `bash infra/tofu.sh <dossier> apply|destroy`), `Edit` et `Write` sur `~/.config/claude-kit/**`,
+`~/.claude/settings.json` et, règles propres au poste ajoutées par `kit sync`, sur `$KIT_HOME/scripts/**` et
+`$KIT_HOME/global/settings*.json` du kit installé ; `Read` des magasins de jetons (`~/.claude.json`, `~/.docker/**`,
+`~/.netrc`, `~/.npmrc`, `~/.cloudflared/**`, `~/.wrangler/**`, `~/.config/rclone/**`, `~/.config/gh/**`, `~/.aws/**`…) ;
+`sudo`, `sops -d`, `printenv`. Une règle qu'un kit plus récent retire (`settings.retired.json`) disparaît de ton fichier
+au prochain `kit sync`, nommée dans sa sortie, **seulement si le kit l'avait livrée** (elle figure dans le registre) : une
+règle identique que tu as ajoutée toi-même reste. Ainsi l'ask sur `git push*` du profil `vps` est retiré.
 
 ## Réglages gérés
 
@@ -187,8 +195,13 @@ fusionnés.
   (un poste `vps` ne retombe pas sur `local`).
 - **`deny`, `ask`, `autoMode.soft_deny|hard_deny` ne sont jamais retirés automatiquement** : ce sont des
   restrictions, et une règle identique à celle du kit peut être la tienne. Le kit ne les retire que s'il les liste dans
-  `global/settings.retired.json` (`permissions.ask|deny`, `autoMode.*`) ; chaque retrait est nommé dans la sortie de
-  `kit sync` (donc dans `autoupdate.log` quand le hook lance le sync).
+  `global/settings.retired.json` (`permissions.ask|deny`, `autoMode.*`) **et** qu'il les avait livrées (présentes dans le
+  registre ; à la première migration, sans registre, toute règle listée part) ; chaque retrait est nommé dans la sortie
+  de `kit sync` (donc dans `autoupdate.log` quand le hook lance le sync).
+- **Arbre de travail du kit protégé** : si le dépôt du kit installé a des modifications non commitées dans `scripts/` ou
+  `global/settings*.json`, `kit sync` (et donc le hook de mise à jour) n'applique pas les réglages et le dit : un agent
+  qui y aurait écrit un hook, une règle ou le programme de fusion ne les ferait pas appliquer. `kit sync --dry-run`
+  montre quand même l'écart ; `kit sync --yes` les accepte après relecture. Travaille sur le kit dans un autre clone.
 - **Hooks** : une entrée de ton fichier appartient au kit seulement si sa commande est exactement
   `~/.config/claude-kit/hooks/<script du kit>` (préfixe `$HOME/`, `${HOME}/`, `~/` ou le chemin développé), si ce script
   est un hook du kit **et** si le même couple (matcher, commande) est dans K ou le registre. Seules ces entrées sont
@@ -245,7 +258,10 @@ fusionnés.
 - **Simulation** : `kit sync --dry-run` affiche, par clé, les entrées qui seraient ajoutées (`+`) et retirées (`-`) et
   n'écrit rien (ni réglages, ni sauvegarde, ni registre, ni verrou, ni liens). Les tests et les HOME temporaires
   utilisent aussi `KIT_SYNC_CONTEXT=0` (pas de clonage des dépôts de contexte) et `KIT_SYNC_REGISTRY=0` (pas de
-  régénération de `global/skills-registry.md` dans le dépôt du kit).
+  régénération de la copie du registre). `kit sync` laisse le dépôt du kit propre (`git status --porcelain` vide,
+  testé) ; `kit update` et le hook de mise à jour restaurent un `global/skills-registry.md` modifié seulement dans sa
+  table générée (ce que laissaient les versions précédentes) avant le `git pull`. Sur un poste où le fichier diffère
+  autrement, `git -C <kit> checkout -- global/skills-registry.md` une fois, puis `kit update`.
 - **Retour à la v1** : voir `docs/rollback-v1.md` (restaurer le `settings.json` de l'archive, supprimer le registre,
   lancer le `kit sync` de la v1).
 
@@ -441,8 +457,23 @@ onglet « Recently blocked » pour relancer une action refusée.
   règle JSON `Read(**/.env)`, texte de doc, `git diff` de `.env.example`, `cp .env.example .env` (la destination d'une
   copie n'est pas lue), `ls`/`test -f`/`rm`/`chmod` sur ces fichiers. Il découpe la commande (guillemets, heredocs,
   `$( )`, accents graves, redirections, `sudo`/`env`/`timeout`/`xargs`, `bash -c`, `eval`) et résout `~`, `$HOME`,
-  `$KIT_CONFIG` et le dossier courant ; `scripts/test/guard-secrets-test.sh` couvre les deux sens (164 cas).
+  `$KIT_CONFIG` et le dossier courant ; `scripts/test/guard-secrets-test.sh` couvre les deux sens (583 cas, dont le corpus de contournements de la revue de sécurité dans `scripts/test/guard-corpus/`).
 - **Ce n'est pas étanche.** Les motifs de commandes se contournent (un script, un autre langage) et le hook ne détecte que les formats de clés connus. La vraie protection : secrets chiffrés, jetons à portée minimale, séparation dev/prod, et rotation immédiate en cas de doute.
+- **Limites connues du hook** (épinglées par des tests : `scripts/test/guard-corpus/known-limits.txt`) : un nom construit
+  à l'exécution (`f=.env; cat $f`, `$'…'`, `$"…"`, `cat $(echo …)`, concaténation dans `python -c`), un lien symbolique
+  ou dur créé dans une commande précédente puis lu, `xargs` qui reçoit les chemins par l'entrée standard, un programme
+  `python`/`node` qui écrit un fichier, `eval` très imbriqué au-delà de huit niveaux (refusé, pas analysé), une recherche
+  récursive depuis le projet lui-même (`grep -r TOKEN .` lit un fichier d'environnement non ignoré : seul le départ de
+  `$HOME`, `/` ou d'un dossier au-dessus d'un magasin d'identifiants est refusé), l'outil `Glob` (noms seulement, hors
+  du hook), `docker compose up|build` sans fichier compose trouvé (on laisse passer), un service distant qui renvoie ce
+  qu'on lui envoie. Le hook échoue fermé (awk absent, analyse en échec, commande de plus de 256 Ko) ; son entrée dans
+  `settings.json` a un délai de 10 s (au-delà, Claude Code laisse passer).
+- **Risques acceptés** : `git worktree add` ou `git clone` dans `~/.claude` (hors `settings.json`), `git remote add` puis
+  `git push` vers une URL quelconque (le push est autorisé par décision du propriétaire), les outils des fragments de
+  pile (`pytest`, `npm run test`, `go test`…) exécutent le code du projet, `docker compose up|build` est autorisé (le
+  hook refuse seulement les fichiers compose qui donnent l'hôte au conteneur : `privileged: true`, `pid|network_mode|ipc:
+  host`, montage de `/`, de `$HOME` ou du socket Docker, contexte de build `/` ou `~`), et un agent peut toujours écrire le
+  `.claude/settings.json` de son projet (seul `settings.local.json` est protégé).
 - Les noms des variables restent lisibles dans les fichiers chiffrés (seules les valeurs le sont).
 - Un secret injecté dans une commande est visible par cette commande et ses enfants : ne lance sous `kit secrets run` que des programmes de confiance.
 
