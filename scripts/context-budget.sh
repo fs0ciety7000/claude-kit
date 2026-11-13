@@ -208,13 +208,13 @@ fi
 m sessionstart_kit.words "$kit_w"; m sessionstart_kit.chars "$kit_c"; m sessionstart_kit.hooks "$kit_n"
 det "$(jq -Rn '{sessionstart_kit: {detail: [inputs | split("\t") | {name: .[0], words: (.[1] | tonumber), chars: (.[2] | tonumber), note: .[3]}]}}' <"$TMP/hooks.tsv")"
 
-# Project template hook, with docs/memory/*.md filled past any cap (5000 ASCII chars each), then with the fresh template.
+# Project template hook, with docs/memory/*.md filled past any cap (about 5000 ASCII chars each, in lines), then with the fresh template.
 proj_hook="$ROOT/templates/project/.claude/settings.json"
 pc=0 pw=0 fc=0 fw=0
 if [ -f "$proj_hook" ]; then
   jq -r '(.hooks.SessionStart // [])[] | .hooks[]? | select(.type == "command") | .command' "$proj_hook" >"$TMP/proj-start.cmds" 2>/dev/null || : >"$TMP/proj-start.cmds"
-  fill() { # file : 5000 ASCII chars of plain prose
-    awk 'BEGIN {for (i = 0; length(s) < 5000; i++) s = s "Fait : lot " i " termine, tests verts, prochaine etape documentee. "; print substr(s, 1, 4999)}' >"$1"
+  fill() { # file : about 5000 ASCII chars of plain prose, one 70-character list item per line (a real state.md)
+    awk 'BEGIN {for (i = 0; t < 5000; i++) {l = sprintf("- Fait : lot %d termine, tests verts, prochaine etape documentee.", i); print l; t += length(l) + 1}}' >"$1"
   }
   # fresh template
   rm -rf "$P/docs"; mkdir -p "$P/docs"
