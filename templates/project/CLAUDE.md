@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Lu automatiquement à chaque session. Court exprès. Les règles générales (langue, secrets, routage des skills et des agents) sont dans `~/.claude/CLAUDE.md`.
+> Lu à chaque session. Court exprès. Règles générales (langue, secrets, validations) : `~/.claude/CLAUDE.md`.
 
 @AGENTS.md
 
@@ -10,7 +10,7 @@
 - **Stack** : `TODO`
 - **Commandes** : `TODO` (install, dev, test, lint, build)
 - **Déploiement** : `TODO` (Coolify, Cloudflare Workers, autre)
-- **Rigueur** : `standard` (par défaut : pas d'agents relecteurs ni de CSP stricte) ou `renforcée` (relecteurs après chaque lot, CSP stricte)
+- **Taille** : `TODO` (S, M ou L : `project.yaml`, règles de M et L importées ci-dessous par `kit project size`)
 
 > Remplis cette section avec `/new-project` ou à la main.
 
