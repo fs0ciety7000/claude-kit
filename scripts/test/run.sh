@@ -444,13 +444,13 @@ rm -rf "$HOME/.claude" "$KIT_CONFIG"
 # ---------------------------------------------------------------------------
 section "réglages gérés (kit sync, fusion à trois points)"
 # Copie du kit : les tests y retirent ou ajoutent des règles sans jamais toucher au dépôt. KIT_SYNC_CONTEXT=0 saute le
-# clonage des dépôts de contexte, KIT_SYNC_REGISTRY=0 ne régénère pas global/skills-registry.md.
+# clonage des dépôts de contexte (la copie n'a pas de skills-registry.md : aucune régénération du registre des profils).
 KITC="$TMP/kitcopy"
 mkdir -p "$KITC/global"
 cp "$ROOT"/global/settings*.json "$KITC/global/"
 cp -R "$ROOT/scripts" "$KITC/scripts"
 reset_home() { rm -rf "$HOME/.claude" "$HOME/.kit" "$KIT_CONFIG"; mkdir -p "$HOME/.claude"; }
-msync() { env KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 KIT_SYNC_REGISTRY=0 "$KITC/scripts/kit.sh" sync "$@"; }
+msync() { env KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 "$KITC/scripts/kit.sh" sync "$@"; }
 cur_settings() { echo "$HOME/.claude/settings.json"; }
 n_backups() { find "$HOME/.claude" -maxdepth 1 -name 'settings.json.pre-kit.*' | wc -l | tr -d ' '; }
 jqc() { jq -e "$@" >/dev/null 2>&1; } # jqc <filtre> <fichier>
@@ -868,7 +868,7 @@ reset_home
 mkdir -p "$TMP/tmpd"
 cp "$KITC/global/settings.v1.json" "$TMP/snap.bak"
 echo '{' >"$KITC/global/settings.v1.json"
-env TMPDIR="$TMP/tmpd" KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 KIT_SYNC_REGISTRY=0 "$KITC/scripts/kit.sh" sync >/dev/null 2>&1 && rc=0 || rc=$?
+env TMPDIR="$TMP/tmpd" KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 "$KITC/scripts/kit.sh" sync >/dev/null 2>&1 && rc=0 || rc=$?
 [[ $rc != 0 && -z $(ls -A "$TMP/tmpd") && ! -e $KIT_CONFIG/settings.lock ]] && ok_ "échec : dossier temporaire et verrou nettoyés" || ko_ "échec : nettoyage" "code $rc : $(ls -A "$TMP/tmpd")"
 cp "$TMP/snap.bak" "$KITC/global/settings.v1.json"
 
@@ -879,7 +879,7 @@ jq --arg r "Bash(git add*)" '.permissions.allow |= map(select(. != $r))' "$KIT_A
 sleep 60 & holder=$!
 mkdir "$KIT_CONFIG/settings.lock" && echo "$holder" >"$KIT_CONFIG/settings.lock/pid"
 cp "$(cur_settings)" "$TMP/lock-before.json"
-dout=$(env KIT_LOCK_WAIT=1 KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 KIT_SYNC_REGISTRY=0 "$KITC/scripts/kit.sh" sync 2>&1); rc=$?
+dout=$(env KIT_LOCK_WAIT=1 KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 "$KITC/scripts/kit.sh" sync 2>&1); rc=$?
 [[ $rc == 0 ]] && grep -q 'settings.lock' <<<"$dout" && cmp -s "$(cur_settings)" "$TMP/lock-before.json" \
   && ok_ "verrou tenu : le second sync attend, renonce avec un message, ne touche à rien" || ko_ "verrou tenu" "code $rc : $dout"
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
@@ -900,7 +900,7 @@ if [ "\$n" -ge 1 ]; then echo "1 1"; else exec "$(command -v cksum)"; fi
 EOF
 chmod +x "$SHIM/cksum"
 cp "$(cur_settings)" "$TMP/race-before.json"
-dout=$(env PATH="$SHIM:$PATH" KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 KIT_SYNC_REGISTRY=0 "$KITC/scripts/kit.sh" sync 2>&1); rc=$?
+dout=$(env PATH="$SHIM:$PATH" KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 "$KITC/scripts/kit.sh" sync 2>&1); rc=$?
 [[ $rc == 0 ]] && grep -q 'a changé pendant la fusion' <<<"$dout" && cmp -s "$(cur_settings)" "$TMP/race-before.json" \
   && ok_ "fichier modifié pendant la fusion : rien d'écrit, message" || ko_ "fichier modifié pendant la fusion" "code $rc : $dout"
 cp "$ROOT/global/settings.json" "$KIT_ALLOW_JSON"
@@ -1480,11 +1480,14 @@ check "arbre réel : --budget sort 0 hors BUDGET_ENFORCE" bash "$CB" --budget
 section "2c : tableau de bord retiré, démarrage de projet, mise à jour auto, version"
 # Plus aucune trace du tableau de bord hors des plans, de la mesure, de l'instantané v1 (il en a besoin pour reconnaître
 # les entrées des postes v1) et du code qui nettoie les postes (scripts/lib.sh) et le teste (ce fichier).
-dash_hits=$(grep -rIlE 'kit-control|kit-emit|kit dash|KIT_DASH|task_create|task_update|wait_for_answer|checkpoint' \
+dash_hits=$(grep -rIlE 'kit-control|kit-emit|kit dash|task_create|task_update|wait_for_answer|checkpoint' \
   "$ROOT/global" "$ROOT/templates" "$ROOT/scripts" "$ROOT/install.sh" "$ROOT/README.md" "$ROOT/PLUGINS.md" "$ROOT/docs" "$ROOT/extras" "$ROOT/profiles" 2>/dev/null \
   | grep -vE '/global/collections-index\.json$|/docs/plans/|/docs/measure\.md$|/global/settings\.v1\.json$|/scripts/lib\.sh$|/scripts/test/run\.sh$' || true)
 [[ -z $dash_hits ]] && ok_ "aucune mention du tableau de bord (kit-control, kit-emit, kit dash, task_*, checkpoint) hors plans et mesure" \
   || ko_ "mentions du tableau de bord restantes" "$(printf '%s' "$dash_hits" | sed "s#$ROOT/##" | paste -sd' ' -)"
+kd_hits=$(grep -rIl 'KIT_DASH' "$ROOT/global" "$ROOT/templates" "$ROOT/scripts" "$ROOT/install.sh" "$ROOT/PLUGINS.md" "$ROOT/docs" "$ROOT/extras" "$ROOT/profiles" 2>/dev/null \
+  | grep -vE '/global/collections-index\.json$|/docs/plans/|/docs/measure\.md$|/global/settings\.v1\.json$|/scripts/lib\.sh$|/scripts/test/run\.sh$' || true)
+[[ -z $kd_hits ]] && ok_ "KIT_DASH_* : cité seulement dans le README (étapes de révocation), lib.sh (doctor) et les tests" || ko_ "KIT_DASH_* : mentions restantes" "$kd_hits"
 [[ ! -e $ROOT/scripts/hooks/kit-emit.sh ]] && ok_ "kit-emit.sh supprimé" || ko_ "kit-emit.sh existe encore"
 "$ROOT/scripts/kit.sh" help 2>&1 | grep -qi 'dash' && ko_ "usage : plus de section dashboard" || ok_ "usage : aucune section dashboard"
 "$ROOT/scripts/kit.sh" dash status >/dev/null 2>&1 && ko_ "kit dash : sous-commande supprimée" || ok_ "kit dash : sous-commande supprimée"
@@ -1626,7 +1629,9 @@ msync >/dev/null 2>&1
 mkdir -p "$KIT_CONFIG"
 head -c 900 /dev/zero | tr '\0' 'x' >"$KIT_CONFIG/environment.local.txt"
 before_sum=$(cksum <"$(cur_settings)")
-msync >/dev/null 2>&1 && ko_ "overlay : ligne de plus de 800 caractères refusée" || ok_ "overlay : ligne de plus de 800 caractères refusée"
+dout=$(msync 2>&1); rc=$?
+[[ $rc == 0 && $dout == *"environment.local.txt ignoré"* && $dout == *"ligne(s) refusée(s)"* ]] \
+  && ok_ "overlay : ligne de plus de 800 caractères refusée, avertissement, le sync continue (code 0)" || ko_ "overlay : ligne trop longue" "code $rc : $dout"
 [[ $(cksum <"$(cur_settings)") == "$before_sum" && ! -e $KIT_CONFIG/settings.local.json ]] && ok_ "overlay refusée : settings.json intact, rien écrit" || ko_ "overlay refusée : écriture"
 # Poste neuf, aucun fichier : aucune surcharge créée.
 reset_home
@@ -1639,10 +1644,177 @@ dout=$(msync --dry-run 2>&1)
 [[ ! -e $KIT_CONFIG/settings.local.json ]] && grep -q 'seraient appliquées' <<<"$dout" && ok_ "overlay : --dry-run l'annonce sans écrire" || ko_ "overlay : dry-run" "$dout"
 # Session cloud : la variable KIT_LOCAL_ENVIRONMENT alimente le fichier (600) puis la surcharge.
 reset_home
-env KIT_LOCAL_ENVIRONMENT=$'Phrase cloud 1.\nPhrase cloud 2.' KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 KIT_SYNC_REGISTRY=0 "$KITC/scripts/kit.sh" sync >/dev/null 2>&1
+env KIT_LOCAL_ENVIRONMENT=$'Phrase cloud 1.\nPhrase cloud 2.' KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 "$KITC/scripts/kit.sh" sync >/dev/null 2>&1
 jqc '.autoMode.environment == ["Phrase cloud 1.", "Phrase cloud 2."]' "$OV" && [[ $(fmode "$KIT_CONFIG/environment.local.txt") == 600 ]] \
   && jqc '.autoMode.environment | index("Phrase cloud 2.") != null' "$(cur_settings)" \
   && ok_ "overlay : KIT_LOCAL_ENVIRONMENT (cloud) écrit le fichier (600) et la surcharge" || ko_ "overlay : variable cloud"
+reset_home
+
+# --- Durcissement de la source et de la cible de la surcharge (revue de sécurité de 2c) ---
+OV="$KIT_CONFIG/settings.local.json"
+ENVF="$KIT_CONFIG/environment.local.txt"
+ovfresh() { reset_home; mkdir -p "$KIT_CONFIG"; chmod 700 "$KIT_CONFIG"; }
+# Une erreur dans le fichier ne coupe pas le sync et garde les phrases précédentes (avertissement sur stderr).
+ovfresh
+printf 'Phrase valide 1.\n' >"$ENVF"
+msync >/dev/null 2>&1
+printf 'AGE-SECRET-KEY-1ABCDEF\n' >"$ENVF"
+dout=$(msync 2>&1 >/dev/null); rc=$?
+[[ $rc == 0 && $dout == *"ignoré"* ]] && jqc '.autoMode.environment == ["Phrase valide 1."]' "$OV" && jqc '.autoMode.environment | index("Phrase valide 1.") != null' "$(cur_settings)" \
+  && ok_ "overlay : fichier refusé, sync terminé (0), avertissement sur stderr, phrases précédentes conservées" || ko_ "overlay : erreur non bloquante" "code $rc : $dout"
+[[ $dout != *"AGE-SECRET"* ]] && ok_ "overlay : le contenu refusé n'est pas répété dans le message" || ko_ "overlay : contenu répété"
+# Lien symbolique : source (défaut et explicite) et cible.
+ovfresh
+printf 'Phrase via lien.\n' >"$TMP/env-target.txt"
+ln -s "$TMP/env-target.txt" "$ENVF"
+dout=$(msync 2>&1 >/dev/null); rc=$?
+[[ $rc == 0 && $dout == *"lien symbolique"* && ! -e $OV ]] && ok_ "overlay : environment.local.txt lien symbolique refusé (sync continue, rien écrit)" || ko_ "overlay : source symlink" "code $rc : $dout"
+env KIT_HOME="$KITC" bash "$KITC/scripts/kit.sh" overlay env "$ENVF" >/dev/null 2>&1 && ko_ "kit overlay env <lien> : refusé" || ok_ "kit overlay env <fichier lien symbolique> : refusé"
+rm -f "$ENVF"
+ovfresh
+printf 'Phrase valide.\n' >"$ENVF"
+printf '{"permissions":{"allow":["Bash(mon-outil *)"]}}\n' >"$TMP/elsewhere.json"
+cp "$TMP/elsewhere.json" "$TMP/elsewhere.json.orig"
+ln -s "$TMP/elsewhere.json" "$OV"
+dout=$(msync 2>&1 >/dev/null); rc=$?
+[[ $rc == 0 && $dout == *"settings.local.json est un lien symbolique"* ]] && cmp -s "$TMP/elsewhere.json" "$TMP/elsewhere.json.orig" \
+  && ok_ "overlay : settings.local.json lien symbolique, jamais suivi à l'écriture (cible intacte)" || ko_ "overlay : cible symlink" "code $rc : $dout"
+rm -f "$OV"
+# Propriétaire et droits de la source.
+ovfresh
+printf 'Phrase valide.\n' >"$ENVF"
+chmod 666 "$ENVF"
+dout=$(msync 2>&1 >/dev/null)
+[[ $dout == *"modifiable par d'autres"* && ! -e $OV ]] && ok_ "overlay : source modifiable par d'autres refusée" || ko_ "overlay : source 666" "$dout"
+chmod 600 "$ENVF"
+if [[ $(id -u) == 0 ]] && chown 12345 "$ENVF" 2>/dev/null; then
+  dout=$(msync 2>&1 >/dev/null)
+  [[ $dout == *"n'appartient pas"* && ! -e $OV ]] && ok_ "overlay : source d'un autre propriétaire refusée" || ko_ "overlay : source d'un autre propriétaire" "$dout"
+else
+  echo "  (chown indisponible ici : test du propriétaire ignoré)"
+fi
+# Phrases refusées : secrets, contrôles, invisibles, bidi, NUL, longueur, nombre.
+ov_refused() { # description contenu-printf : refusé, rien écrit
+  local d=$1 content=$2
+  ovfresh
+  printf -- "$content" >"$ENVF"
+  local o; o=$(msync 2>&1 >/dev/null)
+  if [[ $o == *"environment.local.txt ignoré"* && ! -e $OV ]]; then ok_ "overlay refuse : $d"; else ko_ "overlay refuse : $d" "$o"; fi
+}
+ov_refused "clé age" 'Cle AGE-SECRET-KEY-1QQQQQQQQQQQQ\n'
+ov_refused "clé privée PEM" '-----BEGIN OPENSSH PRIVATE ''KEY-----\n'
+ov_refused "jeton GitHub ghp_" 'jeton ghp_abcdef123456\n'
+ov_refused "jeton GitHub github_pat_" 'github_pat_11ABCDEFG\n'
+ov_refused "clé sk-" 'cle sk-abcdefghijklmnopqrstuvwxyz\n'
+ov_refused "jeton Slack xoxb-" 'xo''xb-123456-abcdef\n'
+ov_refused "suite hexadécimale de 40 caractères" 'hash 0123456789abcdef0123456789abcdef01234567\n'
+ov_refused "suite base64 de 48 caractères" 'blob QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlq\n'
+ov_refused "octet NUL" 'avant\000apres\n'
+ov_refused "DEL (U+007F)" 'avant\177apres\n'
+ov_refused "contrôle C0 (U+0001)" 'avant\001apres\n'
+ov_refused "contrôle C1 (U+0085)" 'avant\302\205apres\n'
+ov_refused "séparateur de ligne U+2028" 'avant\342\200\250apres\n'
+ov_refused "séparateur de paragraphe U+2029" 'avant\342\200\251apres\n'
+ov_refused "bidi U+202E" 'avant\342\200\256apres\n'
+ov_refused "bidi U+2066" 'avant\342\201\246apres\n'
+ov_refused "bidi U+2069" 'avant\342\201\251apres\n'
+ov_refused "caractère de remplacement U+FFFD (UTF-8 invalide)" 'avant\377apres\n'
+ov_refused "phrase de 801 caractères" "$(head -c 801 /dev/zero | tr '\0' 'a' | sed 's/aaaaaaaaaa/aaaaaaaaa /g')\n"
+ov_refused "51 phrases" "$(awk 'BEGIN{for(i=1;i<=51;i++) printf "Phrase %d.\\n", i}')"
+# Acceptés : phrases ordinaires (dont des mots proches des motifs), 50 phrases, accents.
+ovfresh
+printf 'Les tâches task-based et disk-usage de l equipe : domaines *.example.org.\nCoolify sur coolify.example.org (accès restreint).\n' >"$ENVF"
+msync >/dev/null 2>&1
+jqc '.autoMode.environment | length == 2' "$OV" && ok_ "overlay accepte : phrases ordinaires, accents, mots proches des motifs (task-based, disk-usage)" || ko_ "overlay : phrases ordinaires" "$(cat "$OV" 2>/dev/null)"
+ovfresh
+awk 'BEGIN{for(i=1;i<=50;i++) printf "Phrase %d.\n", i}' >"$ENVF"
+msync >/dev/null 2>&1
+jqc '.autoMode.environment | length == 50' "$OV" && ok_ "overlay accepte : 50 phrases" || ko_ "overlay : 50 phrases"
+# --clear dure : le fichier source est mis de côté, le sync suivant ne remet rien.
+ovfresh
+printf 'Phrase a retirer.\n' >"$ENVF"
+msync >/dev/null 2>&1
+dout=$(env KIT_HOME="$KITC" bash "$KITC/scripts/kit.sh" overlay env --clear 2>&1)
+[[ ! -e $ENVF && -n $(ls "$KIT_CONFIG"/environment.local.txt.cleared-* 2>/dev/null) && $dout == *"mis de côté"* ]] && ok_ "overlay --clear : environment.local.txt renommé en .cleared-<date>" || ko_ "overlay --clear : renommage" "$dout"
+msync >/dev/null 2>&1
+jqc '(.autoMode // {}) | has("environment") | not' "$OV" && jqc '.autoMode.environment | index("Phrase a retirer.") == null' "$(cur_settings)" \
+  && ok_ "overlay --clear dure : le sync suivant ne remet pas les phrases" || ko_ "overlay --clear : phrases revenues" "$(cat "$OV")"
+dout=$(env KIT_LOCAL_ENVIRONMENT='Phrase variable.' KIT_HOME="$KITC" bash "$KITC/scripts/kit.sh" overlay env --clear 2>&1)
+[[ $dout == *"KIT_LOCAL_ENVIRONMENT est défini"* ]] && ok_ "overlay --clear : avertit que KIT_LOCAL_ENVIRONMENT les remettrait" || ko_ "overlay --clear : variable" "$dout"
+# Dry-run : jamais le texte des phrases d'environnement (comptes seulement), calculé depuis la surcharge simulée, sans résidu.
+ovfresh
+msync >/dev/null 2>&1
+printf 'Domaine secret-interne.example.org de test.\nAutre phrase locale.\n' >"$ENVF"
+mkdir -p "$TMP/dry-tmp"
+dout=$(env TMPDIR="$TMP/dry-tmp" KIT_HOME="$KITC" KIT_SYNC_CONTEXT=0 "$KITC/scripts/kit.sh" sync --dry-run 2>&1)
+! grep -q 'secret-interne' <<<"$dout" && ! grep -q 'Autre phrase locale' <<<"$dout" && ok_ "dry-run : le texte des phrases locales n'est jamais affiché" || ko_ "dry-run : phrases affichées" "$dout"
+grep -q 'autoMode.environment : +2 -0' <<<"$dout" && grep -q 'phrases non affichées' <<<"$dout" \
+  && ok_ "dry-run : l'écart vient de la surcharge simulée (+2) et n'affiche que le compte" || ko_ "dry-run : écart simulé" "$dout"
+grep -q 'settings.local.json' <<<"$dout" && ! grep -q "$TMP/dry-tmp" <<<"$dout" && ok_ "dry-run : la surcharge est nommée par son vrai chemin, pas par le fichier temporaire" || ko_ "dry-run : nom de la surcharge" "$dout"
+[[ ! -e $OV && -z $(ls -A "$TMP/dry-tmp") ]] && ok_ "dry-run : rien d'écrit, fichier temporaire de simulation supprimé" || ko_ "dry-run : résidu" "$(ls -A "$TMP/dry-tmp")"
+jq '.autoMode.environment = ["Phrase déjà là."]' <<<'{}' >"$OV"
+printf 'Phrase déjà là.\nNouvelle phrase.\n' >"$ENVF"
+dout=$(msync --dry-run 2>&1)
+! grep -q 'Nouvelle phrase' <<<"$dout" && ! grep -q 'Phrase déjà là' <<<"$dout" && ok_ "dry-run : aucune phrase affichée non plus quand la surcharge existe déjà" || ko_ "dry-run : surcharge existante" "$dout"
+reset_home
+# retire_dashboard : sans claude, avertissement sans erreur ; seul un lien vers ce kit est supprimé.
+mkdir -p "$TMP/jqonly"
+ln -sf "$(command -v jq)" "$TMP/jqonly/jq"
+ln -sf "$(command -v rm)" "$TMP/jqonly/rm"
+echo '{"mcpServers":{"kit-control":{"type":"http","url":"https://exemple.invalid/mcp"}}}' >"$HOME/.claude.json"
+# shellcheck disable=SC2123
+rd_out=$( ( source "$ROOT/scripts/lib.sh"; PATH="$TMP/jqonly"; retire_dashboard ) 2>&1 ); rd_rc=$?
+[[ $rd_rc == 0 && $rd_out == *"encore déclaré"* ]] && ok_ "retire_dashboard : claude absent, avertissement, code 0" || ko_ "retire_dashboard : claude absent" "code $rd_rc : $rd_out"
+rm -f "$HOME/.claude.json"
+mkdir -p "$KIT_CONFIG/hooks" "$TMP/elsewhere-hooks"
+echo mien >"$KIT_CONFIG/hooks/kit-emit.sh"
+( source "$ROOT/scripts/lib.sh"; retire_dashboard ) >/dev/null 2>&1
+[[ -f $KIT_CONFIG/hooks/kit-emit.sh && $(cat "$KIT_CONFIG/hooks/kit-emit.sh") == mien ]] && ok_ "retire_dashboard : un fichier ordinaire kit-emit.sh est conservé" || ko_ "retire_dashboard : fichier ordinaire supprimé"
+rm -f "$KIT_CONFIG/hooks/kit-emit.sh"
+echo mien >"$TMP/elsewhere-hooks/kit-emit.sh"
+ln -s "$TMP/elsewhere-hooks/kit-emit.sh" "$KIT_CONFIG/hooks/kit-emit.sh"
+( source "$ROOT/scripts/lib.sh"; retire_dashboard ) >/dev/null 2>&1
+[[ -L $KIT_CONFIG/hooks/kit-emit.sh && -f $TMP/elsewhere-hooks/kit-emit.sh ]] && ok_ "retire_dashboard : un lien hors du kit est conservé" || ko_ "retire_dashboard : lien hors du kit supprimé"
+rm -f "$KIT_CONFIG/hooks/kit-emit.sh"
+ln -s "$ROOT/scripts/hooks/kit-emit.sh" "$KIT_CONFIG/hooks/kit-emit.sh"
+( source "$ROOT/scripts/lib.sh"; retire_dashboard ) >/dev/null 2>&1
+[[ ! -e $KIT_CONFIG/hooks/kit-emit.sh && ! -L $KIT_CONFIG/hooks/kit-emit.sh ]] && ok_ "retire_dashboard : le lien (cassé) vers ce kit est supprimé" || ko_ "retire_dashboard : lien du kit conservé"
+# kit doctor : variables du tableau de bord encore dans l'environnement (noms seulement).
+dd_out=$(KIT_DASH_TOKEN=valeur-secrete-de-test KIT_DASH_URL=https://exemple.invalid bash "$ROOT/scripts/kit.sh" doctor 2>&1)
+[[ $dd_out == *"KIT_DASH_TOKEN KIT_DASH_URL"* && $dd_out != *valeur-secrete-de-test* && $dd_out != *exemple.invalid* ]] \
+  && ok_ "kit doctor : signale KIT_DASH_TOKEN et KIT_DASH_URL par leur nom, jamais leur valeur" || ko_ "kit doctor : variables du tableau de bord" "$(grep -i 'KIT_DASH' <<<"$dd_out")"
+dd_out=$(env -u KIT_DASH_TOKEN -u KIT_DASH_URL bash "$ROOT/scripts/kit.sh" doctor 2>&1)
+[[ $dd_out != *KIT_DASH* ]] && ok_ "kit doctor : rien à signaler sans ces variables" || ko_ "kit doctor : faux avertissement"
+reset_home
+# Hook de démarrage : coupe sans casser un caractère UTF-8 (mawk, awk d'octets), ligne géante comprise.
+ss_utf8_ok() { iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; }
+SSP2="$TMP/ss-utf8"
+mkdir -p "$SSP2/docs/memory"
+awk 'BEGIN {for (i = 0; i < 400; i++) printf "é"; printf " "; for (i = 0; i < 1500; i++) printf "ü "; print ""}' >"$SSP2/docs/memory/state.md"
+sso=$(ss_run "$SSP2")
+printf '%s\n' "$sso" | ss_utf8_ok && ((${#sso} <= 1500)) && [[ $sso == *tronqué* ]] && ok_ "démarrage : ligne géante accentuée coupée à une espace, UTF-8 valide" || ko_ "démarrage : UTF-8 (ligne géante)" "${#sso}"
+awk 'BEGIN {for (i = 0; i < 3000; i++) printf "é"; print ""}' >"$SSP2/docs/memory/state.md"
+sso=$(ss_run "$SSP2")
+printf '%s\n' "$sso" | ss_utf8_ok && [[ $sso == *tronqué* ]] && ok_ "démarrage : ligne géante sans espace, aucun caractère coupé" || ko_ "démarrage : UTF-8 (sans espace)" "$sso"
+awk 'BEGIN {for (i = 0; i < 80; i++) printf "- Fait : lot %d terminé, état à jour, été prévu, café servi.\n", i}' >"$SSP2/docs/memory/state.md"
+sso=$(ss_run "$SSP2")
+printf '%s\n' "$sso" | ss_utf8_ok && [[ $sso == *tronqué* ]] && ok_ "démarrage : texte accentué sur plusieurs lignes, coupe propre" || ko_ "démarrage : UTF-8 (lignes)"
+# regen_registry : un profil qui n'a que des commentaires ne doit pas faire échouer kit registry ni kit sync (pipefail).
+RG="$TMP/rgkit"
+mkdir -p "$RG/global" "$RG/profiles" "$RG/scripts/hooks"
+cp "$ROOT/scripts/lib.sh" "$ROOT/scripts/kit.sh" "$ROOT/scripts/managed-settings.jq" "$RG/scripts/"
+cp "$ROOT"/scripts/hooks/*.sh "$RG/scripts/hooks/"
+cp "$ROOT"/global/settings*.json "$RG/global/"
+printf '# commentaire seulement\n\n# autre commentaire\n' >"$RG/profiles/custom.txt"
+printf 'vercel-labs/agent-skills --skill alpha beta\n' >"$RG/profiles/web.txt"
+printf '# Registre\n<!-- kit:profiles:start -->\nancien\n<!-- kit:profiles:end -->\nfin\n' >"$RG/global/skills-registry.md"
+reset_home
+rg_out=$(env KIT_HOME="$RG" bash "$RG/scripts/kit.sh" registry 2>&1); rg_rc=$?
+[[ $rg_rc == 0 ]] && grep -qF '| `custom` | (vide) |' "$RG/global/skills-registry.md" && grep -qF '| `web` |' "$RG/global/skills-registry.md" && ! grep -q ancien "$RG/global/skills-registry.md" \
+  && ok_ "kit registry : un profil sans une seule ligne utile s'affiche (vide), code 0" || ko_ "kit registry : profil de commentaires" "code $rg_rc : $rg_out"
+printf '# Registre\n<!-- kit:profiles:start -->\nancien\n<!-- kit:profiles:end -->\nfin\n' >"$RG/global/skills-registry.md"
+rg_out=$(env KIT_HOME="$RG" KIT_SYNC_CONTEXT=0 bash "$RG/scripts/kit.sh" sync 2>&1); rg_rc=$?
+[[ $rg_rc == 0 ]] && grep -qF '| `custom` | (vide) |' "$RG/global/skills-registry.md" && ok_ "kit sync (registre non masqué) : profil de commentaires, code 0, table régénérée" || ko_ "kit sync : profil de commentaires" "code $rg_rc : $rg_out"
 reset_home
 
 # kit --version : tag (ou révision) et date du commit.
