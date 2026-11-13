@@ -1,0 +1,22 @@
+{
+  "customManagers": [
+    {
+      "description": "Forgejo Actions from data.forgejo.org pinned by SHA, version in the trailing comment (kit project ci)",
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)\\.forgejo/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "uses:\\s*[\"']?https://data\\.forgejo\\.org/(?<depName>actions/[A-Za-z0-9._-]+)@(?<currentDigest>[0-9a-f]{40})[\"']?\\s+#\\s*(?<currentValue>v?\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "The same data.forgejo.org actions are updated by the custom manager above, not twice by github-actions",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["/^https://data\\.forgejo\\.org//"],
+      "enabled": false
+    }
+  ]
+}

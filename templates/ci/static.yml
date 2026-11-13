@@ -1,0 +1,40 @@
+# CI for a static site without a build step (HTML, CSS, JS served as-is, e.g. by nginx), on the self-hosted Forgejo
+# runner (`kit project ci`). A site with a package.json build uses vite or astro instead.
+# The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate bumps the
+# SHA from the version comment. No secret is used, and no dependency to audit.
+# HTML validation: html-validate at a pinned version, with the project's .htmlvalidate.json when there is one,
+# otherwise the html-validate:standard preset (standard conformance only, no style rules).
+name: ci-static
+on: [push]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CI: "true"
+  HTML_VALIDATE_VERSION: 11.21.1
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://data.forgejo.org/actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+      - name: html-validate
+        run: |
+          mapfile -t files < <(find . \( -name node_modules -o -name .git \) -prune -o \( -name '*.html' -o -name '*.htm' \) -type f -print | sort)
+          if [ "${#files[@]}" -eq 0 ]; then echo "no HTML file found"; exit 1; fi
+          cfg=()
+          if [ ! -f .htmlvalidate.json ] && [ ! -f .htmlvalidate.mjs ] && [ ! -f .htmlvalidate.cjs ] && [ ! -f .htmlvalidate.js ]; then
+            echo '{"extends": ["html-validate:standard"]}' >"$RUNNER_TEMP/htmlvalidate.json"
+            cfg=(--config "$RUNNER_TEMP/htmlvalidate.json")
+          fi
+          npx --yes "html-validate@${HTML_VALIDATE_VERSION}" "${cfg[@]}" "${files[@]}"

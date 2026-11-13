@@ -1,0 +1,92 @@
+# CI for a Rust crate (CLI, TUI, library or service), on the self-hosted Forgejo runner (`kit project ci`).
+# The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate bumps the
+# SHA from the version comment. No secret is used. Cargo.lock must be committed (every cargo call is --locked).
+# Rust version, first found: rust-toolchain.toml (or rust-toolchain), the Dockerfile (FROM rust:<v>), else stable.
+# The default runner image has neither rustup nor a C linker: both are installed here (rustup-init pinned by
+# version and SHA-256 from static.rust-lang.org; build-essential from apt).
+name: ci-rust
+on: [push]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CI: "true"
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUSTUP_INIT_VERSION: 1.29.3
+  RUSTUP_INIT_SHA256: b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
+  CARGO_AUDIT_VERSION: 0.23.0
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: C toolchain
+        run: |
+          if ! command -v cc >/dev/null 2>&1; then
+            sudo=""; if [ "$(id -u)" != 0 ]; then sudo=sudo; fi
+            $sudo apt-get update -q
+            $sudo apt-get install -y -q --no-install-recommends build-essential pkg-config libssl-dev
+          fi
+      - name: rustup
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl -fsSL -o "$RUNNER_TEMP/rustup-init" \
+              "https://static.rust-lang.org/rustup/archive/${RUSTUP_INIT_VERSION}/x86_64-unknown-linux-gnu/rustup-init"
+            echo "${RUSTUP_INIT_SHA256}  $RUNNER_TEMP/rustup-init" | sha256sum -c -
+            chmod +x "$RUNNER_TEMP/rustup-init"
+            "$RUNNER_TEMP/rustup-init" -y --no-modify-path --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+          fi
+      - name: toolchain
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          if [ -f rust-toolchain.toml ] || [ -f rust-toolchain ]; then
+            rustup toolchain install
+            rustup component add rustfmt clippy
+          else
+            v=""
+            if [ -f Dockerfile ]; then
+              v=$(sed -nE 's/^FROM[[:space:]]+(--platform=[^[:space:]]+[[:space:]]+)?([^[:space:]]*\/)?rust:([0-9][0-9.]*).*/\3/p' Dockerfile | head -n1)
+            fi
+            v=${v:-stable}
+            rustup toolchain install "$v" --no-self-update --profile minimal --component rustfmt,clippy
+            rustup default "$v"
+          fi
+          rustc --version
+      - uses: https://data.forgejo.org/actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+      - uses: https://data.forgejo.org/actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ runner.os }}-${{ env.CARGO_AUDIT_VERSION }}
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: test
+        run: cargo test --locked
+      - name: build
+        run: cargo build --locked
+      - name: cargo audit
+        run: |
+          if ! cargo audit --version 2>/dev/null | grep -qF "$CARGO_AUDIT_VERSION"; then
+            cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
+          fi
+          cargo audit

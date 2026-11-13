@@ -1,0 +1,59 @@
+# CI for an Astro site, on the self-hosted Forgejo runner (written by `kit project ci`).
+# The bridge mirrors every ref to Forgejo with a push (branches, pull requests as pr/<n>, tags): `on: [push]` covers
+# them all. Actions are pinned by commit SHA on data.forgejo.org (a mirror of the GitHub actions); Renovate bumps the
+# SHA from the version comment. No secret is used. Package manager: npm (package-lock.json committed).
+name: ci-astro
+on: [push]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CI: "true"
+  ASTRO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  astro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Node version, first found: the Dockerfile (FROM node:<v>), .nvmrc, .node-version, package.json engines.node;
+      # otherwise the current LTS.
+      - name: node version
+        id: node
+        run: |
+          v=""; f=""
+          if [ -f Dockerfile ]; then
+            v=$(sed -nE 's/^FROM[[:space:]]+(--platform=[^[:space:]]+[[:space:]]+)?([^[:space:]]*\/)?node:([0-9][0-9.]*).*/\3/p' Dockerfile | head -n1)
+          fi
+          if [ -z "$v" ]; then
+            for c in .nvmrc .node-version; do if [ -f "$c" ]; then f=$c; break; fi; done
+          fi
+          if [ -z "$v$f" ] && jq -e '.engines.node // empty' package.json >/dev/null 2>&1; then f=package.json; fi
+          if [ -z "$v$f" ]; then v='lts/*'; fi
+          echo "version=$v" >>"$GITHUB_OUTPUT"
+          echo "file=$f" >>"$GITHUB_OUTPUT"
+      - uses: https://data.forgejo.org/actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+          node-version-file: ${{ steps.node.outputs.file }}
+          cache: npm
+      - name: install
+        run: npm ci
+      - name: audit (high and critical)
+        run: npm audit --audit-level=high
+      - name: lint
+        run: npm run lint --if-present
+      # `astro check` needs @astrojs/check (and typescript): run it only when the project has it.
+      - name: astro check
+        run: |
+          if npm ls @astrojs/check >/dev/null 2>&1; then npx astro check; else echo "@astrojs/check absent: skipped"; fi
+      - name: test
+        run: npm test --if-present
+      - name: build
+        run: npm run build
