@@ -1,0 +1,132 @@
+# Rebuilds global/collections-index.json every Monday (and on demand) from global/agent-sources.txt, and proposes the
+# change as a pull request on GitHub: the index holds third-party text, so a human reads the summary before it lands.
+# Runs on the self-hosted Forgejo runner, in the mirror of this repository (`on: schedule` runs on the default branch;
+# pushes never trigger it). One job, two steps:
+#   - build: shallow clones without links, no API, nothing executed; no token is exposed to this step;
+#   - publish: the only step that sees KIT_INDEX_GITHUB_TOKEN (fine-grained GitHub token, Contents and Pull requests
+#     read-write on this repository only). It commits the built file on the branch bot/collections-index (fast-forward
+#     only, never a forced push) and opens or updates the PR. Without the secret, it prints a notice and exits 0.
+# The token reaches git through a credential helper that reads the environment, and curl through a config read on
+# stdin: it never appears in a command line, a file or the log (Forgejo also masks secrets in the log).
+name: collections-index
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: collections-index
+  cancel-in-progress: false
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # full history: the bot branch is merged with main
+      - name: Build the index (shallow clones without links, no API, nothing executed)
+        run: bash scripts/build-index.sh --out "$RUNNER_TEMP/collections-index.json"
+      - name: Propose the update (pull request on GitHub)
+        env:
+          KIT_INDEX_GITHUB_TOKEN: ${{ secrets.KIT_INDEX_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KIT_INDEX_GITHUB_TOKEN:-}" ]; then
+            echo "::notice::secret KIT_INDEX_GITHUB_TOKEN absent: index built, no pull request opened"
+            exit 0
+          fi
+          # GitHub repository from the mirror name: <org>/<owner>__<repo>.
+          mirror=${GITHUB_REPOSITORY#*/}
+          owner=${mirror%%__*}
+          repo=${mirror#*__}
+          [[ $mirror == *__* && $owner =~ ^[A-Za-z0-9-]+$ && $repo =~ ^[A-Za-z0-9._-]+$ ]] \
+            || { echo "unexpected mirror name: $GITHUB_REPOSITORY" >&2; exit 1; }
+          api="https://api.github.com/repos/$owner/$repo"
+          branch=bot/collections-index
+          # gh_api METHOD PATH [JSON_FILE]: the Authorization header goes through a curl config read on stdin.
+          gh_api() {
+            local data=()
+            [ -n "${3:-}" ] && data=(--data-binary "@$3")
+            printf 'header = "Authorization: Bearer %s"\n' "$KIT_INDEX_GITHUB_TOKEN" \
+              | curl -sS --fail-with-body --retry 3 -K - -X "$1" -H "Accept: application/vnd.github+json" \
+                  -H "X-GitHub-Api-Version: 2022-11-28" "${data[@]}" "$api$2"
+          }
+          # git: credential helper reading the environment (reset first, then ours), only for github.com.
+          export GIT_CONFIG_COUNT=2
+          export GIT_CONFIG_KEY_0=credential.https://github.com.helper GIT_CONFIG_VALUE_0=
+          export GIT_CONFIG_KEY_1=credential.https://github.com.helper
+          export GIT_CONFIG_VALUE_1='!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=$KIT_INDEX_GITHUB_TOKEN"; }; f'
+          export GIT_TERMINAL_PROMPT=0
+          remote="https://github.com/$owner/$repo.git"
+
+          git fetch -q --no-tags "$remote" "+refs/heads/main:refs/remotes/github/main"
+          has_branch=0
+          if git ls-remote --exit-code --heads "$remote" "$branch" >/dev/null; then
+            git fetch -q --no-tags "$remote" "+refs/heads/$branch:refs/remotes/github/bot"
+            has_branch=1
+          fi
+
+          new="$RUNNER_TEMP/collections-index.json"
+          old=global/collections-index.json
+          git show "github/main:$old" >"$RUNNER_TEMP/old.json" 2>/dev/null || echo '{"entries": [], "sources": []}' >"$RUNNER_TEMP/old.json"
+          if jq -e --slurpfile o "$RUNNER_TEMP/old.json" '(.entries == $o[0].entries) and (.sources | map(.source)) == ($o[0].sources | map(.source))' "$new" >/dev/null; then
+            echo "index unchanged on main"; exit 0
+          fi
+
+          # Summary for the reviewer: a multi-megabyte JSON diff is not readable on GitHub.
+          summary="$RUNNER_TEMP/summary.md"
+          jq -rn --slurpfile n "$new" --slurpfile o "$RUNNER_TEMP/old.json" '
+            ($n[0]) as $N | (($o[0] // {entries: [], sources: []})) as $O
+            | ($N.entries | map(.source + "/" + .path)) as $nk | ($O.entries | map(.source + "/" + .path)) as $ok
+            | ($N.sources | map(.source)) as $ns | ($O.sources | map(.source)) as $os
+            | ([$N.entries[] | select((.source + "/" + .path) as $k | $ok | index($k) | not)]) as $added
+            | ([$O.entries[] | select((.source + "/" + .path) as $k | $nk | index($k) | not)]) as $removed
+            | ([$N.entries[] | select((.description + " " + .name)
+                 | test("(?i)ignore (all|previous)|IMPORTANT:|curl |wget |bash -c|base64|token|secret|password|api[_ -]?key|https?://"))]) as $flag
+            | "Régénéré par `scripts/build-index.sh` (workflow Forgejo `collections-index`). **Contenu tiers** : lire ce résumé, et les fichiers signalés avant fusion.\n\n"
+              + "| | |\n|---|---|\n"
+              + "| Entrées | \($O.entries | length) → \($N.count) (+\($added | length), −\($removed | length)) |\n"
+              + "| Sources ajoutées | \([$ns[] | select(. as $s | $os | index($s) | not)] | join(", ") | if . == "" then "—" else . end) |\n"
+              + "| Sources retirées | \([$os[] | select(. as $s | $ns | index($s) | not)] | join(", ") | if . == "" then "—" else . end) |\n\n"
+              + "### Descriptions à relire (motifs sensibles : instructions, commandes, secrets, liens) : \($flag | length)\n\n"
+              + ([$flag[0:40][] | "- `\(.source)/\(.path)` : \(.description[0:120])"] | join("\n"))
+              + (if ($flag | length) > 40 then "\n- … et \(($flag | length) - 40) autres" else "" end)
+              + "\n\n### Exemples d’entrées ajoutées\n\n"
+              + ([$added[0:20][] | "- \(.kind) `\(.source)` : \(.name)"] | join("\n"))' >"$summary"
+
+          git config user.name "collections-index-bot"
+          git config user.email "collections-index-bot@users.noreply.invalid"
+          # Fast-forward only: start from the existing bot branch and merge main into it (main wins on conflicts,
+          # the index is overwritten just after), or start from main.
+          if [ "$has_branch" = 1 ]; then
+            git switch -q -c work github/bot
+            git merge -q --no-edit -X theirs -m "Merge main into $branch" github/main
+          else
+            git switch -q -c work github/main
+          fi
+          cp "$new" "$old"
+          git add "$old"
+          if git diff --cached --quiet; then
+            echo "branch $branch already holds this index"
+          else
+            git commit -q -m "Collections index: $(jq -r .count "$old") entries"
+          fi
+          git push -q "$remote" "HEAD:refs/heads/$branch"
+
+          title="Index des collections : mise à jour"
+          pr=$(gh_api GET "/pulls?state=open&head=$owner:$branch" | jq -r '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            jq -n --rawfile body "$summary" --arg title "$title" '{title: $title, body: $body}' >"$RUNNER_TEMP/pr.json"
+            gh_api PATCH "/pulls/$pr" "$RUNNER_TEMP/pr.json" | jq -r '"PR updated: " + .html_url'
+          else
+            jq -n --rawfile body "$summary" --arg title "$title" --arg head "$branch" \
+              '{title: $title, body: $body, head: $head, base: "main"}' >"$RUNNER_TEMP/pr.json"
+            gh_api POST /pulls "$RUNNER_TEMP/pr.json" | jq -r '"PR opened: " + .html_url'
+          fi
