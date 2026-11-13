@@ -37,7 +37,7 @@ tool_json() { jq -n --arg t "$1" --arg k "$2" --arg v "$3" --arg cwd "$CWD" '{to
 # ---------------------------------------------------------------------------------------------------------------------
 echo "== guard-secrets : commandes Bash (fichier de cas : bloc DATA ci-dessous) =="
 # Format : « @ <block|allow> <description> » puis la commande (plusieurs lignes possibles), terminée par « %% ».
-cases=$(cat <<'DATA'
+IFS= read -r -d '' cases <<'DATA' || true
 @ block cat d'un fichier d'environnement
 cat .env
 %%
@@ -432,7 +432,6 @@ cat package.json | jq .name
 diff <(sort a.txt) <(sort b.txt)
 %%
 DATA
-)
 want="" desc="" buf="" state=0
 run_case() {
   [[ -n $want ]] || return 0
@@ -502,7 +501,7 @@ echo "hello" >"$REPO/notes.txt"
 git -C "$REPO" add notes.txt
 rc=$(cd "$REPO" && printf '%s' "$(bash_json 'git commit -m add' "$REPO")" | HOME=$FAKE_HOME bash "$HOOK" >/dev/null 2>"$TMP/err"; echo $?)
 [[ $rc == 0 ]] && ok_ "autorisé : commit propre" || ko_ "commit propre (code $rc)"
-rc=$(env -i PATH=/nonexistent /bin/bash "$HOOK" <<<'{"tool_name":"Bash","tool_input":{"command":"cat .env"}}' >/dev/null 2>&1; echo $?)
+rc=$(env -i PATH=/nonexistent "$BASH" "$HOOK" <<<'{"tool_name":"Bash","tool_input":{"command":"cat .env"}}' >/dev/null 2>&1; echo $?)
 [[ $rc == 0 ]] && ok_ "sans jq le hook ne bloque rien (kit doctor le signale)" || ko_ "sans jq (code $rc)"
 expect allow "JSON invalide : le hook n'échoue pas" "not json"
 expect allow "outil inconnu" '{"tool_name":"Task","tool_input":{"prompt":"cat .env"}}'
