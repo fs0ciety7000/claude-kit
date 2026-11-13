@@ -1,6 +1,6 @@
 ---
 name: infra-context
-description: Charger la connaissance de l'infrastructure de l'utilisateur (KNOWLEDGE.md du dépôt privé fs0ciety-ops) avant de déployer, toucher au DNS, à Cloudflare Access, à Coolify, à Tailscale, ou diagnostiquer un service. À utiliser dès qu'une tâche sort du code applicatif pour aller vers l'hébergement.
+description: Charger la connaissance de l'infrastructure (KNOWLEDGE.md) avant de déployer ou de toucher au DNS, à Access, à Coolify ou à Tailscale.
 ---
 
 # Contexte d'infrastructure
