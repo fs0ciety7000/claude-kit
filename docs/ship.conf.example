@@ -1,0 +1,36 @@
+# kit ship : réglages propres au poste. Copie en ~/.config/claude-kit/ship.conf (chmod 600), jamais dans un dépôt.
+# Lignes KEY=valeur, lues sans être exécutées ; guillemets, antislash, backquote et $ refusés. Valeurs factices ici.
+
+# --- Dépôt d'infra (DNS, Access, sondes en code ; tofu lancé par le propriétaire) ---
+INFRA_REPO=example-owner/example-infra
+INFRA_REPO_DIR=/home/me/src/example-infra
+INFRA_BASE=main
+# Zones gérées (fichier <DNS_DIR>/<zone>.yaml, bloc records:) ; vide = tous les fichiers du dossier.
+ZONES=example.org example.net
+DNS_DIR=infra/cloudflare/dns
+# Suffixe des noms du tailnet : requis pour expose: tailnet, interdit pour public et access (un joker DNS et l'entrée
+# joker du tunnel publieraient le nom sans Access).
+TAILNET_SUFFIX=in.example.org
+# Cible des CNAME proxifiés (tunnel Cloudflare).
+TUNNEL_TARGET=00000000-0000-0000-0000-000000000000.cfargotunnel.com
+# Applications Access (bloc applications:) et policies réutilisables à leur attacher.
+ACCESS_FILE=infra/cloudflare/access.yaml
+ACCESS_POLICIES=me
+# Sondes Gatus (bloc endpoints:), pour expose: public seulement.
+GATUS_FILE=gatus/config.yaml
+GATUS_GROUP=Sites
+GATUS_ALERT=ntfy
+# Sauvegarde des volumes (volumes: yes) : ligne ajoutée à BACKUP_FILE si absente ; {project} {server} {domain}.
+# Vide : les volumes de l'hôte sont déjà sauvegardés, rien n'est ajouté.
+BACKUP_FILE=
+BACKUP_LINE=- {project}
+
+# --- Coolify ---
+COOLIFY_PROJECT_UUID=aaaaaaaaaaaaaaaaaaaaaaaa
+COOLIFY_ENVIRONMENT=production
+COOLIFY_GITHUB_APP_UUID=bbbbbbbbbbbbbbbbbbbbbbbb
+# Serveurs : SERVER_<nom>=<uuid> ; « server: <nom> » dans project.yaml, sinon DEFAULT_SERVER.
+SERVER_main=cccccccccccccccccccccccc
+DEFAULT_SERVER=main
+# Application du pont (fs0-bridge) dont la variable DEPLOY_ALLOW reçoit owner/repo=uuid ; vide = étape sautée.
+BRIDGE_APP_UUID=dddddddddddddddddddddddd

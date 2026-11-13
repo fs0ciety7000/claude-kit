@@ -395,6 +395,36 @@ kit project types                         # types, profils et agents de chacun
 kit project add web-frontend deploy       # plusieurs types se combinent
 ```
 
+## Mettre en ligne
+
+`/ship` (ou `kit ship` à la main) met un projet en ligne d'après son `project.yaml` : `expose`
+(`none`, `tailnet`, `access` derrière Cloudflare Access, `public`), `domain`, `server`, `health_path`, `volumes`
+(`yes`/`no`) ; `coolify_uuid` est écrit au premier passage. `kit project get [clé]` lit ces champs.
+
+```bash
+kit ship plan               # ce qui serait créé ou modifié ; rien n'est écrit, aucun appel d'API
+kit ship infra [--dry-run]  # branche ship/<nom> + PR dans le dépôt d'infra : CNAME vers le tunnel (access, public),
+                            # application Access (access), sonde Gatus (public), sauvegarde (volumes: yes)
+kit ship app [--dry-run]    # application Coolify (source GitHub App, auto-déploiement coupé, domaine, santé),
+                            # noms de variables comparés à .env.example, .fs0/bridge.yaml deploy:, DEPLOY_ALLOW du pont
+kit ship status [--wait s]  # dernier déploiement (trié par created_at) et réponse HTTPS du domaine
+```
+
+- **Réglages du poste** : `~/.config/claude-kit/ship.conf` (modèle `docs/ship.conf.example`, valeurs factices) :
+  dépôt d'infra et son clone, cible du tunnel, zones, policies Access, fichier Gatus, sauvegarde, UUID Coolify
+  (projet, serveurs, GitHub App, application du pont). Ces identifiants ne vont jamais dans un dépôt ; sans ce
+  fichier, `kit ship` refuse.
+- **Le propriétaire applique** : `kit ship infra` ne lance jamais tofu ; il fusionne la PR puis lance `tofu apply`.
+  Le clone d'infra n'est pas touché (worktree temporaire) ; relancer n'ajoute pas de doublon. Un nom déjà déclaré
+  autrement (autre enregistrement, autres policies) arrête tout ; `tailnet` exige `TAILNET_SUFFIX`, `public` et
+  `access` le refusent, un apex de zone demande `--apex`.
+- **Application existante** : reprise seulement si elle est construite depuis le dépôt du projet.
+- **Secrets** : seuls les noms des variables sont comparés ; les manquantes sont listées avec `kit secrets add NOM`
+  et le `POST …/envs` en `__SECRET:NOM__`. `DEPLOY_ALLOW` est relue et réécrite par fichier, sans jamais être
+  affichée ; une entrée du même dépôt vers une autre application bloque tout.
+- **Déploiement** : le pont déploie après la CI verte sur `main` ; aucun déploiement de l'application par l'API après
+  une fusion. Chaque écriture est annoncée sur une ligne ; `DELETE` n'est jamais utilisé.
+
 ## VPS
 
 ```bash

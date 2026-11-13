@@ -58,6 +58,13 @@ PROJETS
   kit repo create <nom> [--public] [--dir dossier]
         crée le dépôt GitHub (privé par défaut), une clé de déploiement propre au dépôt, et configure git ici
 
+METTRE EN LIGNE (réglages du poste : ~/.config/claude-kit/ship.conf, modèle docs/ship.conf.example)
+  kit ship plan|infra|app|status [--dir d] [--dry-run] [--wait s]
+        plan : ce qui changerait ; infra : PR DNS/Access/Gatus/sauvegarde dans le dépôt d'infra (tofu par le
+        propriétaire) ; app : application Coolify, noms de variables, .fs0/bridge.yaml, DEPLOY_ALLOW du pont ;
+        status : dernier déploiement et réponse HTTPS (voir /ship)
+  kit project get [clé] [--dir d]         champs de mise en ligne de project.yaml (expose, domain, server...)
+
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
 
@@ -1116,7 +1123,8 @@ cmd_project() {
     effort) shift; project_effort "$@" ;;
     types) project_types ;;
     template) shift; project_template "$@" ;;
-    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type|pile>... | perms [pile]... | ci [pile]... | size S|M|L | effort <agent> <niveau> | types | template [nom]" ;;
+    get) shift; exec "$KIT_HOME/scripts/ship.sh" project-get "$@" ;;
+    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type|pile>... | perms [pile]... | ci [pile]... | size S|M|L | effort <agent> <niveau> | types | template [nom] | get [clé]" ;;
   esac
 }
 
@@ -1433,6 +1441,7 @@ main() {
   case $sub in
     secrets) exec "$KIT_HOME/scripts/secrets.sh" "$@" ;;
     api) exec "$KIT_HOME/scripts/api.sh" "$@" ;;
+    ship) exec "$KIT_HOME/scripts/ship.sh" "$@" ;;
     perms) exec "$KIT_HOME/scripts/perms.sh" "$@" ;;
     skills) cmd_skills "$@" ;;
     add-skill) cmd_add_skill "$@" ;;
