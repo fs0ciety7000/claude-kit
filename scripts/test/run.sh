@@ -713,7 +713,16 @@ missing=$(jq -r '
 EH="$TMP/emptyhome"; mkdir -p "$EH"
 HOME=$EH bash "$CB" --json >/dev/null 2>&1
 [[ -z $(ls -A "$EH") ]] && ok_ "arbre réel : un HOME vide le reste (les hooks tournent dans un bac à sable)" || ko_ "arbre réel : effets de bord des hooks"
-echo "  -- budgets (avertissements seulement) --"
+# Budgets owned by delivered sub-lots are enforced (2e: global CLAUDE.md, /new-project, registry); the others
+# (agents and Superpowers 2f, hooks 2c/2d, startup memory 2c) stay warnings until their sub-lot lands.
+ENFORCED='global_claude_md.words new_project_command.words skills_registry.words'
+grep -E "^($(printf '%s' "$ENFORCED" | tr ' ' '|'))	" "$ROOT/scripts/context-budgets.tsv" >"$TMP/budgets-enforced.tsv"
+if bash_out=$(BUDGET_ENFORCE=1 bash "$CB" --budgets "$TMP/budgets-enforced.tsv" --budget 2>&1); then
+  ok_ "budgets appliqués (CLAUDE.md global, /new-project, registre) : respectés"
+else
+  ko_ "budgets appliqués dépassés" "$(grep 'DÉPASSÉ' <<<"$bash_out" | tr -s ' ' | paste -sd';' -)"
+fi
+echo "  -- autres budgets (avertissements seulement) --"
 bash "$CB" --budget 2>&1 | sed 's/^/  /'
 check "arbre réel : --budget sort 0 hors BUDGET_ENFORCE" bash "$CB" --budget
 

@@ -858,7 +858,7 @@ cmd_project() {
       ok "projet créé dans $dir (dépôt git initialisé, aucun commit)"
       echo "Étapes suivantes :"
       echo "  cd $dir && claude"
-      echo "  puis : /new-project \"<description du projet>\"   (ajoute --rapide pour enchaîner sans pause)"
+      echo "  puis : /new-project \"<description du projet>\""
       ;;
     add) shift; project_add "$@" ;;
     size) shift; project_size "$@" ;;
