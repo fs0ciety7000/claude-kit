@@ -561,6 +561,88 @@ OUT=$(CLAUDE_CODE_REMOTE=true "$NOGIT/scripts/hooks/kit-autoupdate.sh" </dev/nul
 [[ $RC == 0 && -z $OUT ]] && ok_ "hors dépôt git : code 0, silencieux" || ko_ "hors dépôt git" "code $RC, sortie : $OUT"
 
 # ---------------------------------------------------------------------------
+section "tailles S/M/L : kit project size, kit project effort"
+KIT="$ROOT/scripts/kit.sh"
+SZ="$TMP/size-proj"
+bash "$KIT" project init "$SZ" >/dev/null 2>&1
+[[ -f $SZ/project.yaml ]] && ok_ "gabarit : project.yaml copié" || ko_ "gabarit : project.yaml absent"
+imports() { grep -c '^@docs/rules/size-' "$SZ/CLAUDE.md" || true; }
+rule_files() { find "$SZ/docs" -name 'size-*.md' 2>/dev/null | wc -l | tr -d ' '; }
+
+bash "$KIT" project size S --reason "site vitrine, données statiques" --dir "$SZ" >/dev/null 2>&1
+[[ $(grep '^size:' "$SZ/project.yaml") == "size: S" && $(grep '^size_reason:' "$SZ/project.yaml") == "size_reason: site vitrine, données statiques" ]] \
+  && ok_ "size S : project.yaml (size, size_reason)" || ko_ "size S : project.yaml" "$(cat "$SZ/project.yaml")"
+[[ $(grep -c '^name: ' "$SZ/project.yaml") == 1 && $(grep '^name:' "$SZ/project.yaml") != "name: TODO" ]] \
+  && ok_ "size : name déduit du dossier" || ko_ "size : name"
+[[ $(imports) == 0 && $(rule_files) == 0 ]] && ok_ "size S : aucune règle ni import" || ko_ "size S : règles ou imports présents" "$(imports) imports, $(rule_files) fichiers"
+
+bash "$KIT" project size M --reason "données propres" --dir "$SZ" >/dev/null 2>&1
+[[ $(imports) == 1 && -f $SZ/docs/rules/size-M.md && ! -e $SZ/docs/rules/size-L.md ]] \
+  && ok_ "size M : size-M.md copié et importé, pas size-L" || ko_ "size M" "$(imports) imports"
+grep -qxF '@docs/rules/size-M.md' "$SZ/CLAUDE.md" && [[ $(sed -n '/^@AGENTS.md$/{n;p;}' "$SZ/CLAUDE.md") == "@docs/rules/size-M.md" ]] \
+  && ok_ "size M : l'import suit @AGENTS.md" || ko_ "size M : place de l'import"
+
+bash "$KIT" project size L --reason "comptes pour des inconnus" --dir "$SZ" >/dev/null 2>&1
+bash "$KIT" project size L --reason "comptes pour des inconnus" --dir "$SZ" >/dev/null 2>&1
+[[ $(imports) == 2 && $(rule_files) == 2 && $(grep -c '^size:' "$SZ/project.yaml") == 1 ]] \
+  && ok_ "size L deux fois : M et L importés une seule fois, une seule ligne size" || ko_ "size L idempotent" "$(imports) imports, $(rule_files) fichiers"
+
+bash "$KIT" project size S --reason "finalement un prototype" --dir "$SZ" >/dev/null 2>&1
+[[ $(imports) == 0 && $(rule_files) == 0 && ! -d $SZ/docs/rules ]] \
+  && ok_ "S -> L -> S : plus d'import, de règle ni de dossier docs/rules" || ko_ "S -> L -> S" "$(imports) imports, $(rule_files) fichiers"
+[[ $(grep -c '^- \*\*Taille\*\* : `S`' "$SZ/CLAUDE.md") == 1 ]] \
+  && ok_ "size : ligne « Taille » de CLAUDE.md mise à jour" || ko_ "size : ligne Taille"
+bash "$KIT" project size M --dir "$SZ" >/dev/null 2>&1 \
+  && [[ $(grep '^size_reason:' "$SZ/project.yaml") == "size_reason: finalement un prototype" ]] \
+  && ok_ "size sans --reason : garde la justification existante" || ko_ "size sans --reason"
+
+SZ2="$TMP/size-proj2"; mkdir -p "$SZ2"
+bash "$KIT" project size L --dir "$SZ2" >/dev/null 2>&1 && ko_ "size sans justification : doit échouer" || ok_ "size sans justification (projet neuf) : refusé"
+bash "$KIT" project size XL --reason x --dir "$SZ" >/dev/null 2>&1 && ko_ "size XL : doit échouer" || ok_ "taille invalide refusée"
+bash "$KIT" project size L --reason "x" --dir "$SZ2" >/dev/null 2>&1
+[[ -f $SZ2/project.yaml && -f $SZ2/docs/rules/size-L.md ]] && ok_ "size L sans CLAUDE.md : project.yaml et règles posés (avertissement)" || ko_ "size L sans CLAUDE.md"
+
+# Fichier projet plat, lisible sans yq : clé: valeur, une par ligne.
+bad=$(grep -vE '^(#.*|[a-z_.]+: .*|)$' "$ROOT/templates/project/project.yaml" || true)
+[[ -z $bad ]] && ok_ "templates/project/project.yaml : paires « clé: valeur » seulement" || ko_ "project.yaml plat" "$bad"
+for k in name size size_reason stack; do
+  grep -q "^$k: " "$ROOT/templates/project/project.yaml" && ok_ "project.yaml : clé $k" || ko_ "project.yaml : clé $k manquante"
+done
+
+# effort : copie l'agent global s'il manque, réécrit effort: sans toucher au reste.
+EF="$TMP/effort-proj"; mkdir -p "$EF"
+cp "$SZ/project.yaml" "$EF/project.yaml"
+bash "$KIT" project effort devops xhigh --dir "$EF" >/dev/null 2>&1
+AG="$EF/.claude/agents/devops.md"
+[[ -f $AG && $(grep -c '^effort:' "$AG") == 1 && $(grep '^effort:' "$AG") == "effort: xhigh" ]] \
+  && ok_ "effort : agent copié, effort: xhigh" || ko_ "effort : copie ou valeur" "$(grep -n 'effort' "$AG" 2>/dev/null)"
+bash "$KIT" project effort devops low --dir "$EF" >/dev/null 2>&1
+[[ $(grep -c '^effort:' "$AG") == 1 && $(grep '^effort:' "$AG") == "effort: low" && $(grep -c '^---$' "$AG") == 2 ]] \
+  && ok_ "effort : réécriture sans doublon, en-tête intact" || ko_ "effort : réécriture" "$(head -8 "$AG")"
+diff <(sed '/^effort:/d' "$ROOT/global/agents/devops.md") <(sed '/^effort:/d' "$AG") >/dev/null \
+  && ok_ "effort : le reste de l'agent est inchangé" || ko_ "effort : corps de l'agent modifié"
+[[ $(grep '^effort.devops:' "$EF/project.yaml") == "effort.devops: low" ]] \
+  && ok_ "effort : noté dans project.yaml (effort.devops)" || ko_ "effort : project.yaml"
+bash "$KIT" project effort devops ultra --dir "$EF" >/dev/null 2>&1 && ko_ "effort invalide : doit échouer" || ok_ "niveau d'effort invalide refusé"
+bash "$KIT" project effort nope high --dir "$EF" >/dev/null 2>&1 && ko_ "agent inconnu : doit échouer" || ok_ "agent inconnu refusé"
+
+section "instructions : tailles de texte"
+gw=$(wc -w <"$ROOT/global/CLAUDE.md" | tr -d ' ')
+[[ $gw -lt 400 ]] && ok_ "global/CLAUDE.md : $gw mots (< 400)" || ko_ "global/CLAUDE.md : $gw mots (>= 400)"
+npw=$(wc -w <"$ROOT/global/commands/new-project.md" | tr -d ' ')
+[[ $npw -le 900 ]] && ok_ "/new-project : $npw mots (<= 900)" || ko_ "/new-project : $npw mots (> 900)"
+ps="$ROOT/global/skills/project-size/SKILL.md"
+psw=$(wc -w <"$ps" | tr -d ' ')
+psd=$(sed -n 's/^description: //p' "$ps" | wc -w | tr -d ' ')
+[[ $psw -le 500 && $psd -le 30 ]] && ok_ "skill project-size : $psw mots, description $psd mots" || ko_ "skill project-size : $psw mots, description $psd mots"
+rw=$(wc -w <"$ROOT/global/skills-registry.md" | tr -d ' ')
+[[ $rw -le 600 ]] && ok_ "skills-registry.md : $rw mots (<= 600)" || ko_ "skills-registry.md : $rw mots (> 600)"
+grep -qE 'kit-control|checkpoint|wait_for_answer|restart_session' "$ROOT/global/CLAUDE.md" "$ROOT/global/commands/new-project.md" \
+  && ko_ "CLAUDE.md et /new-project : plus de dashboard" || ok_ "CLAUDE.md et /new-project : aucune mention du dashboard"
+nt=$(bash "$KIT" project types 2>/dev/null | wc -l | tr -d ' ')
+[[ $nt -ge 16 ]] && ok_ "registre : kit project types lit $((nt - 1)) types (registry_rows)" || ko_ "registre : kit project types ($nt lignes)"
+
+# ---------------------------------------------------------------------------
 section "budgets de contexte (context-budget.sh)"
 CB="$ROOT/scripts/context-budget.sh"
 CBT="$TMP/ctx"
