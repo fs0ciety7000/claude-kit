@@ -89,6 +89,16 @@ pass=$((pass + ${rt_p:-0}))
 fail=$((fail + ${rt_f:-0}))
 if [[ $rt_rc != 0 && ${rt_f:-0} == 0 ]]; then ko_ "retire-test.sh a échoué sans résumé" "$(tail -3 <<<"$rt_out")"; fi
 
+# kit atlas: fake gh and hub repository (cases in scripts/test/atlas-test.sh).
+at_out=$(bash "$ROOT/scripts/test/atlas-test.sh" 2>&1)
+at_rc=$?
+grep -E '^(==|  FAIL|       )' <<<"$at_out"
+at_p=$(sed -n 's/^atlas: \([0-9][0-9]*\) passed, \([0-9][0-9]*\) failed$/\1/p' <<<"$at_out")
+at_f=$(sed -n 's/^atlas: \([0-9][0-9]*\) passed, \([0-9][0-9]*\) failed$/\2/p' <<<"$at_out")
+pass=$((pass + ${at_p:-0}))
+fail=$((fail + ${at_f:-0}))
+if [[ $at_rc != 0 && ${at_f:-0} == 0 ]]; then ko_ "atlas-test.sh a échoué sans résumé" "$(tail -3 <<<"$at_out")"; fi
+
 # ---------------------------------------------------------------------------
 section "kit perms : règles acceptées"
 PROJ="$TMP/proj"

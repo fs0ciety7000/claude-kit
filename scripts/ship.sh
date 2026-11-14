@@ -139,11 +139,11 @@ load_conf() {
   while IFS= read -r line || [[ -n $line ]]; do
     n=$((n + 1))
     [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
-    [[ $line =~ ^([A-Za-z][A-Za-z0-9_]*)=(.*)$ ]] || die "ship.conf ligne $n : KEY=valeur attendu"
+    [[ $line =~ ^([A-Za-z][A-Za-z0-9_]*)=(.*)$ ]] || die "${CONF##*/} ligne $n : KEY=valeur attendu"
     k=${BASH_REMATCH[1]} v=${BASH_REMATCH[2]}
     v=${v%"${v##*[![:space:]]}"}
     if [[ $v == \"*\" || $v == \'*\' ]]; then v=${v:1:${#v}-2}; fi
-    [[ $v != *[\"\\\`\$]* ]] || die "ship.conf ligne $n : caractères \" \\ \` \$ refusés"
+    [[ $v != *[\"\\\`\$]* ]] || die "${CONF##*/} ligne $n : caractères \" \\ \` \$ refusés"
     printf -v "SC_$k" '%s' "$v"
   done <"$CONF"
 }
@@ -151,8 +151,8 @@ conf() { local v="SC_$1"; printf '%s' "${!v:-${2:-}}"; }
 conf_req() { # key regex
   local v
   v=$(conf "$1")
-  [[ -n $v ]] || die "ship.conf : $1 manquant (voir docs/ship.conf.example)"
-  [[ $v =~ $2 ]] || die "ship.conf : $1 au format inattendu"
+  [[ -n $v ]] || die "${CONF##*/} : $1 manquant (voir docs/${CONF##*/}.example)"
+  [[ $v =~ $2 ]] || die "${CONF##*/} : $1 au format inattendu"
   printf '%s' "$v"
 }
 UUID_RE='^[a-z0-9]{8,40}$'

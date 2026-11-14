@@ -17,8 +17,8 @@ Prépare la prochaine session de ce projet. Note de l'utilisateur à transmettre
    décision durable prise cette session (date, décision, raison).
 4. **`docs/plan.md`**, seule liste de tâches : coche ce qui est fini, ajoute ce qui a été découvert ou demandé,
    note « bloqué : raison » sur une tâche qui attend. Aucune case n'est cochée sans que le critère de fin soit vérifié.
-5. **Engram** : seulement si l'utilisateur l'a demandé (skill `engram`). Sinon, si la session a produit un savoir
-   réutilisable ailleurs, propose-le en une ligne dans ta réponse.
+5. **Atlas** : `kit atlas sync` (page projet du hub de docs, par PR). Un savoir réutilisable ailleurs : propose-le
+   en une ligne dans ta réponse (skill `atlas`).
 6. **Visibilité du dépôt** : vérifie-la (outil GitHub, ou `gh repo view --json visibility` si disponible) ; inconnue
    = publique. Dépôt public : relis le diff avant de pousser, sans aucune donnée identifiante (IP, hôte interne,
    UUID, utilisateur, e-mail).

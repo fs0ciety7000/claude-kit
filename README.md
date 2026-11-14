@@ -444,6 +444,14 @@ seulement si elles sont identiques à ce qu'écrit `kit ship` (les autres sont s
 `expose: none` (`coolify_uuid` gardé) et une note dans `DEPLOY.md` et `docs/memory/state.md`. Restent au
 propriétaire : `tofu apply`, la suppression de l'application dans l'interface Coolify et l'archivage du dépôt.
 
+**Page projet sur le hub de docs** : `kit atlas sync [--dry-run]` (appelé en fin de `/ship`, `/retire` et `/handoff`)
+écrit `src/content/docs/projets/<nom>.md` du site Starlight `atlas` d'après `project.yaml` (taille, pile, exposition,
+URL), `docs/plan.md` (cases cochées par lot) et `docs/memory/state.md` (fait, en cours, bloquant, 3 prochaines
+étapes), sur la branche `projet/<nom>` (worktree temporaire, clone du propriétaire intact), puis ouvre ou met à jour
+la PR. Rien n'est commité si seule la date change. Une IP, une adresse e-mail, un UUID ou une chaîne de type jeton
+dans la page l'arrête avant toute écriture. `kit atlas page` affiche la page. Réglages : `~/.config/claude-kit/atlas.conf`
+(modèle `docs/atlas.conf.example`) ; absent, la synchronisation est ignorée avec un avertissement.
+
 ## VPS
 
 ```bash
