@@ -63,13 +63,14 @@ state_field() { # state.md label -> value lines: inline text, then sub-items (on
 
 short() { local s=$1; ((${#s} <= 240)) || s="${s:0:237}..."; printf '%s' "$s"; }
 
-page_status() {
+page_status() { # values accepted by the atlas schema: brouillon, actif, en-pause, archive
   local s
   s=$(pget status)
+  case $s in brouillon | actif | en-pause | archive) ;; *) s= ;; esac
   if [[ -z $s ]]; then
-    if [[ $P_EXPOSE != none ]]; then s=en-ligne
-    elif [[ -n $P_UUID ]]; then s=retiré
-    else s=en-cours; fi
+    if [[ $P_EXPOSE != none ]]; then s=actif
+    elif [[ -n $P_UUID ]]; then s=archive
+    else s=brouillon; fi
   fi
   printf '%s' "$s"
 }
