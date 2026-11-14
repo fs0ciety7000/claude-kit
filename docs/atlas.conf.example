@@ -1,0 +1,8 @@
+# kit atlas : réglages propres au poste. Copie en ~/.config/claude-kit/atlas.conf (chmod 600), jamais dans un dépôt.
+# Lignes KEY=valeur, lues sans être exécutées ; guillemets, antislash, backquote et $ refusés. Valeurs factices ici.
+
+# Dépôt du hub de docs (site Starlight, pages projet dans src/content/docs/projets/).
+ATLAS_REPO=example-owner/example-hub
+# Clone local du propriétaire : kit atlas sync y ajoute un worktree temporaire, sans toucher à ses branches.
+ATLAS_DIR=/home/me/src/example-hub
+ATLAS_BASE=main

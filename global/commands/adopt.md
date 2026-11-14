@@ -22,7 +22,7 @@ n'écrases rien, tu ne réécris pas ce qui existe : tu ajoutes seulement ce qui
    - une **équipe** (skill `team-builder`) adaptée au travail prévu, et une rubrique « Équipe » dans `CLAUDE.md` ;
    - les profils de skills du type de projet (`kit project add <type>`), après accord ;
    - `renovate.json` s'il manque (skill `dependency-hygiene`) ;
-   - la fiche Engram du projet (skill `engram`), **seulement si l'utilisateur le demande**.
+   - la page projet du hub de docs (`kit atlas sync`, par PR), **seulement si l'utilisateur le demande**.
 4. **Validation** : une question récapitulative dans le chat. Rien n'est écrit avant.
 5. **Applique** sur une branche `claude/adopt-<date>`, un commit par sujet, puis PR (titre et corps dans la langue du
    dépôt), et réponds par le lien et la liste de ce qui a été ajouté. Dépôt public (visibilité vérifiée ; inconnue =

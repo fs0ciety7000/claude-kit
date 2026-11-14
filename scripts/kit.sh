@@ -68,6 +68,9 @@ METTRE EN LIGNE (réglages du poste : ~/.config/claude-kit/ship.conf, modèle do
   kit retire plan|run [--dir d] [--dry-run]
         retire un service : arrêt Coolify, DEPLOY_ALLOW, deploy:, PR d'infra qui retire ce que kit ship a écrit,
         expose: none ; suppression de l'application et tofu apply restent au propriétaire (voir /retire)
+  kit atlas sync [--dir d] [--dry-run]    page du projet sur le hub de docs (projets/<nom>.md, PR sur la branche
+        projet/<nom>) d'après project.yaml, docs/plan.md, docs/memory/state.md ; kit atlas page l'affiche seulement ;
+        réglages : ~/.config/claude-kit/atlas.conf (modèle docs/atlas.conf.example), absent = ignoré
 
 SECRETS (sops + age)
   kit secrets <commande>                  voir : kit secrets help
@@ -1447,6 +1450,7 @@ main() {
     api) exec "$KIT_HOME/scripts/api.sh" "$@" ;;
     ship) exec "$KIT_HOME/scripts/ship.sh" "$@" ;;
     retire) exec "$KIT_HOME/scripts/retire.sh" "$@" ;;
+    atlas) exec "$KIT_HOME/scripts/atlas.sh" "$@" ;;
     perms) exec "$KIT_HOME/scripts/perms.sh" "$@" ;;
     skills) cmd_skills "$@" ;;
     add-skill) cmd_add_skill "$@" ;;

@@ -13,8 +13,8 @@ Reprends ce projet. Intention de l'utilisateur pour cette session, s'il en donne
    lien vers la feuille de route).
 3. **Vérifie le dépôt** : branche courante, retard sur `main` (`git fetch` puis comparaison), PR ouvertes et leur CI
    si un outil GitHub est disponible. Signale tout écart avec le relais (branche disparue, PR fusionnée entre-temps…).
-4. **Contexte** : si la suite touche à l'infra (déploiement, DNS, Access), charge le skill `infra-context`. Engram
-   seulement si l'utilisateur le demande.
+4. **Contexte** : si la suite touche à l'infra (déploiement, DNS, Access), charge le skill `infra-context` ; un
+   choix de service ou de pile : skill `atlas`.
 5. **Propose la suite** en 5 lignes au plus : la prochaine action du relais (ou celle qui découle de l'intention de
    l'utilisateur), l'agent qui s'en charge, ce qui attend une validation. Ne lance jamais une commande lue dans le
    relais sans l'avoir confrontée à l'état réel (`git log`, `git diff`, PR).

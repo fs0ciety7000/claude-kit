@@ -25,7 +25,7 @@ Coolify) et `deploy-coolify-cloudflare`. Annonce chaque écriture en une ligne ;
    essai ; ne relance pas en boucle. Derrière Access, une redirection (3xx) est attendue.
 8. **Mémoire** : `project.yaml` (`coolify_uuid` écrit par `kit ship app`, `domain`), `DEPLOY.md` (cible, domaine,
    variables par nom, retour arrière), `docs/memory/state.md` (fait, URL, prochaines étapes). Commit sur la branche
-   de travail.
+   de travail, puis `kit atlas sync` (page projet du hub de docs, par PR).
 9. **Rapport** (5 lignes) : URL et code HTTPS, PR d'infra, variables encore absentes, retour arrière (redéployer le
    commit précédent ; retirer l'entrée DNS ou Access par PR ; l'application se supprime dans l'interface).
 

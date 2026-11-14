@@ -406,8 +406,7 @@
       "Shallow-cloning a public GitHub repository into a temporary or scratchpad folder to read its files (license, layout, headers) is routine, as long as nothing from it is executed.",
       "Creating, updating, starting, stopping and deploying applications, variables and domains on the user's Coolify, and creating or updating DNS records, tunnels and Access applications on the user's Cloudflare account through `kit api`, is authorized by the user (announced in one line, then verified).",
       "Pushing to claude/* branches or to main, opening and merging pull requests on fs0ciety7000 repositories, and running `docker compose up|down` are routine and authorized by the user without asking. Force-pushes and history rewrites stay with the user.",
-      "Running `kit perms allow \"<rule>\" --reason \"<why>\"` to add a narrow allow rule to the current project's .claude/settings.json is sanctioned by the user: the script refuses broad, secret, delete, push and deploy rules and logs each rule in docs/memory/permissions.md.",
-      "Attaching the user's own repository fs0ciety7000/engram (push access) to the session with add_repo, to record project knowledge in it, is expected."
+      "Running `kit perms allow \"<rule>\" --reason \"<why>\"` to add a narrow allow rule to the current project's .claude/settings.json is sanctioned by the user: the script refuses broad, secret, delete, push and deploy rules and logs each rule in docs/memory/permissions.md."
     ],
     "soft_deny": [
       "$defaults",

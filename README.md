@@ -9,7 +9,7 @@ Environnement Claude Code réutilisable : 17 sous-agents (plus 4 optionnels), sk
 | `global/CLAUDE.md` | lien vers `~/.claude/CLAUDE.md` | langue, routage, règles secrets et qualité |
 | `global/agents/*.md` (17) | `~/.claude/agents/` | tous en `model: opus` (alias, suit les versions), effort réglé par rôle dans l'en-tête. Conception : architect. Code : frontend-dev, backend-dev, rust-dev, go-cli, pocketbase, creative-coder, devops. Design et textes : ui-designer, brand-identity, copywriter, creative-content, researcher. Relecteurs (taille L ou sur demande) : code-reviewer, qa-tester, security-reviewer (effort `xhigh`), design-critic |
 | `extras/agents/*.md` (4) | copiés dans `.claude/agents/` d'un projet | agents optionnels, jamais en global : sysop, data-engineer, game-designer, android-ui-reviewer. `kit add-agent <nom> --project` (ou `kit project add <type>` quand le registre les cite) |
-| `global/skills/` (11) | `~/.claude/skills/` | `pocketbase`, `secrets-handling`, `deploy-coolify-cloudflare`, `dependency-hygiene`, `infra-context`, `opsec`, `engram`, `project-size`, `team-builder`, `brainstorming`, `writing-plans` |
+| `global/skills/` (11) | `~/.claude/skills/` | `pocketbase`, `secrets-handling`, `deploy-coolify-cloudflare`, `dependency-hygiene`, `infra-context`, `opsec`, `atlas`, `project-size`, `team-builder`, `brainstorming`, `writing-plans` |
 | `global/commands/` | `~/.claude/commands/` | `/new-project`, `/add-skill`, `/add-agent`, `/env-check` |
 | `global/skills-registry.md` | copié par `kit sync` dans `~/.config/claude-kit/skills-registry.md` (table des profils régénérée), lié depuis `~/.claude/skills-registry.md` | type de projet → profils, skills, agents ; le dépôt du kit n'est jamais réécrit par `kit sync` (seul `kit registry` régénère le fichier suivi, à commiter) |
 | `global/settings.json` (+ `settings.vps.json`, `settings.v1.json`, `settings.retired.json`) | appliqué à `~/.claude/settings.json` (réglages gérés, voir plus bas) | permissions + hook anti-fuite ; `settings.v1.json` : instantané des entrées écrites par la v1 ; `settings.retired.json` : deny/ask que le kit retire explicitement |
@@ -444,6 +444,14 @@ seulement si elles sont identiques à ce qu'écrit `kit ship` (les autres sont s
 `expose: none` (`coolify_uuid` gardé) et une note dans `DEPLOY.md` et `docs/memory/state.md`. Restent au
 propriétaire : `tofu apply`, la suppression de l'application dans l'interface Coolify et l'archivage du dépôt.
 
+**Page projet sur le hub de docs** : `kit atlas sync [--dry-run]` (appelé en fin de `/ship`, `/retire` et `/handoff`)
+écrit `src/content/docs/projets/<nom>.md` du site Starlight `atlas` d'après `project.yaml` (taille, pile, exposition,
+URL), `docs/plan.md` (cases cochées par lot) et `docs/memory/state.md` (fait, en cours, bloquant, 3 prochaines
+étapes), sur la branche `projet/<nom>` (worktree temporaire, clone du propriétaire intact), puis ouvre ou met à jour
+la PR. Rien n'est commité si seule la date change. Une IP, une adresse e-mail, un UUID ou une chaîne de type jeton
+dans la page l'arrête avant toute écriture. `kit atlas page` affiche la page. Réglages : `~/.config/claude-kit/atlas.conf`
+(modèle `docs/atlas.conf.example`) ; absent, la synchronisation est ignorée avec un avertissement.
+
 ## VPS
 
 ```bash
@@ -479,11 +487,8 @@ git add -A && git commit && git push
 - **Contexte d'infra** (skill `infra-context`) : `KNOWLEDGE.md` de fs0ciety-ops, lu dans `~/.kit/context/fs0ciety-ops`
   (copie en lecture seule tenue par `kit sync`, liste dans `global/context-repos.txt`) ou, en cloud, dans le dépôt
   attaché à la session.
-- **Engram** (skill `engram`) : le coffre de connaissances privé, lu avant une tâche non triviale et enrichi par PR
-  (leçons, décisions, pratiques). `kit sync` (donc `kit update`) en tient une copie en lecture seule dans
-  `~/.kit/context/engram`, comme pour fs0ciety-ops : clone superficiel s'il manque (HTTPS puis SSH, avec les
-  identifiants git de la machine, aucun jeton dans l'URL), sinon `git pull --ff-only` ; un échec n'est qu'un
-  avertissement. Rien n'est cloné en profil cloud : la session attache le dépôt `fs0ciety7000/engram`.
+- **Atlas** (skill `atlas`) : le hub de docs privé (projets, services, infra, piles, leçons), lu dans son clone local
+  avant de choisir un service ou une pile ; écrit par PR, sur demande. Les pages projet viennent de `kit atlas sync`.
 - **Workflow** : deux skills de Superpowers, `brainstorming` (idées floues) et `writing-plans` (écrit `docs/plan.md`),
   copiés dans `global/skills/` à un commit relu puis corrigés (`vendor/superpowers/`, corrections dans `PATCHES.md`),
   donc épinglés : pas de mise à jour automatique depuis le dépôt amont. Les neuf autres skills (exécution par

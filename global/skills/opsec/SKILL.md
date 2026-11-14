@@ -47,4 +47,4 @@ description: "Sécurité opérationnelle commune : secrets, données identifiant
 
 ## Après coup
 - Un incident ou une erreur : le dire tout de suite, avec ce qui a été exposé et la correction ; noter la leçon
-  (`KNOWLEDGE.md`, Engram).
+  (`KNOWLEDGE.md`, atlas).

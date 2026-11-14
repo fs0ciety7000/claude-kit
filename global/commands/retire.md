@@ -15,7 +15,7 @@ passe hors ligne : rien ne s'écrit avant l'accord du propriétaire.
 4. **Infra** : donne le lien de la PR `retire/<nom>`. Les entrées « à régler à la main » restent dans le dépôt
    d'infra : liste-les pour le propriétaire, ne les modifie pas toi-même.
 5. **Projet** : `project.yaml` (`expose: none`, `previews: false`, `coolify_uuid` gardé), `.fs0/bridge.yaml`, `DEPLOY.md` et
-   `docs/memory/state.md` partent dans une PR du projet.
+   `docs/memory/state.md` partent dans une PR du projet ; puis `kit atlas sync` (page projet du hub, par PR).
 6. **Rapport** (5 lignes) : statut de l'application, PR d'infra, entrées à régler à la main, puis les étapes du
    propriétaire : fusionner la PR et lancer `tofu apply` ; supprimer l'application dans l'interface Coolify ;
    archiver le dépôt GitHub s'il le veut. Retour arrière : `TRIGGER …/start`, puis `/ship`.
