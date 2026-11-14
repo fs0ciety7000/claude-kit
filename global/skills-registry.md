@@ -41,7 +41,7 @@ Relecteurs hors colonne : voir `team-builder` (taille). Agents optionnels (`extr
 | `/resume`, `/handoff` | reprendre une session ; passer le relais |
 | skill `project-size` | choisir la taille S, M ou L d'un projet |
 | skill `team-builder` | composer l'équipe d'agents d'un projet |
-| skills `infra-context`, `opsec`, `engram` | hébergement ; sécurité commune ; savoir commun (sur demande) |
+| skills `infra-context`, `opsec`, `atlas` | hébergement ; sécurité commune ; hub de docs (services, leçons) |
 
 ## Règles
 

@@ -13,7 +13,7 @@ Conduite :
   `brainstorming` à la place.
 - Rien n'est créé (dossier, dépôt, installation) ni déployé avant la validation du plan.
 - Dossier non vide : lis le code d'abord, n'écrase rien (projet existant : `/adopt`).
-- Engram : seulement sur demande.
+- Avant de choisir une pile ou un service : skill `atlas`.
 
 ## 1. Cadrage, type, taille, stack
 1. Brief : objectif, public, 3 à 5 fonctionnalités, hors périmètre, contraintes. Interface, marque ou jeu : une

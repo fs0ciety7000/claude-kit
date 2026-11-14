@@ -36,5 +36,5 @@ description: Charger la connaissance de l'infrastructure (KNOWLEDGE.md) avant de
 - Données identifiantes (IP, hôtes internes, UUID, utilisateurs, e-mails) : jamais recopiées dans un autre dépôt, une
   PR publique, ou le kit. Les domaines publics des sites sont admis.
 - Ce que tu apprends sur l'infra (piège, procédure, identifiant nouveau) va dans `KNOWLEDGE.md` par PR sur
-  fs0ciety-ops ; une leçon générale (sans donnée identifiante) va aussi dans Engram (skill `engram`).
+  fs0ciety-ops ; une leçon générale (sans donnée identifiante) va aussi dans atlas (skill `atlas`), par PR.
 - Changements Cloudflare ou Tailscale : par `fs0ciety-ops/infra/` (OpenTofu) ; `tofu apply` est lancé par l'utilisateur.

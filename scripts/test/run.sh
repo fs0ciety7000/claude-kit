@@ -1395,7 +1395,21 @@ for f in "$ROOT"/global/agents/*.md "$ROOT"/extras/agents/*.md; do
 done
 [[ -z $badskill ]] && ok_ "agents : chaque skill préchargé (skills:) existe" || ko_ "agents : skill préchargé introuvable" "$badskill"
 grep -qx '  - pocketbase' "$ROOT/global/agents/pocketbase.md" && ok_ "pocketbase : précharge le skill pocketbase" || ko_ "pocketbase : skills:"
-if grep -qi 'engram' "$ROOT/global/agents/brand-identity.md" "$ROOT/global/agents/ui-designer.md"; then ko_ "brand-identity, ui-designer : plus de lecture d'Engram"; else ok_ "brand-identity, ui-designer : aucune lecture d'Engram"; fi
+# The old knowledge-vault skill left the kit (lot 5d): no reference outside the plans, the measures and the history.
+old_vault=$(printf '%s%s' eng ram)
+left=$(grep -rliI --exclude-dir=.git -- "$old_vault" "$ROOT" | grep -vE "^$ROOT/docs/(plans/|measure\.md$)" || true)
+[[ -z $left ]] && ok_ "ancien coffre de notes : plus aucune référence dans le kit" || ko_ "ancien coffre de notes encore cité" "$left"
+[[ ! -e $ROOT/global/skills/$old_vault ]] && ok_ "ancien skill du coffre retiré" || ko_ "ancien skill du coffre encore présent"
+atlas_skill="$ROOT/global/skills/atlas/SKILL.md"
+[[ -f $atlas_skill ]] && ok_ "skill atlas présent" || ko_ "skill atlas absent"
+aw=$(wc -w <"$atlas_skill" | tr -d ' ')
+((aw <= 250)) && ok_ "skill atlas : $aw mots (<= 250)" || ko_ "skill atlas : $aw mots (> 250)"
+ad=$(fm "$atlas_skill" description)
+(($(wc -w <<<"$ad") <= 30)) && ok_ "skill atlas : description de 30 mots au plus" || ko_ "skill atlas : description trop longue"
+grep -q '`atlas`' "$ROOT/global/skills-registry.md" && ok_ "registre : skill atlas cité" || ko_ "registre : skill atlas absent"
+for c in ship retire handoff; do
+  grep -q 'kit atlas sync' "$ROOT/global/commands/$c.md" && ok_ "/$c appelle kit atlas sync" || ko_ "/$c n'appelle pas kit atlas sync"
+done
 if grep -q 'chaque PR\|recommande `security-reviewer`' "$ROOT/global/agents/code-reviewer.md"; then ko_ "code-reviewer : contradictions retirées"; else ok_ "code-reviewer : ni « chaque PR » ni recommandation de security-reviewer"; fi
 for r in code-reviewer qa-tester design-critic security-reviewer brand-identity; do
   fm "$ROOT/global/agents/$r.md" description | grep -q 'Taille L' && ok_ "$r : réservé à la taille L ou à la demande" || ko_ "$r : description sans « Taille L »"
