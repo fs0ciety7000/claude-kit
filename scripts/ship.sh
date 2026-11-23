@@ -666,12 +666,36 @@ build_pack() { # -> "pack port"
     [[ -n $port ]] || port=80
   elif [[ $(pget stack) == static ]]; then
     pack=static port=${port:-80}
+  elif static_site; then
+    # Static site with a build step (Astro, Vite): Coolify builds it, then serves the output folder with its own
+    # web server (« Is it a static site? »). No Dockerfile, nginx or CSP to maintain in the project.
+    pack=static-build port=${port:-80}
   else
     pack=nixpacks port=${port:-3000}
     warn "pas de Dockerfile : build Nixpacks (un Dockerfile explicite est plus prévisible)"
   fi
   [[ $port =~ ^[0-9]{2,5}$ ]] || die "port invalide ($port) : port: <n> dans project.yaml"
   echo "$pack $port"
+}
+
+# Stacks whose build output is plain files: built by Coolify, served as a static site when there is no Dockerfile.
+STATIC_BUILD_STACKS=" astro astro-static vite web-frontend "
+static_site() { # 0 = every stack of project.yaml is a static web stack (astro, vite...)
+  local s list n=0
+  list=$(pget stack | tr ',' ' ')
+  for s in $list; do
+    [[ $STATIC_BUILD_STACKS == *" $s "* ]] || return 1
+    n=$((n + 1))
+  done
+  ((n > 0))
+}
+publish_dir() { # build output served by Coolify (publish_dir: in project.yaml, default /dist)
+  local d
+  d=$(pget publish_dir)
+  d=${d:-/dist}
+  [[ $d == /* ]] || d="/$d"
+  [[ $d =~ ^/[A-Za-z0-9._/-]*$ && $d != *..* ]] || die "project.yaml : publish_dir invalide (ex. /dist)"
+  printf '%s\n' "$d"
 }
 
 expected_env_names() { # names declared in the project's example env file (values never read into the output)
@@ -697,15 +721,19 @@ load_app_conf() {
 app_payload() { # pack port -> JSON of the creation request
   local domains=""
   [[ -n $P_DOMAIN ]] && domains="https://$P_DOMAIN"
+  local pub=""
+  if [[ $1 == static-build ]]; then pub=$(publish_dir); fi
   jq -n --arg p "$CPROJ" --arg s "$SERVER_UUID" --arg e "$CENV" --arg g "$GHAPP" --arg r "$P_REPO" \
     --arg b "$P_BRANCH" --arg bp "$1" --arg port "$2" --arg n "$P_NAME" --arg d "$domains" --arg h "$P_HEALTH" \
-    --argjson pv "$(preview_json)" '
+    --arg pub "$pub" --argjson pv "$(preview_json)" '
     {project_uuid: $p, server_uuid: $s, environment_name: $e, github_app_uuid: $g, git_repository: $r,
-     git_branch: $b, build_pack: $bp, ports_exposes: $port, name: $n,
+     git_branch: $b,
+     build_pack: (if $bp == "static-build" then "nixpacks" else $bp end), ports_exposes: $port, name: $n,
      description: "kit ship", instant_deploy: false, is_auto_deploy_enabled: false,
      health_check_enabled: true, health_check_path: $h}
     + (if $d == "" then {} else {domains: $d} end)
-    + (if $bp == "static" then {is_static: true} else {} end) + $pv'
+    + (if $bp == "static" then {is_static: true} else {} end)
+    + (if $bp == "static-build" then {is_static: true, publish_directory: $pub} else {} end) + $pv'
 }
 # Creation and settings payloads always switch previews off; kit ship app enables them afterwards, once the preview
 # copies of the variables hold dedicated values (preview_envs).
@@ -762,7 +790,9 @@ ship_app() { # mode: plan | dry | real
   load_app_conf
   bpp=$(build_pack)
   bp=${bpp% *} port=${bpp#* }
-  echo "Coolify : application $P_NAME depuis $P_REPO@$P_BRANCH (GitHub App), build $bp, port $port"
+  local bshow=$bp
+  if [[ $bp == static-build ]]; then bshow="static (site statique construit par Coolify, $(publish_dir) servi, sans Dockerfile)"; fi
+  echo "Coolify : application $P_NAME depuis $P_REPO@$P_BRANCH (GitHub App), build $bshow, port $port"
   echo "  domaine : ${dom:-aucun (expose none)} ; santé : $P_HEALTH ; auto-déploiement Coolify coupé (le pont déploie)"
   preview_state "$mode"
   if ((PREVIEWS_ON)); then echo "  prévisualisations des PR : activées, https://$(preview_template) (derrière Access *.$PREVIEW_SUFFIX)"
@@ -1081,7 +1111,11 @@ main() {
     plan)
       load_conf; check_exposure; check_previews
       echo "kit ship plan : $P_NAME (expose $P_EXPOSE${P_DOMAIN:+, $P_DOMAIN}, serveur ${P_SERVER:-$(conf DEFAULT_SERVER)})"
-      if [[ -z $P_UUID ]]; then echo "Première mise en prod : validation du propriétaire avant toute écriture."; fi
+      if [[ -z $P_UUID && $(pget mode) == fast ]]; then
+        echo "Mode rapide (mode: fast) : première mise en prod sans validation dans le chat ; DNS ou Access : le tofu apply du propriétaire reste la porte."
+      elif [[ -z $P_UUID ]]; then
+        echo "Première mise en prod : validation du propriétaire avant toute écriture."
+      fi
       ship_infra plan
       ship_app plan
       echo "Rien n'a été écrit."
