@@ -1436,6 +1436,20 @@ reviewers_in_registry=$(awk -F'|' '/^\| `/ {print $6}' "$ROOT/global/skills-regi
 # team-builder is short; every skill and command description stays short.
 tbw=$(wcw <"$ROOT/global/skills/team-builder/SKILL.md")
 [[ $tbw -le 250 ]] && ok_ "team-builder : $tbw mots (<= 250)" || ko_ "team-builder : $tbw mots (> 250)"
+# Lighter rigor: reviewers on demand, one security review before the first prod in L, L needs two strong criteria.
+for f in global/CLAUDE.md global/skills/team-builder/SKILL.md global/commands/new-project.md; do
+  tr -s ' \n' ' ' <"$ROOT/$f" | grep -q 'Relecteurs : sur demande ; en L, une revue de sécurité avant la première mise en prod' \
+    && ok_ "$f : relecteurs sur demande, revue de sécurité avant la première prod en L" || ko_ "$f : formulation des relecteurs"
+done
+grep -q 'première' "$ROOT/templates/rules/size-L.md" && ! grep -q 'après chaque lot\|sur toute PR' "$ROOT/templates/rules/size-L.md" \
+  && ok_ "size-L : une revue de sécurité avant la première prod, pas à chaque lot" || ko_ "size-L : relecteurs"
+grep -q 'à la main' "$ROOT/templates/rules/size-M.md" && grep -q 'lockfile commité' "$ROOT/templates/rules/size-M.md" \
+  && ok_ "size-M : ni audit ni durcissement à la main, lockfile commité" || ko_ "size-M : règles allégées"
+if grep -q 'Un seul déclencheur' "$ROOT/global/skills/project-size/SKILL.md"; then ko_ "project-size : un seul déclencheur ne suffit plus pour L"
+else grep -q 'deux critères forts' "$ROOT/global/skills/project-size/SKILL.md" && ok_ "project-size : L exige deux critères forts" || ko_ "project-size : critères de L"; fi
+for f in opsec dependency-hygiene; do
+  grep -q 'En S et M' "$ROOT/global/skills/$f/SKILL.md" && ok_ "$f : S et M laissés à la CI et à Renovate" || ko_ "$f : S et M"
+done
 longdesc=""
 for f in "$ROOT"/global/skills/*/SKILL.md "$ROOT"/global/commands/*.md; do
   [[ $(fm "$f" description | wcw) -le 30 ]] || longdesc="$longdesc $(basename "$(dirname "$f")")/$(basename "$f")"
