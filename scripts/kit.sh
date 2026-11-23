@@ -27,10 +27,11 @@ SKILLS PAR PROFIL
   kit registry                            régénère la table des profils dans skills-registry.md
 
 PROJETS
-  kit new <nom> --stack <pile>[,<pile>] [--size S|M|L --reason "…"] [--public] [--dir parent] [--dry-run] [--no-skills]
+  kit new <nom> --stack <pile>[,<pile>] [--size S|M|L --reason "…" | --fast] [--public] [--dir parent] [--dry-run] [--no-skills]
         projet neuf en une commande : dossier, gabarit, pile (kit project add, CI), project.yaml, premier commit,
         dépôt GitHub privé (kit repo create, sinon gh) et push de main ; refuse un dossier non vide (sauf reprise
-        d'un kit new interrompu) ; en session cloud, donne la commande à lancer sur ton poste si gh ne peut pas
+        d'un kit new interrompu) ; en session cloud, donne la commande à lancer sur ton poste si gh ne peut pas ;
+        --fast : taille S et mode rapide (voir /fast)
   kit project new <dossier> [type...] [--no-skills]
         crée un dossier neuf + gabarit + git init ; avec des types, y copie aussi leurs agents et skills
         ex. kit project new ma-boutique nextjs-cloudflare pocketbase
@@ -49,7 +50,11 @@ PROJETS
         rust tauri static ; sans argument, détection), .fs0/bridge.yaml minimal et renovate.json s'ils manquent ;
         n'écrase rien sans --force, refuse les liens symboliques
   kit project size S|M|L --reason "<une ligne>" [--dir d]
-        fixe la taille : project.yaml, règles docs/rules/size-*.md et leurs imports dans CLAUDE.md (relançable)
+        fixe la taille : project.yaml, règles docs/rules/size-*.md et leurs imports dans CLAUDE.md (relançable) ;
+        mode absent : fast en S, normal en M et L (un mode déjà fixé est gardé)
+  kit project mode fast|normal [--dir d]
+        mode de travail : fast (S par défaut, voir /fast : ni validation du plan, ni équipe, ni relecteurs, ni
+        validation de la première mise en prod) ou normal (/new-project)
   kit project effort <agent> <low|medium|high|xhigh|max> [--dir d]
         règle l'effort d'un agent pour ce projet (copie de l'agent dans .claude/agents/, effort: réécrit)
   kit project template [nom]              publie le gabarit comme dépôt modèle GitHub (défaut : project-template)
@@ -831,6 +836,15 @@ project_size() {
   if [[ -z $cur || $cur == TODO ]]; then yaml_set "$yaml" name "$(basename "$(cd "$dir" && pwd)")"; fi
   yaml_set "$yaml" size "$size"
   yaml_set "$yaml" size_reason "$reason"
+  # Work mode: fast by default in S, normal in M and L; a mode already set (kit project mode, kit new --fast) is kept.
+  local mode
+  mode=$(project_mode_get "$yaml")
+  if [[ -z $mode ]]; then
+    if [[ $size == S ]]; then mode=fast; else mode=normal; fi
+    yaml_set "$yaml" mode "$mode"
+  elif [[ $mode == fast && $size != S ]]; then
+    info "mode fast gardé en taille $size : kit project mode normal --dir $dir pour le flux normal"
+  fi
 
   # Règles : M pour M et L ; L seulement pour L. Une copie existante est gardée (elle peut avoir été adaptée).
   local want=() r
@@ -864,6 +878,38 @@ project_size() {
     warn "pas de CLAUDE.md dans $dir : ajoute à la main les imports @docs/rules/size-*.md"
   fi
   ok "taille $size : $yaml${want[0]:+, règles ${want[*]/#/size-}}"
+}
+
+# Work mode of project.yaml (fast | normal), empty when unset ("", TODO or any other value).
+project_mode_get() { # project.yaml
+  local v
+  v=$(yaml_get "$1" mode)
+  case $v in fast|normal) printf '%s\n' "$v" ;; esac
+}
+
+# kit project mode fast|normal [--dir d] : mode de travail du projet (fast : voir /fast ; normal : /new-project).
+project_mode() {
+  local dir=. mode=""
+  while (($#)); do
+    case $1 in
+      --dir) dir=${2:?"dossier manquant"}; shift ;;
+      -*) die "option inconnue : $1" ;;
+      *) [[ -z $mode ]] || die "un seul mode : fast ou normal"; mode=$1 ;;
+    esac
+    shift
+  done
+  [[ $mode == fast || $mode == normal ]] || die 'usage : kit project mode fast|normal [--dir d]'
+  [[ -d $dir ]] || die "dossier introuvable : $dir"
+  local yaml="$dir/project.yaml"
+  if [[ ! -f $yaml ]]; then
+    if [[ -f $KIT_HOME/templates/project/project.yaml ]]; then cp "$KIT_HOME/templates/project/project.yaml" "$yaml"; else : >"$yaml"; fi
+  fi
+  yaml_set "$yaml" mode "$mode"
+  if [[ $mode == fast ]]; then
+    ok "mode fast : $yaml (voir /fast : ni validation du plan, ni équipe, ni relecteurs ; /ship sans validation dans le chat)"
+  else
+    ok "mode normal : $yaml (validations du plan et de la première mise en prod, voir /new-project)"
+  fi
 }
 
 # kit project effort <agent> <low|medium|high|xhigh|max> [--dir d] : règle l'effort d'un agent pour ce projet.
@@ -1127,11 +1173,12 @@ cmd_project() {
     perms) shift; project_perms "$@" ;;
     ci) shift; project_ci "$@" ;;
     size) shift; project_size "$@" ;;
+    mode) shift; project_mode "$@" ;;
     effort) shift; project_effort "$@" ;;
     types) project_types ;;
     template) shift; project_template "$@" ;;
     get) shift; exec "$KIT_HOME/scripts/ship.sh" project-get "$@" ;;
-    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type|pile>... | perms [pile]... | ci [pile]... | size S|M|L | effort <agent> <niveau> | types | template [nom] | get [clé]" ;;
+    *) die "usage : kit project new <dossier> [type...] | init [dossier] | add <type|pile>... | perms [pile]... | ci [pile]... | size S|M|L | mode fast|normal | effort <agent> <niveau> | types | template [nom] | get [clé]" ;;
   esac
 }
 
