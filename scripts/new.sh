@@ -31,7 +31,7 @@ new_kit_token_ok() {
 }
 
 new_usage() {
-  die 'usage : kit new <nom> --stack <pile>[,<pile>] [--size S|M|L --reason "…"] [--public] [--dir parent] [--dry-run] [--no-skills]'
+  die 'usage : kit new <nom> --stack <pile>[,<pile>] [--size S|M|L --reason "…" | --fast] [--public] [--dir parent] [--dry-run] [--no-skills]'
 }
 
 # Commands the owner runs on their own machine when the session cannot create the repository.
@@ -45,7 +45,7 @@ new_owner_hint() { # name visibility dir
 }
 
 cmd_new() {
-  local name="" stacks_arg="" size="" reason="" vis=private parent=. dry=0 skills=1
+  local name="" stacks_arg="" size="" reason="" vis=private parent=. dry=0 skills=1 fast=0
   while (($#)); do
     case $1 in
       --stack) stacks_arg=${2:-}; shift ;;
@@ -55,6 +55,7 @@ cmd_new() {
       --dir) parent=${2:-}; shift ;;
       --dry-run) dry=1 ;;
       --no-skills) skills=0 ;;
+      --fast) fast=1 ;;
       -h|--help) new_usage ;;
       -*) die "option inconnue : $1" ;;
       *) [[ -z $name ]] || die "un seul nom de projet"; name=$1 ;;
@@ -64,6 +65,12 @@ cmd_new() {
   [[ -n $name && -n $stacks_arg && -n $parent ]] || new_usage
   [[ $name =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "nom invalide : $name (lettres, chiffres, . _ -)"
   size=$(printf '%s' "$size" | tr '[:lower:]' '[:upper:]')
+  # --fast: size S and fast mode (see /fast), with a default reason.
+  if ((fast)); then
+    [[ -z $size || $size == S ]] || die "--fast implique la taille S (--size $size : retire --fast, ou kit project mode fast ensuite)"
+    size=S
+    [[ -n $reason ]] || reason="mode rapide"
+  fi
   if [[ -n $size ]]; then
     [[ $size =~ ^[SML]$ ]] || die "taille invalide : $size (S, M ou L)"
     [[ -n $reason ]] || die 'justification requise avec --size : --reason "<une ligne>"'
@@ -103,7 +110,9 @@ cmd_new() {
     echo "  gabarit : kit project init $dir"
     if ((${#add[@]})); then echo "  pile : kit project add ${add[*]} --dir $dir --no-ci$( ((skills)) || echo ' --no-skills')"; fi
     if ((${#ci[@]})); then echo "  CI : kit project ci ${ci[*]} --dir $dir (si absente)"; fi
-    echo "  project.yaml : name=$name stack=${stacks[*]}${size:+ size=$size}"
+    local dmode=""
+    if ((fast)) || [[ $size == S ]]; then dmode=fast; elif [[ -n $size ]]; then dmode=normal; fi
+    echo "  project.yaml : name=$name stack=${stacks[*]}${size:+ size=$size}${dmode:+ mode=$dmode}"
     echo "  git init -b main + premier commit"
     if ((cloud)); then
       echo "  dépôt GitHub $vis : session cloud, gh si connecté, sinon commande à lancer sur ton poste"
@@ -129,6 +138,7 @@ cmd_new() {
     [[ -f $dir/project.yaml ]] || : >"$dir/project.yaml"
     yaml_set "$dir/project.yaml" name "$name"
     yaml_set "$dir/project.yaml" stack "$(IFS=,; echo "${stacks[*]}")"
+    if ((fast)); then yaml_set "$dir/project.yaml" mode fast; fi
     if [[ -n $size ]]; then project_size "$size" --reason "$reason" --dir "$dir"; fi
   fi
   if ! git -C "$dir" rev-parse -q --verify HEAD >/dev/null 2>&1; then
@@ -171,6 +181,11 @@ cmd_new() {
   ok "projet $name prêt dans $dir$( ((pushed)) && echo ', poussé sur GitHub')"
   echo "Étapes suivantes :"
   echo "  cd $dir && claude          (claude remote-control pour suivre la session depuis l'app)"
+  if [[ $(project_mode_get "$dir/project.yaml") == fast ]]; then
+    echo "  mode rapide : /fast \"<idée>\" (pas de validation du plan) ; /ship sans validation dans le chat"
+    echo "  flux normal si le projet grandit : kit project mode normal --dir $dir"
+    return 0
+  fi
   echo "  /new-project \"<description>\" : brief, ${size:+taille $size déjà fixée, }équipe (skill team-builder), plan (docs/plan.md), validation"
   [[ -n $size ]] || echo "  taille : skill project-size, puis kit project size S|M|L --reason \"…\" --dir $dir"
   echo "  première mise en prod : /ship (validation dans le chat)"

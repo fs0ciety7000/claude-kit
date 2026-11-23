@@ -1,9 +1,11 @@
 # Taille et réglages du projet. Une paire `clé: valeur` par ligne. Voir le skill `project-size`.
 # Changer de taille : kit project size S|M|L --reason "..."   Effort d'un agent : kit project effort <agent> <niveau>
+# mode : fast (défaut en S, voir /fast) | normal ; « "" » = fixé par kit project size. Changer : kit project mode fast|normal
 name: TODO
 size: TODO
 size_reason: TODO
 stack: TODO
+mode: ""
 # Mise en ligne (kit ship, /ship). « "" » = non défini. expose : none | tailnet | access (derrière Cloudflare Access) |
 # public ; domain : nom complet sans https:// ; server : nom défini dans ship.conf du poste ; volumes : yes | no ;
 # previews : true | false, prévisualisations des PR derrière Access (piles web, tailles M et L) ; preview_env :

@@ -490,6 +490,29 @@ t "branche déjà fusionnée (squash) : arrêt sans écriture" bash -c '[[ $1 -n
 t "branche fusionnée : rien poussé" test "$(infra_sum)" = "$s5"
 rm -f "$FAKE/gh_merged"
 
+section "mode rapide : première mise en prod sans validation, site statique sans Dockerfile"
+FP="$T/fastsite"
+mkproj "$FP" fastsite tailnet fastsite.in.example.org no
+rm -f "$FP/Dockerfile"
+sed -i.bak -e 's/^stack: .*/stack: astro-static/' -e 's/^mode: .*/mode: fast/' -e 's/^size: .*/size: S/' "$FP/project.yaml" && rm -f "$FP/project.yaml.bak"
+fixture GET /applications '[]'
+run plan --dir "$FP"
+t "fast : plan code 0" test "$RC" -eq 0
+t "fast : mode rapide annoncé" has "Mode rapide (mode: fast)"
+t "fast : pas de validation de première mise en prod" bash -c '! grep -q "Première mise en prod" <<<"$1"' _ "$OUT"
+t "fast : site statique sans Dockerfile" has "build static (site statique"
+run app --dir "$FP" --dry-run
+t "fast : app dry-run code 0" test "$RC" -eq 0
+body=$(sed -n '/corps :/,$p' <<<"$OUT" | sed '1d' | sed -n '/^    {/,/^    }/p' | sed 's/^    //')
+t "astro sans Dockerfile : Nixpacks en site statique, /dist servi, port 80" jq -e '.build_pack == "nixpacks" and .is_static == true and .publish_directory == "/dist" and .ports_exposes == "80"' <<<"$body"
+t "astro sans Dockerfile : pas d'avertissement Nixpacks générique" bash -c '! grep -q "un Dockerfile explicite" <<<"$1"' _ "$OUT"
+sed -i.bak 's/^mode: .*/mode: normal/' "$FP/project.yaml" && rm -f "$FP/project.yaml.bak"
+run plan --dir "$FP"
+t "mode normal : validation de première mise en prod" has "Première mise en prod"
+printf 'FROM scratch\nEXPOSE 8080/tcp\n' >"$FP/Dockerfile"
+run app --dir "$FP" --dry-run
+t "astro avec Dockerfile : build dockerfile gardé" has "build dockerfile"
+
 section "previews : projet (taille, pile, variables, Access)"
 pw_set() { sed -i.bak -e "s/^size: .*/size: $1/" -e "s/^stack: .*/stack: $2/" -e "s/^previews: .*/previews: $3/" "$PW/project.yaml" && rm -f "$PW/project.yaml.bak"; }
 PW="$T/pw"

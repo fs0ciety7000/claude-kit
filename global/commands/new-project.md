@@ -5,6 +5,8 @@ argument-hint: "<description courte du projet>"
 
 Démarre un nouveau projet à partir de cette description : $ARGUMENTS
 
+**Taille S, ou demande « vite » ou « rapide »** : suis `/fast` à la place (mode rapide, sans validation du plan).
+
 **Deux validations dans le chat, pas une de plus** : le plan (phase 2) et la première mise en prod (phase 4). Le reste
 s'enchaîne ; annonce chaque phase en une ligne.
 

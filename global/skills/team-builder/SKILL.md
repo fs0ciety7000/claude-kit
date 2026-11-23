@@ -5,13 +5,13 @@ description: Composer l'équipe d'agents d'un projet selon sa taille (S, M, L), 
 
 # Équipe d'un projet
 
-Équipe déjà en place (rubrique « Équipe » de `CLAUDE.md`) : ajoute seulement le rôle qui manque.
+Équipe en place (« Équipe » de `CLAUDE.md`) : ajoute le rôle manquant.
 
 ## Choisir selon la taille (`project.yaml`)
 
 | Taille | Équipe |
 |---|---|
-| S | fil principal + 1 ou 2 agents |
+| S | fil principal + 1 ou 2 agents ; `mode: fast` : au plus `ui-designer` puis `frontend-dev` |
 | M | `architect` + 3 à 5 agents |
 | L | `architect` + 4 à 7 agents |
 
@@ -33,7 +33,7 @@ Rôle sans agent : `kit equip search`, sinon `kit new-agent`.
 
 1. `kit project add <type>` copie les agents du type dans `.claude/agents/` ; les autres :
    `kit add-agent <nom> --project` (les optionnels aussi).
-2. Effort : celui de l'en-tête ; autre niveau : `kit project effort <agent> <niveau>`.
+2. Autre effort : `kit project effort <agent> <niveau>`.
 3. Déclare l'équipe (« Équipe » de `CLAUDE.md`, tableau de `docs/plan.md`) ; commite `.claude/agents/`.
 
 ## Travailler
