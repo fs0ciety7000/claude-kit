@@ -7,7 +7,7 @@ Environnement Claude Code réutilisable : 17 sous-agents (plus 4 optionnels), sk
 | Élément | Où | Rôle |
 |---|---|---|
 | `global/CLAUDE.md` | lien vers `~/.claude/CLAUDE.md` | langue, routage, règles secrets et qualité |
-| `global/agents/*.md` (17) | `~/.claude/agents/` | tous en `model: opus` (alias, suit les versions), effort réglé par rôle dans l'en-tête. Conception : architect. Code : frontend-dev, backend-dev, rust-dev, go-cli, pocketbase, creative-coder, devops. Design et textes : ui-designer, brand-identity, copywriter, creative-content, researcher. Relecteurs (taille L ou sur demande) : code-reviewer, qa-tester, security-reviewer (effort `xhigh`), design-critic |
+| `global/agents/*.md` (17) | `~/.claude/agents/` | tous en `model: opus` (alias, suit les versions), effort réglé par rôle dans l'en-tête. Conception : architect. Code : frontend-dev, backend-dev, rust-dev, go-cli, pocketbase, creative-coder, devops. Design et textes : ui-designer, brand-identity, copywriter, creative-content, researcher. Relecteurs (sur demande ; en L, une revue de sécurité avant la première mise en prod) : code-reviewer, qa-tester, security-reviewer (effort `xhigh`), design-critic |
 | `extras/agents/*.md` (4) | copiés dans `.claude/agents/` d'un projet | agents optionnels, jamais en global : sysop, data-engineer, game-designer, android-ui-reviewer. `kit add-agent <nom> --project` (ou `kit project add <type>` quand le registre les cite) |
 | `global/skills/` (11) | `~/.claude/skills/` | `pocketbase`, `secrets-handling`, `deploy-coolify-cloudflare`, `dependency-hygiene`, `infra-context`, `opsec`, `atlas`, `project-size`, `team-builder`, `brainstorming`, `writing-plans` |
 | `global/commands/` | `~/.claude/commands/` | `/new-project`, `/add-skill`, `/add-agent`, `/env-check` |
@@ -109,6 +109,9 @@ l'environnement (leurs noms seulement, jamais les valeurs).
 La taille règle ce qu'un projet exige : relecteurs, tests, CI, durcissement, équipe. Claude la choisit au cadrage
 d'après une grille (skill `project-size`) et l'annonce avec une ligne de justification ; tu la corriges d'un mot.
 Elle vit dans `project.yaml` (paires `clé: valeur`, lisibles sans `yq`).
+En S et M, l'agent écrit, la CI (build, tests, audit des dépendances) vérifie et Renovate tient versions et digests
+à jour : ni relecteur ni durcissement à la main. L, réservé aux projets vraiment sensibles (deux critères forts),
+ajoute une revue de sécurité avant la première mise en prod et une CSP stricte.
 
 ```bash
 kit project size M --reason "boutique pour quelques proches, accès restreint"   # ou S, L ; relançable
@@ -477,8 +480,8 @@ git add -A && git commit && git push
 | `/resume` | début de session : relit relais, état et plan, vérifie le dépôt, propose la suite |
 | `/handoff` | fin de session : écrit `docs/memory/handoff.md`, met à jour état et plan, commite et pousse |
 
-- **Équipe** : selon la taille (S : fil principal et 1 ou 2 agents ; M : `architect` et 3 à 5 ; L : `architect` et 4 à 7,
-  avec relecteurs), copiée dans `.claude/agents/` (`model` et `effort` de l'en-tête, réglables par `kit project effort`), listée dans la rubrique « Équipe » de `CLAUDE.md`. La session principale orchestre.
+- **Équipe** : selon la taille (S : fil principal et 1 ou 2 agents ; M : `architect` et 3 à 5 ; L : `architect` et 4 à 7 ;
+  relecteurs sur demande, et en L une revue de sécurité avant la première mise en prod), copiée dans `.claude/agents/` (`model` et `effort` de l'en-tête, réglables par `kit project effort`), listée dans la rubrique « Équipe » de `CLAUDE.md`. La session principale orchestre.
 - **Hook de démarrage** du gabarit (`.claude/settings.json`) : affiche `docs/memory/state.md` seul en tête de session,
   1 500 caractères au plus (coupé à une fin de ligne, avec un renvoi au fichier ; `handoff.md` est lu à la demande par
   `/resume`). Budget appliqué par `scripts/test/run.sh` (`project_sessionstart.chars`), contre 8 129 caractères en v1.

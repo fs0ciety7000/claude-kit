@@ -30,7 +30,8 @@ Conduite :
 ## 2. Plan, équipe, validation
 1. **Plan** : lots, tâches cochables, agent responsable, critère de fin, parallélisme (skill `writing-plans`).
    S : le fil principal l'écrit, 3 lots au plus, une douzaine de tâches. M et L : l'agent `architect`.
-2. **Équipe** : skill `team-builder` (S : 2-3 rôles, M : 3-5, L : 4-7).
+2. **Équipe** : skill `team-builder` (S : 2-3 rôles, M : 3-5, L : 4-7). Relecteurs : sur demande ; en L, une revue
+   de sécurité avant la première mise en prod.
 3. **Identité visuelle** (interface, marque, jeu) : S et M, une direction intégrée au plan ; L, `brand-identity`
    propose trois identités opposées.
 4. **Déploiement** (si le projet se déploie) : brouillon de `DEPLOY.md` selon le skill `deploy-coolify-cloudflare`.
@@ -58,7 +59,8 @@ Après validation :
    demande.
 
 ## 4. Première mise en prod
-Sauter si le projet ne se déploie pas. Sinon, quand le premier lot déployable est prêt : `/ship`. Il présente le
+Sauter si le projet ne se déploie pas. Sinon, quand le premier lot déployable est prêt (en L, après la revue de
+`security-reviewer`) : `/ship`. Il présente le
 `DEPLOY.md` final (source Git, build, port, santé, variables par nom, FQDN, DNS, SSL Full strict, retour arrière) et
 **attend la validation dans le chat** avant le premier déploiement ; si celui-ci part d'une fusion sur `main`, la
 validation précède la fusion. Ensuite, il enchaîne et rapporte les résultats réels (`running:healthy`,
