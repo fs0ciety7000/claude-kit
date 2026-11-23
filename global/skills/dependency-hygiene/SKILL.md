@@ -27,7 +27,8 @@ Une version sortie il y a moins de 3 jours : attendre, sauf correctif de sécuri
 
 ## 2. Vérifier les failles
 
-Avant de conclure, lance l'audit de l'écosystème et rapporte le résultat réel :
+En S et M, l'audit tourne dans la CI et Renovate épingle les digests : tu ne les lances pas à la main avant de
+conclure ; CI rouge, tu corriges. Commandes de référence (CI, ou à la main sur demande) :
 
 | Écosystème | Commande |
 |---|---|
@@ -54,5 +55,5 @@ Avant de conclure, lance l'audit de l'écosystème et rapporte le résultat rée
 
 1. En a-t-on vraiment besoin ? (la bibliothèque standard, ou 20 lignes de code, suffisent souvent)
 2. Activité (dernier commit, mainteneurs), licence compatible, nombre de dépendances transitives.
-3. Dernière version stable (§ 1), audit (§ 2), verrouillage commité.
+3. Dernière version stable (§ 1, toujours vérifiée par l'agent), verrouillage commité ; la CI fait l'audit (§ 2).
 4. Le noter dans la PR : paquet, version, pourquoi.

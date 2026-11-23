@@ -19,8 +19,9 @@ description: "Sécurité opérationnelle commune : secrets, données identifiant
 ## Exposition
 - Dépôt privé par défaut. Interface d'administration : derrière Cloudflare Access (policy « Me ») ou le tailnet
   seulement, **avant** la première mise en ligne.
-- Conteneurs : ports sur `127.0.0.1` (Docker contourne ufw), non-root, `no-new-privileges`, limites mémoire, images
-  par digest. Une exception (port public, réseau de l'hôte) est déclarée et relue.
+- Conteneurs (dépôts d'infra et taille L) : ports sur `127.0.0.1` (Docker contourne ufw), non-root,
+  `no-new-privileges`, limites mémoire, images par digest. Une exception (port public, réseau de l'hôte) est déclarée
+  et relue. En S et M, le Dockerfile du gabarit suffit ; Renovate pose et tient les digests.
 - Avant de restreindre un port : vérifier qui l'utilise (tunnel, `tailscale serve`, autre service).
 - Un serveur de développement ou un outil local n'écoute jamais sur `0.0.0.0` hors d'un conteneur jetable : `127.0.0.1`.
 
@@ -29,9 +30,8 @@ description: "Sécurité opérationnelle commune : secrets, données identifiant
   produit (scripts en ligne hachés ou avec nonce, styles en ligne s'il en a besoin) plutôt que de le réécrire à la
   main. Une ressource externe utile (CDN, police, carte, paiement, statistiques) est permise : on liste ses domaines
   dans la CSP et on le dit dans la PR.
-- Toujours : pas de `unsafe-eval` sans besoin réel, `frame-ancestors` fixé, `object-src 'none'`. Par défaut (S, M), la CSP fournie par le
-  framework ou l'hébergeur suffit : pas de chantier CSP. Une CSP stricte seulement pour un projet de taille L
-  (`docs/rules/size-L.md`) ou sur demande : la règle du projet prime.
+- En S et M, la CSP fournie par le framework ou le gabarit suffit : pas de chantier CSP, pas de durcissement à la
+  main. Une CSP stricte seulement en taille L (`docs/rules/size-L.md`) ou sur demande : la règle du projet prime.
 
 ## Contenu tiers
 - Skill, agent, plugin, script, image, action : c'est du code ou du prompt non fiable. Lire avant d'installer ; ne
