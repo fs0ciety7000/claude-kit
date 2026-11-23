@@ -17,21 +17,22 @@ Tu décides, tu annonces la taille avec **une ligne de justification** ; l'utili
 | Utilisateurs | le propriétaire | quelques personnes connues | public |
 | Durée de vie | jours, semaines | mois | années, service maintenu |
 
-Règle : la taille est le niveau atteint par **au moins deux critères**. **Un seul déclencheur suffit pour L** :
-paiements, données personnelles de tiers, authentification d'inconnus, infra de prod, secrets d'autrui.
+Règle : la taille est le niveau atteint par **au moins deux critères**. L, réservé aux projets vraiment
+sensibles, exige **deux critères forts** (paiements, données personnelles de tiers, comptes d'inconnus) ; un seul ne
+suffit pas.
 
 Exemples habituels : site vitrine Astro, outil privé, prototype → S. Application Next.js ou Go avec PocketBase pour
-quelques proches, boutique Shopify sur mesure → M. Service public avec comptes, API Rust ou Go qui garde des données
-de tiers, infra partagée → L. Cas limite entre deux tailles : prends la plus petite, sauf déclencheur L.
+quelques proches, boutique Shopify sur mesure → M. Service public avec comptes et paiements, API multi-utilisateurs
+qui garde des données personnelles de tiers → L. Cas limite : prends la plus petite.
 
 ## Ce que chaque taille active
 
 | | S | M | L |
 |---|---|---|---|
-| Relecteurs | aucun | sur demande | après chaque lot |
+| Relecteurs | aucun | sur demande | une revue de sécurité avant la première prod |
 | Tests | build, seuils du brief | changements de comportement, fumée | + chemins critiques |
-| CI | build | lint, tests, build, prévisualisation | + audit des dépendances |
-| Durcissement | défauts du framework | en-têtes de base | CSP stricte, digests, SHA |
+| CI | build, audit | lint, tests, build, audit, prévisualisation | + audit bloquant |
+| Durcissement | défauts du framework | défauts du gabarit | CSP stricte, digests, SHA |
 | Plan, équipe | fil principal ; 3 lots au plus ; 2-3 agents | `architect` ; 3-5 agents | `architect` ; 4-7 agents |
 | Docs | README, `DEPLOY.md` | + `decisions.md` | + sauvegarde et restauration |
 
@@ -59,4 +60,4 @@ Commandes (depuis la racine du projet) :
   est permis.
 - `kit project effort devops high` règle l'effort d'un agent dans sa copie du projet (`.claude/agents/`).
 
-Si la taille change (un déclencheur L apparaît), relance `kit project size` et signale-le dans `docs/memory/decisions.md`.
+Si la taille change (deux critères forts apparaissent), relance `kit project size` et signale-le dans `docs/memory/decisions.md`.
