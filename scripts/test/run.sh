@@ -2517,6 +2517,17 @@ nout=$(FAKE_GH_FAIL=1 CLAUDE_CODE_REMOTE=true knew cl --stack backend-go --dir "
 [[ $rc == 0 && $nout == *"session cloud"* && $nout == *"gh repo create cl --private"* && $nout == *"push -u origin main"* ]] \
   && ok_ "kit new en cloud sans gh : le dit et donne la commande pour le poste" || ko_ "kit new : message cloud" "$nout"
 [[ $(git -C "$NP/cl" rev-list --count HEAD 2>/dev/null) == 1 ]] && ok_ "kit new en cloud : projet commité malgré tout" || ko_ "kit new en cloud : commit"
+# Cloud session on a new repository: clone of an empty repo (only .git, no commit) is accepted in place.
+git init -q --bare "$NR/ec.git"
+git clone -q "$NR/ec.git" "$NP/ec" 2>/dev/null
+nout=$(FAKE_GH_FAIL=1 CLAUDE_CODE_REMOTE=true knew ec --stack backend-go --dir "$NP" --no-skills 2>&1); rc=$?
+[[ $rc == 0 && $(git -C "$NP/ec" rev-list --count HEAD 2>/dev/null) == 1 && $(git -C "$NP/ec" symbolic-ref --short HEAD) == main ]] \
+  && ok_ "kit new : clone d'un dépôt vide accepté sur place, branche main" || ko_ "kit new : clone vide" "$nout"
+[[ $(git -C "$NR/ec.git" rev-parse main 2>/dev/null) == "$(git -C "$NP/ec" rev-parse HEAD 2>/dev/null)" && $nout != *"ne peut pas être créé"* ]] \
+  && ok_ "kit new : clone vide poussé sur son origin existant, sans création de dépôt" || ko_ "kit new : push du clone vide" "$nout"
+git init -q --bare "$NR/ec2.git"
+git clone -q "$NR/ec2.git" "$NP/ec2" 2>/dev/null; : >"$NP/ec2/README.md"
+knew ec2 --stack backend-go --dir "$NP" --no-skills >/dev/null 2>&1 && ko_ "kit new : clone avec des fichiers accepté" || ok_ "kit new : clone non vide refusé"
 "$ROOT/scripts/kit.sh" help 2>&1 | grep -q 'kit new <nom>' && ok_ "usage : kit new documenté" || ko_ "usage : kit new"
 dout=$(env PATH="$NB:$PATH" "$ROOT/scripts/kit.sh" doctor 2>&1)
 [[ $dout == *"gh authentifié"* && $dout == *"project-template présent"* && $dout != *faketoken* && $dout == *GITHUB_TOKEN* ]] \

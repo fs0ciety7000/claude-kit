@@ -3,6 +3,11 @@
 # Sourced by kit.sh (needs lib.sh and the project_* helpers of kit.sh); not executable on its own.
 
 # 0 = cloud session (claude.ai/code): no kit secrets, no SSH to GitHub, GitHub access limited to attached repos.
+# 0 = $1 is a clone of an empty repository: only .git inside, no commit yet (cloud session on a new repo).
+new_empty_clone() {
+  [[ -d $1/.git && "$(ls -A "$1")" == .git ]] && ! git -C "$1" rev-parse -q --verify HEAD >/dev/null 2>&1
+}
+
 new_is_cloud() {
   [[ ${CLAUDE_CODE_REMOTE:-} == true || "$(cat "$KIT_CONFIG/profile" 2>/dev/null)" == cloud ]]
 }
@@ -81,7 +86,7 @@ cmd_new() {
 
   local dir="${parent%/}/$name" resume=0
   if [[ -e $dir && ! -d $dir ]]; then die "$dir existe et n'est pas un dossier"; fi
-  if [[ -d $dir && -n "$(ls -A "$dir")" ]]; then
+  if [[ -d $dir && -n "$(ls -A "$dir")" ]] && ! new_empty_clone "$dir"; then
     # Rerun on a folder made by kit new (same name, git repo): finish the remaining steps only.
     if [[ -d $dir/.git && $(yaml_get "$dir/project.yaml" name) == "$name" && -n $(yaml_get "$dir/project.yaml" stack) ]]; then
       resume=1
@@ -115,6 +120,8 @@ cmd_new() {
     cp -rn "$KIT_HOME/templates/project/." "$dir/" 2>/dev/null
     ok "gabarit copié dans $dir"
     [[ -d $dir/.git ]] || git -C "$dir" init -q -b main
+    # Clone of an empty repository (cloud session): the unborn branch becomes main, origin is kept.
+    git -C "$dir" rev-parse -q --verify HEAD >/dev/null 2>&1 || git -C "$dir" symbolic-ref HEAD refs/heads/main
     local addopts=(--dir "$dir" --no-ci)
     ((skills)) || addopts+=(--no-skills)
     if ((${#add[@]})); then project_add "${add[@]}" "${addopts[@]}"; fi
