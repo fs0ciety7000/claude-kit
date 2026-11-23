@@ -5,7 +5,7 @@ description: Composer l'équipe d'agents d'un projet selon sa taille (S, M, L), 
 
 # Équipe d'un projet
 
-Équipe déjà en place (rubrique « Équipe » de `CLAUDE.md`) : ne la recompose pas, ajoute le rôle qui manque.
+Équipe déjà en place (rubrique « Équipe » de `CLAUDE.md`) : ajoute seulement le rôle qui manque.
 
 ## Choisir selon la taille (`project.yaml`)
 
@@ -13,9 +13,9 @@ description: Composer l'équipe d'agents d'un projet selon sa taille (S, M, L), 
 |---|---|
 | S | fil principal + 1 ou 2 agents |
 | M | `architect` + 3 à 5 agents |
-| L | `architect` + 4 à 7 agents, avec relecteurs |
+| L | `architect` + 4 à 7 agents |
 
-Choisis seulement les rôles que ce brief exige.
+Seulement les rôles utiles au brief.
 
 ## Effectif
 
@@ -23,7 +23,8 @@ Choisis seulement les rôles que ce brief exige.
 - Code : `frontend-dev`, `backend-dev`, `rust-dev`, `go-cli`, `pocketbase`, `creative-coder`.
 - Infra : `devops`.
 - Design et textes : `ui-designer`, `brand-identity` (L), `copywriter`, `creative-content`, `researcher`.
-- Relecteurs (L, ou sur demande) : `code-reviewer`, `qa-tester`, `security-reviewer`, `design-critic`.
+- Relecteurs : sur demande ; en L, une revue de sécurité avant la première mise en prod (`security-reviewer`) ;
+  `code-reviewer`, `qa-tester`, `design-critic`.
 - Optionnels : `sysop`, `data-engineer`, `game-designer`, `android-ui-reviewer`.
 
 Rôle sans agent : `kit equip search`, sinon `kit new-agent`.
@@ -33,9 +34,9 @@ Rôle sans agent : `kit equip search`, sinon `kit new-agent`.
 1. `kit project add <type>` copie les agents du type dans `.claude/agents/` ; les autres :
    `kit add-agent <nom> --project` (les optionnels aussi).
 2. Effort : celui de l'en-tête ; autre niveau : `kit project effort <agent> <niveau>`.
-3. Déclare l'équipe (rubrique « Équipe » de `CLAUDE.md`, tableau de `docs/plan.md`) ; commite `.claude/agents/`.
+3. Déclare l'équipe (« Équipe » de `CLAUDE.md`, tableau de `docs/plan.md`) ; commite `.claude/agents/`.
 
 ## Travailler
 
 Un agent par lot, brief complet (objectif, fichiers, contraintes, critère de fin). Lots indépendants en parallèle.
-Vérifie toi-même diff, tests et build.
+Vérifie diff, tests et build.

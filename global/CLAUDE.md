@@ -13,18 +13,19 @@ l'utilisateur corrige d'un mot.
 ## Exécution
 
 - Plan en lots (`docs/plan.md`), un agent par lot, brief complet. Le fil principal fait les petites choses.
-- Après un lot : vérifie toi-même diff, tests et build. Relecteurs seulement en L ou sur demande.
+- Après un lot : vérifie diff, tests et build. Relecteurs : sur demande ; en L, une revue de sécurité avant la
+  première mise en prod.
 - Valide **dans le chat**, seulement pour : le plan, la première mise en prod d'un projet, une suppression, une
   migration de données en prod, un écart au plan, un échec répété deux fois.
 - Skill ou agent réellement manquant : `kit equip search`, installation `--project`. Sinon silence.
 
 ## Secrets : règles strictes
 
-- Ne lis, n'affiche et ne copie jamais un `.env*`, une clé privée ou un jeton. Le hook bloque les cas évidents ; ne le
-  contourne jamais pour un vrai fichier de secrets. Faux positif (nom de champ jq, mot dans une doc,
+- Ne lis, n'affiche et ne copie jamais un `.env*`, une clé privée ou un jeton. Ne contourne jamais le hook pour un
+  vrai fichier de secrets. Faux positif (nom de champ jq, mot dans une doc,
   aucun secret lu) : contournement autorisé, signalé.
 - Commande avec secrets : `kit secrets run [-g] -- <commande>`. Variable manquante : dis son NOM (`kit secrets add
-  NOM`), jamais la valeur demandée dans le chat. Ne commite jamais de secret.
+  NOM`), jamais sa valeur dans le chat. Ne commite jamais de secret.
 - Session cloud : pas de `kit secrets` ; `kit api` lit les jetons de l'environnement.
 - `kit api` Coolify et Cloudflare (POST, PUT, PATCH, TRIGGER) autorisé : annonce, exécute, vérifie. DELETE interdit ;
   rotation de secret ou action hors `kit api` : validation explicite.
@@ -38,7 +39,7 @@ décision durable dans `decisions.md`. `/handoff` sur demande ou en fin de sessi
 
 - Lis avant d'écrire ; plus petit changement ; petits commits ; jamais `git push --force`.
 - Avant de conclure : tests, lint et build, résultats réels.
-- Dépendances : dernière version stable vérifiée au registre, jamais de mémoire.
+- Dépendance ajoutée : dernière version stable vérifiée au registre.
 - Pas de `docker build` pour vérifier : le build du projet suffit.
 - CI dans `.forgejo/workflows/`, jamais `.github/workflows/`.
 
