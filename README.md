@@ -122,6 +122,27 @@ kit project effort devops high     # effort d'un agent pour ce projet (copie dan
 et ajoute leurs lignes `@docs/rules/size-*.md` au `CLAUDE.md` du projet ; en S, rien n'est importé. Revenir à une
 taille plus petite retire règles et imports. Les règles copiées sont à toi : adapte-les dans le projet.
 
+### Mode rapide (défaut en S)
+
+`mode: fast` dans `project.yaml` (posé par `kit project size S` si aucun mode n'est fixé, ou par `kit new --fast`) :
+Claude choisit la pile et le périmètre du MVP, annonce trois hypothèses sans attendre, construit sur le fil principal
+et fusionne ses PR dès que la CI est verte. Ni validation du plan, ni `team-builder`, ni relecteurs, ni CSP au-delà
+des défauts du framework ; une interface garde un vrai passage design (`ui-designer` puis `frontend-dev`, captures
+envoyées au premier jalon). `/ship` ne demande pas de validation dans le chat (le `tofu apply` du propriétaire reste
+la porte pour le DNS et Access). Validations restantes : suppression, migration de données en prod, deux échecs.
+
+```bash
+kit new vitrine --fast --stack astro-static     # puis, dans le projet : /fast "site vitrine d'un atelier"
+kit project mode normal                         # le projet grandit : retour au flux de /new-project
+```
+
+- **Site vitrine** : Astro, direction visuelle choisie par Claude (palette, typographie, composants dans un
+  `DESIGN.md` court), captures bureau et mobile envoyées, déployé par Coolify en site statique (sans Dockerfile ni
+  nginx : `kit ship app` choisit ce mode pour une pile Astro ou Vite sans Dockerfile, sortie `publish_dir`, `/dist`
+  par défaut).
+- **Idée trop grosse**, par exemple un navigateur sur ungoogled-chromium et WebKit : Claude coupe lui-même, v0
+  coquille Rust (Tauri ou wry) sur la WebView du système, v1 CEF.
+
 ## Équiper un projet selon son domaine et sa stack
 
 `/new-project` a une phase « Équipement » : Claude extrait des mots-clés du domaine (finance, compta…) et de la stack (laravel, php…), lance `kit equip search` (skills de skills.sh triés par installations, agents et skills de l'index des collections), garde ce qui est utile au projet après relecture, le fait valider dans le chat (avec les sources de confiance), l'installe au niveau du projet (`--project`, commité dans `.claude/`) puis relance la session pour charger les nouveaux skills. Une stack absente du registre fait l'objet d'une PR automatique (`kit registry propose`) : une fois fusionnée, le projet suivant l'installe directement.

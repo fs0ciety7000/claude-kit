@@ -1319,6 +1319,39 @@ bash "$KIT" project size XL --reason x --dir "$SZ" >/dev/null 2>&1 && ko_ "size 
 bash "$KIT" project size L --reason "x" --dir "$SZ2" >/dev/null 2>&1
 [[ -f $SZ2/project.yaml && -f $SZ2/docs/rules/size-L.md ]] && ok_ "size L sans CLAUDE.md : project.yaml et règles posés (avertissement)" || ko_ "size L sans CLAUDE.md"
 
+# Work mode: fast by default in S, normal in M and L, an explicit mode kept; kit project mode switches it.
+MD="$TMP/mode-proj"
+bash "$KIT" project init "$MD" >/dev/null 2>&1
+[[ $(grep -c '^mode: ""$' "$MD/project.yaml") == 1 ]] && ok_ "gabarit : mode non fixé" || ko_ "gabarit : mode" "$(grep '^mode' "$MD/project.yaml")"
+bash "$KIT" project size S --reason "site vitrine" --dir "$MD" >/dev/null 2>&1
+[[ $(grep '^mode:' "$MD/project.yaml") == "mode: fast" && $(grep -c '^mode:' "$MD/project.yaml") == 1 ]] \
+  && ok_ "size S : mode fast par défaut" || ko_ "size S : mode" "$(grep '^mode' "$MD/project.yaml")"
+bash "$KIT" project size M --dir "$MD" >/dev/null 2>&1
+[[ $(grep '^mode:' "$MD/project.yaml") == "mode: fast" ]] && ok_ "size M après S : mode déjà fixé gardé" || ko_ "size M : mode écrasé"
+bash "$KIT" project mode normal --dir "$MD" >/dev/null 2>&1
+[[ $(grep '^mode:' "$MD/project.yaml") == "mode: normal" ]] && ok_ "kit project mode normal : bascule" || ko_ "kit project mode normal"
+bash "$KIT" project size S --dir "$MD" >/dev/null 2>&1
+[[ $(grep '^mode:' "$MD/project.yaml") == "mode: normal" ]] && ok_ "size S : mode explicite normal gardé" || ko_ "size S : mode explicite écrasé"
+bash "$KIT" project mode fast --dir "$MD" >/dev/null 2>&1
+[[ $(grep '^mode:' "$MD/project.yaml") == "mode: fast" && $(grep -c '^mode:' "$MD/project.yaml") == 1 ]] \
+  && ok_ "kit project mode fast : bascule, une seule ligne" || ko_ "kit project mode fast"
+bash "$KIT" project mode turbo --dir "$MD" >/dev/null 2>&1 && ko_ "mode invalide : doit échouer" || ok_ "mode invalide refusé"
+MD2="$TMP/mode-proj2"; bash "$KIT" project init "$MD2" >/dev/null 2>&1
+bash "$KIT" project size L --reason "comptes" --dir "$MD2" >/dev/null 2>&1
+[[ $(grep '^mode:' "$MD2/project.yaml") == "mode: normal" ]] && ok_ "size L : mode normal par défaut" || ko_ "size L : mode"
+"$KIT" help 2>&1 | grep -q 'kit project mode fast|normal' && ok_ "usage : kit project mode documenté" || ko_ "usage : kit project mode"
+# Fast mode: an astro project gets no Dockerfile, nginx config or CSP script from kit project add.
+FA="$TMP/fast-astro"; bash "$KIT" project init "$FA" >/dev/null 2>&1
+bash "$KIT" project mode fast --dir "$FA" >/dev/null 2>&1
+bash "$KIT" project add astro-static --no-skills --dir "$FA" >/dev/null 2>&1
+[[ ! -e $FA/Dockerfile && ! -e $FA/nginx && -z $(find "$FA" -name 'csp*' -not -path '*/.git/*' 2>/dev/null) ]] \
+  && ok_ "mode fast + astro-static : ni Dockerfile, ni nginx, ni CSP générée" || ko_ "mode fast + astro : fichiers d'image posés"
+# CI templates of static web stacks: build, tests, audit; no Docker image job.
+for c in astro vite static; do
+  grep -qE 'docker (build|push)|buildx|build-push-action|docker/' "$ROOT/templates/ci/$c.yml" \
+    && ko_ "CI $c : job d'image Docker" || ok_ "CI $c : aucun job d'image Docker"
+done
+
 # Fichier projet plat, lisible sans yq : clé: valeur, une par ligne.
 bad=$(grep -vE '^(#.*|[a-z_.]+: .*|)$' "$ROOT/templates/project/project.yaml" || true)
 [[ -z $bad ]] && ok_ "templates/project/project.yaml : paires « clé: valeur » seulement" || ko_ "project.yaml plat" "$bad"
@@ -1348,6 +1381,18 @@ gw=$(wc -w <"$ROOT/global/CLAUDE.md" | tr -d ' ')
 [[ $gw -lt 400 ]] && ok_ "global/CLAUDE.md : $gw mots (< 400)" || ko_ "global/CLAUDE.md : $gw mots (>= 400)"
 npw=$(wc -w <"$ROOT/global/commands/new-project.md" | tr -d ' ')
 [[ $npw -le 900 ]] && ok_ "/new-project : $npw mots (<= 900)" || ko_ "/new-project : $npw mots (> 900)"
+fw=$(wc -w <"$ROOT/global/commands/fast.md" | tr -d ' ')
+[[ $fw -le 350 ]] && ok_ "/fast : $fw mots (<= 350)" || ko_ "/fast : $fw mots (> 350)"
+for k in 'kit new <nom> --fast' 'kit project mode normal' 'ui-designer' 'Playwright' 'Tauri ou wry'; do
+  grep -qF -- "$k" "$ROOT/global/commands/fast.md" && ok_ "/fast : cite « $k »" || ko_ "/fast : « $k » absent"
+done
+grep -q '`/fast`' "$ROOT/global/commands/new-project.md" && ok_ "/new-project : renvoie à /fast en S" || ko_ "/new-project : /fast absent"
+shw=$(wc -w <"$ROOT/global/commands/ship.md" | tr -d ' ')
+[[ $shw -le 400 ]] && grep -q 'mode: fast' "$ROOT/global/commands/ship.md" && ok_ "/ship : $shw mots (<= 400), mode rapide traité" || ko_ "/ship : $shw mots ou mode rapide absent"
+tr -s ' \n' ' ' <"$ROOT/global/CLAUDE.md" | grep -q 'Mode rapide (`mode: fast`, défaut en S)' && ok_ "CLAUDE.md global : règle du mode rapide" || ko_ "CLAUDE.md global : mode rapide absent"
+grep -q 'mode: fast' "$ROOT/global/skills/team-builder/SKILL.md" && grep -q '`fast`' "$ROOT/global/skills/project-size/SKILL.md" \
+  && ok_ "team-builder et project-size : mode rapide" || ko_ "team-builder ou project-size : mode rapide absent"
+[[ ! -e $ROOT/templates/rules/size-S.md ]] && ok_ "taille S : aucun fichier de règles" || ko_ "taille S : templates/rules/size-S.md existe"
 ps="$ROOT/global/skills/project-size/SKILL.md"
 psw=$(wc -w <"$ps" | tr -d ' ')
 psd=$(sed -n 's/^description: //p' "$ps" | wc -w | tr -d ' ')
@@ -2513,6 +2558,14 @@ knew other --stack backend-go --dir "$NP" --no-skills >/dev/null 2>&1 && ko_ "ki
 knew bad --stack nonsense --dir "$NP" >/dev/null 2>&1 && ko_ "kit new : pile inconnue acceptée" || ok_ "kit new : pile inconnue refusée"
 [[ ! -e $NP/bad ]] && ok_ "kit new : rien créé pour une pile inconnue" || ko_ "kit new : dossier créé malgré l'erreur"
 knew sz --stack go --size M --dir "$NP" >/dev/null 2>&1 && ko_ "kit new : --size sans --reason accepté" || ok_ "kit new : --size exige --reason"
+nout=$(knew fs --stack astro-static --fast --dir "$NP" --no-skills 2>&1); rc=$?
+[[ $rc == 0 && $(yaml_get_t "$NP/fs/project.yaml" size) == S && $(yaml_get_t "$NP/fs/project.yaml" mode) == fast \
+  && $(yaml_get_t "$NP/fs/project.yaml" size_reason) == "mode rapide" && $nout == *"/fast"* ]] \
+  && ok_ "kit new --fast : taille S, mode fast, raison par défaut, /fast proposé" || ko_ "kit new --fast" "$(cat "$NP/fs/project.yaml" 2>&1)"
+[[ $(yaml_get_t "$NP/site/project.yaml" mode) == fast ]] && ok_ "kit new --size S : mode fast" || ko_ "kit new --size S : mode" "$(grep '^mode' "$NP/site/project.yaml")"
+knew fm --stack go --fast --size M --reason x --dir "$NP" >/dev/null 2>&1 && ko_ "kit new --fast --size M accepté" || ok_ "kit new : --fast avec --size M refusé"
+nout=$(knew fd --stack astro-static --fast --dir "$NP" --dry-run 2>&1)
+[[ $nout == *"size=S mode=fast"* && ! -e $NP/fd ]] && ok_ "kit new --fast --dry-run : taille et mode annoncés" || ko_ "kit new --fast --dry-run" "$nout"
 nout=$(FAKE_GH_FAIL=1 CLAUDE_CODE_REMOTE=true knew cl --stack backend-go --dir "$NP" --no-skills 2>&1); rc=$?
 [[ $rc == 0 && $nout == *"session cloud"* && $nout == *"gh repo create cl --private"* && $nout == *"push -u origin main"* ]] \
   && ok_ "kit new en cloud sans gh : le dit et donne la commande pour le poste" || ko_ "kit new : message cloud" "$nout"
